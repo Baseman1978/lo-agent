@@ -1,0 +1,10 @@
+.venv
+.env
+.claude
+.claude-flow
+.mcp.json
+00. funcitonele omschreiving
+tests
+__pycache__
+*.pyc
+*.bat

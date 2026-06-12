@@ -1,0 +1,39 @@
+[project]
+name = "span-agent"
+version = "0.1.0"
+description = "Span — een AI die zichzelf onthoudt. Graph-as-brain agent voor Bas Spaan."
+requires-python = ">=3.11"
+dependencies = [
+    "neo4j>=5.28",
+    "openai>=1.60",
+    "typer>=0.15",
+    "rich>=13.9",
+    "python-dotenv>=1.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "msal>=1.31",
+    "requests>=2.32",
+    "pypdf>=4.0",
+    "python-docx>=1.1",
+    "markitdown[pdf,docx,pptx,xlsx]>=0.1.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+stt = ["faster-whisper>=1.0"]  # server-side spraakherkenning (Docker)
+
+[project.scripts]
+span = "span.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+span = ["server/static/*", "server/static/vendor/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

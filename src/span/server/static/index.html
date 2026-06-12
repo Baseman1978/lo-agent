@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPAN · J.A.R.V.I.S.</title>
+<link rel="stylesheet" href="/static/jarvis.css">
+<link rel="stylesheet" href="/static/effects.css">
+</head>
+<body>
+
+<canvas id="fx"></canvas>
+
+<div id="boot">
+  <div id="boot-log"></div>
+</div>
+
+<header>
+  <h1>SPAN</h1>
+  <span class="sub">J.A.R.V.I.S. MODE · EEN AI DIE ZICHZELF ONTHOUDT</span>
+  <div id="clockbox">
+    <div id="clock">--:--:--</div>
+    <div id="date">—</div>
+  </div>
+  <span id="health-dot" title="systeemstatus"></span>
+  <button id="inbox-btn" class="iconbtn" title="Agent Inbox — acties ter goedkeuring">⊞ <b id="inbox-badge"></b></button>
+  <button id="settings-btn" class="iconbtn" title="Instellingen">⚙</button>
+</header>
+
+<div id="toasts"></div>
+
+<div id="inbox-overlay">
+  <div id="inbox-panel" class="panel">
+    <h2>⟢ Agent Inbox <button id="inbox-close" class="iconbtn">✕</button></h2>
+    <div id="inbox-list" class="body"></div>
+  </div>
+</div>
+
+<main>
+  <aside id="left" class="col">
+    <section class="panel" id="panel-agenda">
+      <h2>⟢ Agenda</h2>
+      <div class="body" id="agenda"><div class="empty">geen data</div></div>
+    </section>
+    <section class="panel" id="panel-taken">
+      <h2>⟢ Taken · Asana + To&nbsp;Do</h2>
+      <div class="body" id="taken"><div class="empty">geen data</div></div>
+    </section>
+  </aside>
+
+  <section id="center">
+    <div id="reactor-wrap">
+      <canvas id="reactor" width="300" height="300"></canvas>
+      <div id="state-label">STANDBY</div>
+    </div>
+    <canvas id="wave"></canvas>
+    <div id="log"></div>
+    <div id="bar">
+      <textarea id="input" rows="1"
+        placeholder="Spreek of typ…  (Enter = verstuur · zeg 'Jarvis' bij wake word aan)"></textarea>
+      <button id="doc" title="Document toevoegen aan het geheugen (pdf/docx/pptx/xlsx/html/eml/txt/md)">📎</button>
+      <input type="file" id="doc-file" accept=".pdf,.docx,.pptx,.xlsx,.xls,.html,.htm,.eml,.txt,.md,.csv,.json,.xml" multiple hidden>
+      <button id="mic" title="Gespreksmodus — doorlopend 1:1 praten">🎙</button>
+      <button id="wake" title="Wake word — passief luisteren naar 'Jarvis'">◉ WAKE</button>
+      <button id="speak" title="Antwoorden voorlezen">🔊</button>
+      <button id="end" title="Sessie afsluiten met evaluatie">/end</button>
+    </div>
+  </section>
+
+  <aside id="right" class="col">
+    <section class="panel" id="panel-mail">
+      <h2>⟢ Inbox</h2>
+      <div class="body" id="mail"><div class="empty">geen data</div></div>
+    </section>
+    <section class="panel" id="panel-quests">
+      <h2>⟢ Quests &amp; gepland</h2>
+      <div class="body" id="quests"><div class="empty">geen data</div></div>
+    </section>
+    <section class="panel" id="panel-brein">
+      <h2>⟢ Brein-hologram <button id="holo-expand" class="iconbtn" title="Fullscreen">⛶</button></h2>
+      <div id="holo-canvas"><div id="holo-scene"></div></div>
+      <div id="holo-filters"></div>
+      <div id="holo-count" class="m"></div>
+      <div class="body" id="brein"><div class="empty">geen data</div></div>
+    </section>
+  </aside>
+</main>
+
+<div id="settings-overlay">
+  <div id="settings-panel" class="panel">
+    <h2>⟢ Instellingen <button id="settings-close" class="iconbtn">✕</button></h2>
+
+    <h3>Microsoft 365</h3>
+    <div class="setrow"><span id="set-o365-status" class="m">…</span></div>
+    <div class="setrow">
+      <button id="o365-login" class="ghost hidden">verbind Microsoft 365</button>
+      <button id="o365-logout" class="ghost hidden">ontkoppel Microsoft 365</button>
+    </div>
+
+    <h3>Asana</h3>
+    <div class="setrow"><span id="set-asana-status" class="m">…</span></div>
+
+    <h3>Telegram</h3>
+    <div class="setrow"><span id="set-telegram-status" class="m">…</span></div>
+
+    <h3>Fireflies</h3>
+    <div class="setrow"><span id="set-fireflies-status" class="m">…</span></div>
+
+    <h3>Autonomie</h3>
+    <div class="setrow">
+      <label>Mail versturen</label>
+      <select id="set-auto-mail">
+        <option value="ask">eerst goedkeuren (Agent Inbox)</option>
+        <option value="auto">autonoom versturen</option>
+      </select>
+    </div>
+    <div class="setrow">
+      <label>Afspraken maken</label>
+      <select id="set-auto-event">
+        <option value="ask">eerst goedkeuren (Agent Inbox)</option>
+        <option value="auto">autonoom inplannen</option>
+      </select>
+    </div>
+    <div class="setrow"><button id="set-auto-save" class="ghost">autonomie opslaan</button></div>
+
+    <h3>Tool-permissies</h3>
+    <div class="m" style="margin-bottom:6px">Wat Jarvis mag lezen (R) en schrijven (W). Uitgevinkt = tool volledig geblokkeerd.</div>
+    <div id="tool-perms"></div>
+    <div class="setrow"><button id="set-tools-save" class="ghost">permissies opslaan</button></div>
+
+    <h3>Effecten</h3>
+    <div class="setrow">
+      <label>Ambient-intensiteit</label>
+      <select id="set-fx">
+        <option value="2">vol — alle effecten</option>
+        <option value="1">subtiel — kerneffecten</option>
+        <option value="0">uit — alleen functioneel</option>
+      </select>
+    </div>
+
+    <h3>Thema</h3>
+    <div class="setrow">
+      <select id="set-theme">
+        <option value="">Arc Blue (standaard)</option>
+        <option value="mark3">Mark III — rood/goud</option>
+        <option value="warmachine">War Machine — gunmetal</option>
+      </select>
+    </div>
+
+    <h3>Stem</h3>
+    <div class="setrow">
+      <label>Stem (Nederlands)</label>
+      <select id="set-voice"></select>
+    </div>
+    <div class="setrow">
+      <label>Tempo: <span id="set-rate-label">1.04</span></label>
+      <input type="range" id="set-rate" min="0.8" max="1.4" step="0.02" value="1.04">
+    </div>
+
+    <h3>Mail-triage regels</h3>
+    <div class="setrow">
+      <label>Eigen regels voor de ambient watcher (vrije tekst)</label>
+      <textarea id="set-triage" rows="3"
+        placeholder="bv. Mails van facturen@... altijd negeren. Alles van Martijn is urgent."></textarea>
+    </div>
+    <div class="setrow"><button id="set-triage-save" class="ghost">regels opslaan</button></div>
+
+    <h3>Beheer</h3>
+    <div class="setrow"><button id="set-backup" class="ghost">brein-backup downloaden (JSON)</button></div>
+
+    <h3>Dagstart</h3>
+    <div class="setrow">
+      <label>Tijdstip automatische ochtendbriefing</label>
+      <input type="time" id="set-briefing-time" value="07:00">
+    </div>
+    <div class="setrow">
+      <button id="set-briefing-save" class="ghost">tijd opslaan</button>
+      <button id="set-briefing-now" class="ghost">dagstart nu genereren</button>
+    </div>
+
+    <h3>Telefoon (zelfde wifi)</h3>
+    <div class="setrow">
+      <label>LAN-IP van deze pc (voor de QR)</label>
+      <input type="text" id="set-lan-ip" placeholder="bv. 192.168.1.23">
+    </div>
+    <div class="setrow"><button id="set-qr-make" class="ghost">toon QR-code</button></div>
+    <div id="qr-box" class="hidden"></div>
+    <div class="m" id="qr-note"></div>
+
+    <h3>Systeemprompt</h3>
+    <div class="setrow">
+      <label>Spans karakter en werkafspraken — leeg = ingebouwde standaard.
+        Plekhouders: {name}, {owner}, {bootstrap} (geheugen-context, laten staan!)</label>
+      <textarea id="set-sysprompt" rows="14" spellcheck="false"></textarea>
+    </div>
+    <div class="setrow">
+      <button id="set-sysprompt-save" class="ghost">prompt opslaan</button>
+      <button id="set-sysprompt-reset" class="ghost">terug naar standaard</button>
+    </div>
+
+    <h3>Modellen (ORQ)</h3>
+    <div class="setrow">
+      <label>Hoofdmodel (redeneren + tools)</label>
+      <select id="set-model-main"></select>
+    </div>
+    <div class="setrow">
+      <label>Licht model (recording + evaluatie)</label>
+      <select id="set-model-light"></select>
+    </div>
+    <div class="setrow">
+      <button id="set-save" class="ghost">opslaan</button>
+      <button id="set-reset" class="ghost">terug naar standaard</button>
+    </div>
+    <div class="m" id="set-note">Modelwijziging geldt voor nieuwe sessies (herlaad de pagina).</div>
+  </div>
+</div>
+
+<div id="holo-overlay">
+  <button id="holo-close" class="iconbtn" title="Sluiten">✕</button>
+  <div id="holo-full"></div>
+</div>
+
+<script src="/static/vendor/3d-force-graph.min.js"></script>
+<script src="/static/vendor/qrcode.js"></script>
+<script src="/static/jarvis.js"></script>
+<script src="/static/fx.js"></script>
+<script src="/static/effects.js"></script>
+<script src="/static/voice.js"></script>
+<script src="/static/hologram.js"></script>
+<script src="/static/settings.js"></script>
+<script src="/static/ambient.js"></script>
+</body>
+</html>

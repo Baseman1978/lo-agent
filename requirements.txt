@@ -1,0 +1,9 @@
+neo4j>=5.28
+openai>=1.60
+typer>=0.15
+rich>=13.9
+python-dotenv>=1.0
+fastapi>=0.115
+uvicorn[standard]>=0.32
+msal>=1.31
+requests>=2.32

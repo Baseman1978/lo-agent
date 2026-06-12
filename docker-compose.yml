@@ -1,0 +1,49 @@
+# Span — volledige stack: brein (Neo4j) + agent/web-UI.
+# Lokaal:  docker compose up -d --build   →  http://localhost:8472
+# Server:  zelfde compose; zet SPAN_AUTH_TOKEN in .env en zet er een
+#          reverse proxy met HTTPS voor (Caddy/Traefik/nginx).
+
+services:
+  neo4j:
+    image: neo4j:5-enterprise
+    container_name: span-neo4j-stack
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: eval
+    volumes:
+      - span-neo4j-data:/data
+    ports:
+      - "7474:7474"   # browser-UI op de graph
+      - "7687:7687"   # bolt — zodat de lokale CLI (span chat) ook werkt
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:7474 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  span:
+    build: .
+    container_name: span-agent
+    env_file: .env
+    environment:
+      NEO4J_URI: bolt://neo4j:7687   # binnen het compose-netwerk
+      SPAN_DOCS_DIR: /data/documents
+    ports:
+      - "8472:8472"
+    volumes:
+      - span-msal:/root/.span     # O365 token-cache overleeft rebuilds
+      - span-models:/root/.cache  # Whisper-model overleeft rebuilds
+      - ./documents:/data/documents  # geüploade documenten, zichtbaar op de host
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  span-msal:
+  span-models:
+  span-neo4j-data:
+    # zelfde volume-naam als de losse container gebruikt extern beheer:
+    external: true
+    name: span-neo4j-data

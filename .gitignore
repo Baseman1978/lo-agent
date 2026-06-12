@@ -1,0 +1,28 @@
+# Secrets — nooit committen
+.env
+*.pem
+*.key
+
+# Persoonlijke data — blijft lokaal
+backups/
+documents/
+00. funcitonele omschreiving/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# Tooling
+.claude/
+.claude-flow/
+.mcp.json
+
+# Rommel
+None
+str
+list[str]
+list[dict[str
+tuple[Settings

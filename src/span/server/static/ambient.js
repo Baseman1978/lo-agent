@@ -1,0 +1,132 @@
+/* SPAN ambient laag: Agent Inbox (goedkeuringswachtrij), toasts, health-dot. */
+"use strict";
+(() => {
+  const SPAN = window.SPAN;
+  const $ = (id) => document.getElementById(id);
+  const overlay = $("inbox-overlay");
+  let known = new Set();   // item-ids waarvoor al een toast is getoond
+  let firstPoll = true;
+
+  /* -- toasts ----------------------------------------------------------- */
+  function toast(title, detail, urgency) {
+    const box = $("toasts");
+    const div = document.createElement("div");
+    div.className = "toast" + (urgency === "high" ? " hot" : "");
+    div.innerHTML = `<b>${esc(title)}</b><span>${esc(detail)}</span>`;
+    div.onclick = () => { openInbox(); div.remove(); };
+    box.appendChild(div);
+    SPAN.chime(urgency === "high" ? 988 : 587, .09);
+    // alert-takeover alleen bij injectie-waarschuwingen (glitch = signaal)
+    if (detail && detail.includes("injectie") && SPAN.heroAlert) {
+      SPAN.heroAlert(title, detail);
+    }
+    setTimeout(() => div.classList.add("gone"), 9000);
+    setTimeout(() => div.remove(), 9600);
+  }
+  const esc = (s) => String(s || "").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+
+  /* -- inbox poll + badge ------------------------------------------------ */
+  async function poll() {
+    try {
+      const res = await fetch("/api/inbox", { headers: SPAN.authHeaders() });
+      if (!res.ok) return;
+      const d = await res.json();
+      $("inbox-badge").textContent = d.open || "";
+      $("inbox-btn").classList.toggle("attention", d.open > 0);
+      for (const item of d.items) {
+        if (item.status === "open" && !known.has(item.id) && !firstPoll) {
+          toast(item.title, item.detail, item.urgency);
+        }
+        known.add(item.id);
+      }
+      firstPoll = false;
+      if (overlay.classList.contains("open")) render(d.items);
+    } catch (e) { /* stil */ }
+  }
+  setInterval(poll, 20000);
+  setTimeout(poll, 3000);
+
+  /* -- inbox overlay ----------------------------------------------------- */
+  const KIND_LABEL = { action: "ACTIE", needs_reply: "ANTWOORD NODIG", notify: "MELDING" };
+  function render(items) {
+    const list = $("inbox-list");
+    list.innerHTML = "";
+    const open = items.filter((i) => i.status === "open").reverse();
+    const closed = items.filter((i) => i.status !== "open").reverse().slice(0, 8);
+    if (!open.length) list.innerHTML = '<div class="empty">Niets te beoordelen — alles afgehandeld ✦</div>';
+    for (const item of open) list.appendChild(card(item, true));
+    if (closed.length) {
+      const h = document.createElement("div");
+      h.className = "inbox-divider"; h.textContent = "afgehandeld";
+      list.appendChild(h);
+      for (const item of closed) list.appendChild(card(item, false));
+    }
+  }
+  function card(item, open) {
+    const div = document.createElement("div");
+    div.className = "inbox-card" + (open ? "" : " closed") +
+      (item.urgency === "high" ? " hot" : "");
+    const approveLabel = item.kind === "needs_reply" ? "✍ concept maken"
+      : item.kind === "notify" ? "✓ gezien" : "✓ goedkeuren";
+    div.innerHTML =
+      `<div class="k">${KIND_LABEL[item.kind] || item.kind} · ${esc(item.created.slice(11, 16))}` +
+      `${item.status !== "open" ? " · " + esc(item.status) : ""}</div>` +
+      `<b>${esc(item.title)}</b><p>${esc(item.detail)}</p>` +
+      (item.payload && item.payload.link
+        ? `<a href="${encodeURI(item.payload.link)}" target="_blank">open in Outlook</a> ` : "");
+    if (open) {
+      const ok = document.createElement("button");
+      ok.className = "ghost"; ok.textContent = approveLabel;
+      ok.onclick = () => act(item.id, "approve", ok);
+      const no = document.createElement("button");
+      no.className = "ghost reject"; no.textContent = "✕ negeren";
+      no.onclick = () => act(item.id, "reject", no);
+      const row = document.createElement("div");
+      row.className = "inbox-actions"; row.append(ok, no);
+      div.appendChild(row);
+    }
+    return div;
+  }
+  async function act(id, verb, btn) {
+    btn.disabled = true; btn.textContent = "…";
+    try {
+      const res = await fetch(`/api/inbox/${id}/${verb}`, {
+        method: "POST", headers: SPAN.authHeaders(),
+      });
+      const d = await res.json();
+      if (!res.ok) { SPAN.sys(d.detail || "Mislukt", "warn"); return; }
+      if (verb === "approve") {
+        SPAN.chime(880, .1);
+        const r = d.result || {};
+        if (r.draft_created) SPAN.sys("Concept staat klaar in Outlook Drafts.");
+        else if (r.sent) SPAN.sys("Mail verstuurd.");
+        else if (r.created) SPAN.sys("Afspraak staat in de agenda.");
+      }
+      poll();
+    } catch (e) { SPAN.sys("Actie mislukt.", "warn"); }
+  }
+
+  function openInbox() { overlay.classList.add("open"); poll(); }
+  $("inbox-btn").onclick = openInbox;
+  $("inbox-close").onclick = () => overlay.classList.remove("open");
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.classList.remove("open");
+  });
+
+  /* -- health-dot -------------------------------------------------------- */
+  async function healthPoll() {
+    try {
+      const res = await fetch("/api/health", { headers: SPAN.authHeaders() });
+      const h = res.ok ? await res.json() : { brain: false };
+      const dot = $("health-dot");
+      dot.className = h.brain ? "ok" : "down";
+      dot.title = `brein: ${h.brain ? "online" : "OFFLINE"} · o365: ${h.o365 ? "gekoppeld" : "—"}` +
+        ` · asana: ${h.asana ? "gekoppeld" : "—"}`;
+      if (!h.brain && SPAN.glitch) SPAN.glitch();
+    } catch (e) {
+      $("health-dot").className = "down";
+    }
+  }
+  setInterval(healthPoll, 60000);
+  setTimeout(healthPoll, 4000);
+})();
