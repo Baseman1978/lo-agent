@@ -45,8 +45,13 @@ class O365Client:
 
     def _persist_cache(self) -> None:
         if self._cache.has_state_changed:
-            self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+            # refresh tokens met Mail.Send-rechten: alleen eigenaar mag lezen
+            self._cache_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             self._cache_path.write_text(self._cache.serialize(), encoding="utf-8")
+            try:
+                self._cache_path.chmod(0o600)
+            except OSError:
+                pass  # Windows kent geen POSIX-modes; daar beschermt het profiel
 
     # -- auth -------------------------------------------------------------
 
@@ -107,12 +112,16 @@ class O365Client:
         }
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        resp = requests.get(f"{GRAPH}{path}", headers=self._headers(), params=params, timeout=30)
+        from span.integrations.http import request_with_retry
+        resp = request_with_retry(lambda: requests.get(
+            f"{GRAPH}{path}", headers=self._headers(), params=params, timeout=30))
         resp.raise_for_status()
         return resp.json()
 
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
-        resp = requests.post(f"{GRAPH}{path}", headers=self._headers(), json=payload, timeout=30)
+        from span.integrations.http import request_with_retry
+        resp = request_with_retry(lambda: requests.post(
+            f"{GRAPH}{path}", headers=self._headers(), json=payload, timeout=30))
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 
@@ -160,7 +169,8 @@ class O365Client:
         data = self._get(
             "/me/messages",
             {
-                "$filter": f"conversationId eq '{conversation_id}'",
+                # OData: enkele quotes verdubbelen, anders breekt het filter
+                "$filter": f"conversationId eq '{conversation_id.replace(chr(39), chr(39) * 2)}'",
                 "$top": min(int(top), 25),
                 "$select": "subject,from,receivedDateTime,bodyPreview",
                 "$orderby": "receivedDateTime",

@@ -252,16 +252,24 @@
     const groups = {};
     for (const t of tools) (groups[t.group] = groups[t.group] || []).push(t);
     for (const [group, items] of Object.entries(groups)) {
+      // createElement i.p.v. innerHTML: serverdata hoort nooit als markup geparsed
       const g = document.createElement("div");
       g.className = "perm-group" + (items[0].available ? "" : " unavailable");
-      g.innerHTML = `<div class="perm-title">${group}${items[0].available ? "" : " · niet gekoppeld"}</div>`;
+      const title = document.createElement("div");
+      title.className = "perm-title";
+      title.textContent = group + (items[0].available ? "" : " · niet gekoppeld");
+      g.appendChild(title);
       for (const t of items) {
         const row = document.createElement("label");
         row.className = "perm-row";
-        row.innerHTML =
-          `<input type="checkbox" data-tool="${t.name}" ${t.enabled ? "checked" : ""}>` +
-          `<span class="perm-badge ${t.access}">${t.access === "read" ? "R" : "W"}</span>` +
-          `<span class="perm-name">${t.name}</span>`;
+        const cb = document.createElement("input");
+        cb.type = "checkbox"; cb.dataset.tool = t.name; cb.checked = !!t.enabled;
+        const badge = document.createElement("span");
+        badge.className = "perm-badge " + (t.access === "read" ? "read" : "write");
+        badge.textContent = t.access === "read" ? "R" : "W";
+        const name = document.createElement("span");
+        name.className = "perm-name"; name.textContent = t.name;
+        row.append(cb, badge, name);
         g.appendChild(row);
       }
       box.appendChild(g);
@@ -343,7 +351,11 @@
       if (pal.classList.contains("open")) { palIdx = 0; palRender(); palQ.focus(); }
     } else if (pal.classList.contains("open")) {
       if (e.key === "Escape") palClose();
-      else if (e.key === "ArrowDown") { palIdx++; palRender(); e.preventDefault(); }
+      else if (e.key === "ArrowDown") {
+        const count = palRender().length;
+        palIdx = Math.min(palIdx + 1, Math.max(0, count - 1));
+        palRender(); e.preventDefault();
+      }
       else if (e.key === "ArrowUp") { palIdx = Math.max(0, palIdx - 1); palRender(); e.preventDefault(); }
       else if (e.key === "Enter") {
         const hits = palRender();
@@ -353,6 +365,13 @@
     }
   });
   palQ.addEventListener("input", () => { palIdx = 0; palRender(); });
+
+  /* palet ook via de header-knop (touch heeft geen Ctrl+K) */
+  const palBtn = document.getElementById("palette-btn");
+  if (palBtn) palBtn.onclick = () => {
+    pal.classList.toggle("open");
+    if (pal.classList.contains("open")) { palIdx = 0; palRender(); palQ.focus(); }
+  };
 
   /* statusje in settings live houden wanneer o365 net (ont)koppeld is */
   window.addEventListener("focus", () => {

@@ -144,8 +144,8 @@ class TestAgentInbox:
         iid = inbox.add(kind="notify", title="t")
         assert inbox.resolve(iid, "done")["status"] == "done"
         assert inbox.open_count() == 0
-        again = inbox.resolve(iid, "rejected")
-        assert again["status"] == "done"  # status verandert niet meer
+        assert inbox.resolve(iid, "rejected") is None  # geen tweede transitie
+        assert inbox.get(iid)["status"] == "done"  # status verandert niet meer
 
     def test_triage_faalt_zacht(self):
         from span.jarvis.ambient import triage_message
@@ -652,7 +652,7 @@ class TestAuditFixes:
         brain = MagicMock()
         llm = MagicMock()
         llm.embed_one.return_value = [0.5, 0.5]
-        _write_formal_node(brain, llm, "Insight",
+        _write_formal_node(brain, llm, "Insight", "insight-123-1",
                            {"content": "les", "session_id": "s"}, [])
         props = brain.run.call_args_list[0].kwargs["props"]
         assert props["embedding"] == [0.5, 0.5]
@@ -781,3 +781,122 @@ class TestO365Relogin:
         sent = [c.args[0] for c in bridge.send.call_args_list]
         assert any("ABC123" in s for s in sent)
         assert any("Ingelogd als b.spaan@lomans.nl" in s for s in sent)
+
+
+class TestVerbeterRonde:
+    """Multi-agent audit-verbeterronde: goedkeuringspoort, brein-integriteit,
+    geen stil dataverlies, weerbare clients."""
+
+    # Fase 1 — atomaire claim: dubbele uitvoering structureel onmogelijk
+    def test_claim_is_atomair(self):
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        iid = inbox.add(kind="action", action="mail_send", title="x",
+                        payload={"to": ["a"], "subject": "s", "body": "b"})
+        assert inbox.claim(iid) is not None
+        assert inbox.claim(iid) is None          # tweede claim faalt
+        assert inbox.resolve(iid, "done") is not None
+        assert inbox.resolve(iid, "done") is None  # tweede resolve faalt
+
+    def test_release_zet_item_terug_op_open(self):
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        iid = inbox.add(kind="action", action="mail_send", title="x")
+        inbox.claim(iid)
+        inbox.release(iid)
+        assert inbox.get(iid)["status"] == "open"
+        assert inbox.claim(iid) is not None  # opnieuw beschikbaar
+
+    def test_agent_kan_eigen_actie_niet_goedkeuren(self):
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        o365 = MagicMock()
+        tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
+                     o365=o365, inbox=inbox, autonomy={"mail": "ask"})
+        queued = json.loads(tb.dispatch("o365_mail_send",
+                                        {"to": ["x@y.nl"], "subject": "S", "body": "B"}))
+        result = json.loads(tb.dispatch("inbox_approve", {"item_id": queued["queued"]}))
+        assert "error" in result
+        o365.send_mail.assert_not_called()
+        assert inbox.get(queued["queued"])["status"] == "open"  # blijft voor de HUD
+
+    # Fase 2 — brein-integriteit
+    def test_brain_cypher_gebruikt_read_sessie(self):
+        brain = MagicMock()
+        brain.run_read.return_value = [{"n": 1}]
+        tb = ToolBox(brain=brain, fragments=MagicMock(), session_id="s")
+        tb.dispatch("brain_cypher", {"query": "MATCH (n) RETURN count(n) AS n"})
+        brain.run_read.assert_called_once()
+        brain.run.assert_not_called()
+
+    def test_mf_ids_botsen_niet_in_zelfde_milliseconde(self):
+        from span.memory.fragments import new_mf_id
+        ids = {new_mf_id("observation") for _ in range(50)}
+        assert len(ids) == 50
+
+    def test_reflect_ids_deterministisch_per_sessie(self):
+        from span.evaluation.reflect import reflect_session
+        brain = MagicMock()
+        brain.run.return_value = []
+        fragments = MagicMock()
+        fragments.session_fragments.return_value = [{"id": "mf-1", "content": "x"}]
+        llm = MagicMock()
+        llm.embed_one.return_value = [0.1]
+        llm.chat_json.return_value = {
+            "summary": "s", "insights": [{"content": "A", "source_ids": []}],
+            "mistakes": [], "ideas": [], "quests": [], "skills": [],
+            "protocol_updates": [],
+        }
+        out1 = reflect_session(MagicMock(), brain, llm, fragments, "session-777")
+        out2 = reflect_session(MagicMock(), brain, llm, fragments, "session-777")
+        assert out1["written"]["insights"] == out2["written"]["insights"] == ["insight-777-1"]
+
+    # Fase 3 — crons: overdue once-cron draait alsnog, markeren ná succes
+    def test_once_cron_achterstallig_draait_alsnog(self):
+        from span.jarvis.crons import _is_due
+        from span.clock import now_local
+        now = now_local().replace(hour=23, minute=59)
+        cron = {"last_run": "", "at": "08:00", "repeat": "once",
+                "run_date": "2020-01-01", "weekday": -1}
+        assert _is_due(cron, now)
+
+    def test_cron_blijft_staan_na_mislukte_execute(self):
+        from span.jarvis import crons
+        brain = MagicMock()
+        cron_row = {"id": "cron-x", "text": "doe iets", "at": "00:00",
+                    "repeat": "once", "run_date": "2020-01-01", "weekday": -1,
+                    "mode": "execute", "last_run": ""}
+        brain.run.side_effect = lambda q, **kw: (
+            [{"n": 1}] if "attempts" in q else [])
+        state = {"brain": brain, "inbox": None, "telegram": None}
+        with patch.object(crons, "list_crons", return_value=[cron_row]), \
+             patch.object(crons, "_execute", return_value="Uitvoering mislukt: kapot"), \
+             patch.object(crons, "delete_cron") as dc:
+            ran = crons.run_due_crons(state)
+        assert ran == 0
+        dc.assert_not_called()  # niet verwijderd: volgende tick een nieuwe poging
+
+    # Fase 5 — retry-helper respecteert Retry-After
+    def test_retry_helper_respecteert_retry_after(self):
+        from span.integrations.http import request_with_retry
+        throttled = MagicMock(status_code=429, headers={"Retry-After": "0"})
+        ok = MagicMock(status_code=200, headers={})
+        calls = iter([throttled, ok])
+        with patch("span.integrations.http.time.sleep") as slp:
+            resp = request_with_retry(lambda: next(calls))
+        assert resp is ok
+        slp.assert_called_once()
+
+    # Settings: keys onafhankelijk — autonomy-POST raakt modellen niet aan
+    def test_telegram_send_meldt_falen(self):
+        from span.integrations.telegram import TelegramBridge
+        brain = MagicMock()
+        brain.run.return_value = []
+        bridge = TelegramBridge("tok", {"brain": brain})
+        bridge._chat_id = "123"
+        bad = MagicMock(ok=False, status_code=429, text="throttle")
+        with patch("span.integrations.telegram.requests.post", return_value=bad):
+            assert bridge.send("hoi") is False
+        good = MagicMock(ok=True, status_code=200)
+        with patch("span.integrations.telegram.requests.post", return_value=good):
+            assert bridge.send("hoi") is True

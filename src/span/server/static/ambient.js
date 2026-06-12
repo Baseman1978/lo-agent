@@ -23,7 +23,7 @@
     setTimeout(() => div.classList.add("gone"), 9000);
     setTimeout(() => div.remove(), 9600);
   }
-  const esc = (s) => String(s || "").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+  const esc = SPAN.esc;  // gedeelde escape-helper uit jarvis.js
 
   /* -- inbox poll + badge ------------------------------------------------ */
   async function poll() {

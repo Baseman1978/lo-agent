@@ -1,6 +1,6 @@
 # Span — 100 features (status: 12 juni 2026)
 
-**Geïmplementeerd (✅ ~50):** 1, 3, 4, 5, 7 (deels via conflicten), 8, 11, 12 (concept-stijl), 13, 14, 15 (deels), 17 (via triage-regels), 20 (prompt), 21 (detectie), 23, 24 (prompt), 30, 31, 32 (deels), 33, 34, 35, 36, 37, 39 (temporele props), 40, 53, 54, 55 (prompt), 57, 61, 62, 63, 64, 65, 67 (deels), 70, 71, 79 (weer), 81 (prompt), 83 (prompt), 89, 91, 92, 93 (QR/token-basis), 95 (JSON-export), 99 — plus Agent Inbox-stembediening en entiteit-extractie naar het hologram.
+**Geïmplementeerd (✅ ~50):** 1, 3, 4, 5, 7 (deels via conflicten), 8, 11, 12 (concept-stijl), 13, 14, 15 (deels), 17 (via triage-regels), 20 (prompt), 21 (detectie), 23, 24 (prompt), 30, 31, 32 (deels), 33, 34, 35, 36 (alleen decay-administratie: last_accessed/access_count worden geschreven, nog geen verval-algoritme), 37, 39 (temporele props), 40, 53, 54, 55 (prompt), 57, 61, 62, 63, 64, 65, 67 (deels), 70, 71, 79 (weer), 81 (prompt), 83 (prompt), 89, 91, 92, 93 (QR/token-basis), 95 (JSON-export), 99 — plus Agent Inbox-stembediening en entiteit-extractie naar het hologram.
 
 **Geblokkeerd op externe input van Bas:** 72 (Teams-tenant), 75 (Home Assistant), 76 (extensie-distributie), 77 (Fireflies), 25 (Maps-key), 58/93-https (domein/certificaat).
 

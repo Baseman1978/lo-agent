@@ -9,11 +9,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
+from span.clock import TZ
 from span.db.brain import BrainDB
-
-TZ = ZoneInfo("Europe/Amsterdam")  # niet uit daily.py importeren: circulair
 from span.integrations.asana import AsanaClient
 from span.integrations.o365 import O365Client
 

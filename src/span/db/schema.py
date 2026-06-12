@@ -16,6 +16,9 @@ CONSTRAINTS = [
     "CREATE CONSTRAINT protocol_name IF NOT EXISTS FOR (n:Protocol) REQUIRE n.name IS UNIQUE",
     "CREATE CONSTRAINT skill_name IF NOT EXISTS FOR (n:Skill) REQUIRE n.name IS UNIQUE",
     "CREATE CONSTRAINT quest_id IF NOT EXISTS FOR (n:Quest) REQUIRE n.id IS UNIQUE",
+    "CREATE CONSTRAINT insight_id IF NOT EXISTS FOR (n:Insight) REQUIRE n.id IS UNIQUE",
+    "CREATE CONSTRAINT mistake_id IF NOT EXISTS FOR (n:Mistake) REQUIRE n.id IS UNIQUE",
+    "CREATE CONSTRAINT idea_id IF NOT EXISTS FOR (n:Idea) REQUIRE n.id IS UNIQUE",
 ]
 
 VECTOR_INDEX = """
@@ -121,6 +124,32 @@ def init_schema(brain: BrainDB, settings: Settings) -> list[str]:
         brain.run(FORMAL_VECTOR_INDEX_TEMPLATE.format(index_name=index_name, label=label),
                   dims=settings.embed_dims)
     log.append(f"{len(FORMAL_VECTOR_INDEXES)} formele vector indexen (Insight/Mistake/Idea)")
+
+    # embedding-drift: een ander model of andere dims maakt bestaande vectors
+    # stil onbruikbaar — dan liever hard falen met een duidelijke melding
+    rows = brain.run(
+        "MATCH (c:Config {id:'runtime'}) "
+        "RETURN c.embed_model AS model, c.embed_dims AS dims"
+    )
+    stored = rows[0] if rows else {}
+    if stored.get("model") and (
+        stored["model"] != settings.embed_model
+        or stored.get("dims") != settings.embed_dims
+    ):
+        raise RuntimeError(
+            f"Embedding-config wijzigde: brein is gebouwd met "
+            f"{stored['model']}/{stored.get('dims')} dims, .env zegt nu "
+            f"{settings.embed_model}/{settings.embed_dims}. Bestaande vectors "
+            "worden dan onvergelijkbaar. Zet de oude waarden terug, of "
+            "her-embed alles bewust (scripts/backfill_formal.py als voorbeeld) "
+            "en werk daarna de Config-node bij."
+        )
+    brain.run(
+        "MERGE (c:Config {id:'runtime'}) "
+        "SET c.embed_model = $model, c.embed_dims = $dims",
+        model=settings.embed_model, dims=settings.embed_dims,
+    )
+    log.append(f"embedding-config vastgelegd ({settings.embed_model}, {settings.embed_dims} dims)")
 
     brain.run(IDENTITY_SEED)
     log.append("identity 'Span' geseed")

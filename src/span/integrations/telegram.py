@@ -56,16 +56,23 @@ class TelegramBridge:
         resp.raise_for_status()
         return resp.json().get("result", [])
 
-    def send(self, text: str, chat_id: str = "") -> None:
+    def send(self, text: str, chat_id: str = "") -> bool:
+        """Stuur een bericht; True alleen als álle chunks zijn aangekomen."""
         target = chat_id or self._chat_id
         if not target:
-            return
+            return False
+        ok = True
         for chunk in [text[i:i + 3900] for i in range(0, len(text), 3900)] or [""]:
-            requests.post(
+            resp = requests.post(
                 f"{self._base}/sendMessage",
                 json={"chat_id": target, "text": chunk},
                 timeout=30,
             )
+            if not resp.ok:
+                print(f"[telegram] sendMessage {resp.status_code}: {resp.text[:200]}",
+                      flush=True)
+                ok = False
+        return ok
 
     # -- gesprek ------------------------------------------------------------
 
@@ -170,25 +177,43 @@ class TelegramBridge:
     async def run(self) -> None:
         while True:
             try:
-                # dagstart pushen zodra die er voor vandaag is
+                # dagstart pushen zodra die er voor vandaag is;
+                # pas als 'gepusht' markeren wanneer de verzending écht slaagde
                 daily = self._state.get("daily")
                 if (daily and self._chat_id
                         and daily.get("date") != self._daily_pushed):
-                    self._daily_pushed = daily["date"]
-                    self._state["brain"].run(
-                        "MERGE (c:Config {id:'runtime'}) SET c.last_tg_daily = $d",
-                        d=daily["date"],
-                    )
-                    await asyncio.to_thread(
+                    sent = await asyncio.to_thread(
                         self.send, "🌅 DAGSTART\n\n" + daily.get("spoken", "")
                     )
+                    if sent:
+                        self._daily_pushed = daily["date"]
+                        self._state["brain"].run(
+                            "MERGE (c:Config {id:'runtime'}) SET c.last_tg_daily = $d",
+                            d=daily["date"],
+                        )
                 updates = await asyncio.to_thread(self._get_updates)
                 for upd in updates:
+                    # offset meteen door: een kapot bericht mag de stroom niet
+                    # blokkeren — maar de fout gaat wél terug naar de chat
                     self._offset = max(self._offset, upd.get("update_id", 0))
                     msg = upd.get("message") or {}
                     text = (msg.get("text") or "").strip()
                     chat_id = str((msg.get("chat") or {}).get("id", ""))
-                    if text and chat_id:
+                    if not text or not chat_id:
+                        continue
+                    try:
                         await asyncio.to_thread(self._handle_text, chat_id, text)
-            except Exception:
+                    except Exception as exc:
+                        print(f"[telegram] bericht-fout: {type(exc).__name__}: {exc}",
+                              flush=True)
+                        try:
+                            await asyncio.to_thread(
+                                self.send,
+                                f"Daar ging iets mis: {exc}. Probeer het nog eens.",
+                                chat_id,
+                            )
+                        except Exception:
+                            pass
+            except Exception as exc:
+                print(f"[telegram] poll-fout: {type(exc).__name__}: {exc}", flush=True)
                 await asyncio.sleep(10)  # netwerk-hapering: rustig doorgaan

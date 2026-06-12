@@ -37,17 +37,11 @@ class FirefliesClient:
                          "Content-Type": "application/json"}
 
     def _gql(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-        resp = None
-        for attempt in range(2):  # de API is traag bij paginatie — één retry
-            try:
-                resp = requests.post(
-                    API_URL, json={"query": query, "variables": variables},
-                    headers=self._headers, timeout=120,
-                )
-                break
-            except requests.Timeout:
-                if attempt == 1:
-                    raise
+        from span.integrations.http import request_with_retry
+        resp = request_with_retry(lambda: requests.post(
+            API_URL, json={"query": query, "variables": variables},
+            headers=self._headers, timeout=120,
+        ))
         resp.raise_for_status()
         body = resp.json()
         if body.get("errors"):
@@ -82,6 +76,6 @@ class FirefliesClient:
             if not page:
                 break
             out.extend(page)
-            skip += 25
+            skip += len(page)  # niet 25: een korte pagina zou items overslaan
             time.sleep(1)  # rustig aan met de API
         return out[:max_total]

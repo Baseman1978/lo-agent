@@ -23,13 +23,14 @@
     <div id="date">—</div>
   </div>
   <span id="health-dot" title="systeemstatus"></span>
-  <button id="inbox-btn" class="iconbtn" title="Agent Inbox — acties ter goedkeuring">⊞ <b id="inbox-badge"></b></button>
-  <button id="settings-btn" class="iconbtn" title="Instellingen">⚙</button>
+  <button id="palette-btn" class="iconbtn" title="Commando-palet (Ctrl+K)" aria-label="Commando-palet">⌘</button>
+  <button id="inbox-btn" class="iconbtn" title="Acties ter goedkeuring (Agent Inbox)" aria-label="Acties ter goedkeuring">✓ <b id="inbox-badge"></b></button>
+  <button id="settings-btn" class="iconbtn" title="Instellingen" aria-label="Instellingen">⚙</button>
 </header>
 
 <div id="toasts"></div>
 
-<div id="inbox-overlay">
+<div id="inbox-overlay" role="dialog" aria-modal="true" aria-label="Acties ter goedkeuring">
   <div id="inbox-panel" class="panel">
     <h2>⟢ Agent Inbox <button id="inbox-close" class="iconbtn">✕</button></h2>
     <div id="inbox-list" class="body"></div>
@@ -69,7 +70,7 @@
 
   <aside id="right" class="col">
     <section class="panel" id="panel-mail">
-      <h2>⟢ Inbox</h2>
+      <h2><span>⟢ Mail</span></h2>
       <div class="body" id="mail"><div class="empty">geen data</div></div>
     </section>
     <section class="panel" id="panel-quests">
@@ -86,12 +87,13 @@
   </aside>
 </main>
 
-<div id="settings-overlay">
+<div id="settings-overlay" role="dialog" aria-modal="true" aria-label="Instellingen">
   <div id="settings-panel" class="panel">
     <h2>⟢ Instellingen <button id="settings-close" class="iconbtn">✕</button></h2>
 
     <h3>Microsoft 365</h3>
     <div class="setrow"><span id="set-o365-status" class="m">…</span></div>
+    <div class="setrow"><span id="set-o365-code" class="m"></span></div>
     <div class="setrow">
       <button id="o365-login" class="ghost hidden">verbind Microsoft 365</button>
       <button id="o365-logout" class="ghost hidden">ontkoppel Microsoft 365</button>
@@ -215,8 +217,8 @@
   </div>
 </div>
 
-<div id="holo-overlay">
-  <button id="holo-close" class="iconbtn" title="Sluiten">✕</button>
+<div id="holo-overlay" role="dialog" aria-modal="true" aria-label="Brein-hologram">
+  <button id="holo-close" class="iconbtn" title="Sluiten" aria-label="Sluiten">✕</button>
   <div id="holo-full"></div>
 </div>
 

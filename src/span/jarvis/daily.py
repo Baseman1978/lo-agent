@@ -9,21 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
-TZ = ZoneInfo("Europe/Amsterdam")
-
-
-def now_local() -> datetime:
-    """Lokale tijd, ook in een UTC-container — planners denken in NL-tijd."""
-    return datetime.now(TZ)
-
-
-def today_local() -> str:
-    return now_local().date().isoformat()
-
+# re-export: ambient.py en crons.py importeren de klok van hieruit
+from span.clock import TZ, now_local, today_local  # noqa: F401
 from span.db.brain import BrainDB
 from span.jarvis.briefing import build_briefing
 from span.llm.client import LLMClient
@@ -103,27 +93,18 @@ def generate_daily(
     return {"date": today_local(), "spoken": spoken, "briefing": data}
 
 
-def _weather(lat: float = 52.156, lon: float = 5.387) -> dict[str, Any]:
-    """Weer voor Amersfoort e.o. via open-meteo (gratis, geen key). Zacht falend."""
+def _weather() -> dict[str, Any]:
+    """Weer voor de dagstart via de gedeelde weer-integratie. Zacht falend."""
     try:
-        import requests
-        resp = requests.get(
-            "https://api.open-meteo.com/v1/forecast",
-            params={
-                "latitude": lat, "longitude": lon,
-                "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
-                "current": "temperature_2m",
-                "timezone": "Europe/Amsterdam", "forecast_days": 1,
-            },
-            timeout=10,
-        )
-        resp.raise_for_status()
-        d = resp.json()
+        from span.integrations import weather as wx
+        fc = wx.forecast(wx.DEFAULT_LAT, wx.DEFAULT_LON, days=1, place=wx.DEFAULT_PLACE)
+        day = (fc.get("dagen") or [{}])[0]
         return {
-            "nu": d.get("current", {}).get("temperature_2m"),
-            "max": (d.get("daily", {}).get("temperature_2m_max") or [None])[0],
-            "min": (d.get("daily", {}).get("temperature_2m_min") or [None])[0],
-            "neerslagkans_pct": (d.get("daily", {}).get("precipitation_probability_max") or [None])[0],
+            "nu": fc.get("nu", {}).get("temperatuur"),
+            "weer": fc.get("nu", {}).get("weer"),
+            "max": day.get("max"),
+            "min": day.get("min"),
+            "neerslagkans_pct": day.get("neerslagkans_pct"),
         }
     except Exception:
         return {}
@@ -132,8 +113,8 @@ def _weather(lat: float = 52.156, lon: float = 5.387) -> dict[str, Any]:
 def _store_insight(brain, llm, content: str, source: str) -> str:
     """Insight in hetzelfde schema als reflect.py: id + content + embedding,
     zodat bootstrap en brain_search hem net zo vinden als sessie-inzichten."""
-    import time as _time
-    node_id = f"insight-{int(_time.time() * 1000) % 10000000}"
+    from uuid import uuid4
+    node_id = f"insight-{uuid4().hex[:12]}"
     embedding = None
     try:
         embedding = llm.embed_one(f"Insight: {content}")
@@ -395,6 +376,12 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
             if tg is not None and tg.linked:
                 await asyncio.to_thread(tg.send, "📊 WEEKREVIEW\n\n" + review)
 
+    # interval-administratie: 'elke ~30 min' mag nooit afhangen van het
+    # toevallig raken van een specifieke minuut (een trage tick mist die)
+    HALF_HOUR = timedelta(minutes=30)
+    orphan_last = now_local() - HALF_HOUR
+    ff_last = now_local() - HALF_HOUR
+
     while True:
         try:
             now = now_local()
@@ -402,9 +389,10 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
 
             target = briefing_time(state["brain"])
             cached = state.get("daily")
-            if now.strftime("%H:%M") >= target and (
-                not cached or cached.get("date") != today
-            ):
+            daily_key = f"daily:{today}"
+            if (now.strftime("%H:%M") >= target
+                    and (not cached or cached.get("date") != today)
+                    and attempts.get(daily_key, 0) < MAX_ATTEMPTS):
                 try:
                     state["daily"] = await asyncio.to_thread(
                         generate_daily, state["brain"], state["llm"],
@@ -412,9 +400,17 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
                         state["settings"].model_light,
                     )
                     state["daily"]["date"] = today  # NL-dag, niet UTC-dag
+                    attempts.pop(daily_key, None)
                     log("dagstart: gegenereerd")
                 except Exception as exc:
-                    log(f"dagstart: mislukt — {exc}")
+                    attempts[daily_key] = attempts.get(daily_key, 0) + 1
+                    log(f"dagstart: poging {attempts[daily_key]} mislukt — {exc}")
+                    if attempts[daily_key] >= MAX_ATTEMPTS:
+                        inbox = state.get("inbox")
+                        if inbox is not None:
+                            inbox.add(kind="notify", title="Dagstart vandaag mislukt",
+                                      detail=f"{MAX_ATTEMPTS}x geprobeerd; laatste fout: {exc}",
+                                      urgency="high")
 
             if due(EVENING_TIME, "evening", now):
                 await run_task("evening", do_evening)
@@ -433,7 +429,8 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
                 log(f"crons: mislukt — {exc}")
 
             # verweesde sessies alsnog door de evaluatiecirkel (elk half uur)
-            if now.minute % 30 == 10:
+            if now - orphan_last >= HALF_HOUR:
+                orphan_last = now
                 try:
                     done = await asyncio.to_thread(reflect_orphan_sessions, state)
                     if done:
@@ -442,7 +439,8 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
                     log(f"orphan-reflectie: mislukt — {exc}")
 
             # Fireflies-meetings binnenhalen (idempotent, elke ~30 min)
-            if state.get("fireflies") is not None and now.minute % 30 == 0:
+            if state.get("fireflies") is not None and now - ff_last >= HALF_HOUR:
+                ff_last = now
                 from span.jarvis.meetings import sync_meetings
                 try:
                     result = await asyncio.to_thread(sync_meetings, state)

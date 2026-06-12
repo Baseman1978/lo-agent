@@ -35,7 +35,8 @@ def create_cron(brain, text: str, at: str, repeat: str = "once",
         raise ValueError("weekly vereist weekday 0 (maandag) t/m 6 (zondag)")
     if mode not in {"remind", "execute"}:
         raise ValueError("mode moet remind of execute zijn")
-    cron_id = f"cron-{int(time.time() * 1000) % 10_000_000}"
+    from uuid import uuid4
+    cron_id = f"cron-{uuid4().hex[:10]}"
     brain.run(
         """
         CREATE (:Cron {
@@ -66,6 +67,9 @@ def delete_cron(brain, cron_id: str) -> bool:
     return bool(rows and rows[0]["n"])
 
 
+MAX_CRON_ATTEMPTS = 3
+
+
 def _is_due(cron: dict[str, Any], now: datetime) -> bool:
     today = now.date().isoformat()
     if cron["last_run"] == today:
@@ -74,7 +78,8 @@ def _is_due(cron: dict[str, Any], now: datetime) -> bool:
         return False
     repeat = cron["repeat"]
     if repeat == "once":
-        return cron["run_date"] == today
+        # ook achterstallig (server lag eruit op de run-dag) alsnog uitvoeren
+        return bool(cron["run_date"]) and cron["run_date"] <= today
     if repeat == "daily":
         return True
     if repeat == "weekdays":
@@ -85,27 +90,44 @@ def _is_due(cron: dict[str, Any], now: datetime) -> bool:
 
 
 def run_due_crons(state: dict[str, Any]) -> int:
-    """Draait in de minuut-scheduler. Idempotent via last_run/verwijdering."""
+    """Draait in de minuut-scheduler. Markeert pas NA succes; bij een fout
+    volgt een retry op de volgende tick, met een cap per dag."""
     brain = state["brain"]
     now = now_local()
     ran = 0
     for cron in list_crons(brain):
         if not _is_due(cron, now):
             continue
+        try:
+            if cron["mode"] == "execute":
+                result = _execute(state, cron["text"])
+                if result.startswith("Uitvoering mislukt:"):
+                    raise RuntimeError(result)
+                title, detail = f"⏰ Uitgevoerd: {cron['text'][:60]}", result[:280]
+                tg_text = f"⏰ {cron['text']}\n\n{result}"
+            else:
+                title, detail = "⏰ Herinnering", cron["text"]
+                tg_text = "⏰ HERINNERING\n\n" + cron["text"]
+        except Exception as exc:
+            attempts = brain.run(
+                "MATCH (c:Cron {id: $id}) SET c.attempts = coalesce(c.attempts, 0) + 1 "
+                "RETURN c.attempts AS n", id=cron["id"],
+            )
+            n = attempts[0]["n"] if attempts else 1
+            print(f"[cron] {cron['id']} poging {n} mislukt: {exc}", flush=True)
+            if n < MAX_CRON_ATTEMPTS:
+                continue  # volgende tick opnieuw
+            # opgeven voor vandaag, maar wel zichtbaar
+            title, detail = f"⏰ Mislukt: {cron['text'][:60]}", f"{MAX_CRON_ATTEMPTS}x geprobeerd; laatste fout: {exc}"
+            tg_text = f"⏰ MISLUKT\n{cron['text']}\n\n{exc}"
+
+        # pas hier markeren/verwijderen: de taak is gedaan (of opgegeven)
         if cron["repeat"] == "once":
             delete_cron(brain, cron["id"])
         else:
-            brain.run("MATCH (c:Cron {id: $id}) SET c.last_run = $d",
+            brain.run("MATCH (c:Cron {id: $id}) SET c.last_run = $d, c.attempts = 0",
                       id=cron["id"], d=today_local())
         ran += 1
-
-        if cron["mode"] == "execute":
-            result = _execute(state, cron["text"])
-            title, detail = f"⏰ Uitgevoerd: {cron['text'][:60]}", result[:280]
-            tg_text = f"⏰ {cron['text']}\n\n{result}"
-        else:
-            title, detail = "⏰ Herinnering", cron["text"]
-            tg_text = "⏰ HERINNERING\n\n" + cron["text"]
 
         inbox = state.get("inbox")
         if inbox is not None:
@@ -115,7 +137,7 @@ def run_due_crons(state: dict[str, Any]) -> int:
             try:
                 tg.send(tg_text)
             except Exception:
-                pass
+                print(f"[cron] telegram-push mislukt voor {cron['id']}", flush=True)
     return ran
 
 

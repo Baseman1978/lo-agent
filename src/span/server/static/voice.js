@@ -90,7 +90,7 @@
       queueOpen--;
       if (queueOpen <= 0) {
         if (SPAN.state === "speaking") SPAN.setState("idle");
-        if (last) openHotWindow(); else resumeWake();
+        if (last) openHotWindow();  // wake-modus herstart zichzelf via onend
       }
     };
     speechSynthesis.speak(u);  // queued: zinnen sluiten op elkaar aan
@@ -167,10 +167,17 @@
   const wave = document.getElementById("wave");
   if (wave) {
     const wc = wave.getContext("2d");
-    let simPhase = 0;
+    let simPhase = 0, lastW = 0, lastH = 0;
     function drawWave() {
-      const W = wave.width = wave.clientWidth * devicePixelRatio;
-      const H = wave.height = 56 * devicePixelRatio;
+      // width/height alleen toewijzen bij échte resize: toewijzen reset
+      // de canvas-state en forceert een herallocatie, elke frame is zonde
+      const wantW = wave.clientWidth * devicePixelRatio;
+      const wantH = 56 * devicePixelRatio;
+      if (wantW !== lastW || wantH !== lastH) {
+        wave.width = lastW = wantW;
+        wave.height = lastH = wantH;
+      }
+      const W = lastW, H = lastH;
       const FXon = !window.SPANFX || window.SPANFX.on(1);
       wc.clearRect(0, 0, W, H);
       if (!FXon) { requestAnimationFrame(drawWave); return; }
@@ -416,5 +423,4 @@
   function openHotWindow() {
     if (mode === "wake") { hotUntil = Date.now() + 6000; }
   }
-  function resumeWake() { /* auto-herstart regelt dit */ }
 })();

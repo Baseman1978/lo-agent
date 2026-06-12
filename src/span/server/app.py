@@ -50,11 +50,15 @@ def _is_local(host: str | None) -> bool:
     return host in {"127.0.0.1", "::1", "localhost"}
 
 
-def _check_token(token: str, client_host: str | None) -> bool:
+def _check_token(token: str, client_host: str | None,
+                 forwarded: bool = False) -> bool:
     expected = _auth_token()
     if expected:
-        return token == expected
-    return _is_local(client_host)  # geen token gezet: alleen lokaal toegestaan
+        import hmac
+        return hmac.compare_digest(token, expected)
+    # geen token gezet: alleen écht lokaal. Een request dat via een proxy of
+    # tunnel binnenkomt (X-Forwarded-For) lijkt lokaal maar is het niet.
+    return _is_local(client_host) and not forwarded
 
 
 @asynccontextmanager
@@ -110,10 +114,11 @@ async def lifespan(app: FastAPI):
         _state["telegram"] = TelegramBridge(tg_token, _state)
         telegram_task = asyncio.create_task(_state["telegram"].run())
     yield
-    scheduler.cancel()
-    watcher.cancel()
-    if telegram_task:
-        telegram_task.cancel()
+    tasks = [t for t in (scheduler, watcher, telegram_task) if t is not None]
+    for t in tasks:
+        t.cancel()
+    # wacht tot de taken echt gestopt zijn vóór de db-verbinding dichtgaat
+    await asyncio.gather(*tasks, return_exceptions=True)
     brain.close()
     if work:
         work.close()
@@ -131,7 +136,9 @@ async def index() -> FileResponse:
 def _require_rest_auth(request: Request) -> None:
     token = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
     client_host = request.client.host if request.client else None
-    if not _check_token(token, client_host):
+    forwarded = bool(request.headers.get("x-forwarded-for")
+                     or request.headers.get("x-real-ip"))
+    if not _check_token(token, client_host, forwarded=forwarded):
         raise HTTPException(status_code=401, detail="Ongeldige of ontbrekende token.")
 
 
@@ -139,9 +146,19 @@ def _require_rest_auth(request: Request) -> None:
 async def status(request: Request) -> dict[str, Any]:
     _require_rest_auth(request)
     brain: BrainDB = _state["brain"]
-    counts = {}
-    for label in ["MemoryFragment", "Insight", "Mistake", "Idea", "Quest", "Skill", "Protocol", "Session"]:
-        counts[label] = brain.run(f"MATCH (n:{label}) RETURN count(n) AS n")[0]["n"]
+
+    def _counts() -> dict[str, int]:
+        rows = brain.run(
+            "UNWIND $labels AS label "
+            "CALL { WITH label MATCH (n) WHERE label IN labels(n) "
+            "RETURN count(n) AS n } "
+            "RETURN label, n",
+            labels=["MemoryFragment", "Insight", "Mistake", "Idea", "Quest",
+                    "Skill", "Protocol", "Session"],
+        )
+        return {r["label"]: r["n"] for r in rows}
+
+    counts = await asyncio.to_thread(_counts)
     return {"agent": AGENT_NAME, "version": __version__, "counts": counts}
 
 
@@ -232,9 +249,13 @@ def _tools_overview() -> list[dict[str, Any]]:
 
 @app.post("/api/settings")
 async def save_settings(request: Request) -> dict[str, Any]:
-    """Model-overrides opslaan (leeg = terug naar default uit .env)."""
+    """Instellingen opslaan. Elke key wordt onafhankelijk verwerkt; alleen
+    keys die in de body staan worden aangeraakt (een autonomy-POST kan dus
+    nooit per ongeluk de model-overrides wissen)."""
     _require_rest_auth(request)
     body = await request.json()
+    result: dict[str, Any] = {"saved": True}
+
     if "autonomy" in body:
         new = body["autonomy"] or {}
         for key in ("mail", "event"):
@@ -246,8 +267,8 @@ async def save_settings(request: Request) -> dict[str, Any]:
             "SET c.autonomy_mail = $m, c.autonomy_event = $e",
             m=_state["autonomy"]["mail"], e=_state["autonomy"]["event"],
         )
-        if len(body) == 1:
-            return {"saved": True, "autonomy": dict(_state["autonomy"])}
+        result["autonomy"] = dict(_state["autonomy"])
+
     if "disabled_tools" in body:
         from span.orchestrator.tools import TOOL_META
         disabled = [t for t in (body["disabled_tools"] or []) if t in TOOL_META]
@@ -256,17 +277,22 @@ async def save_settings(request: Request) -> dict[str, Any]:
             _state["brain"].run,
             "MERGE (c:Config {id:'runtime'}) SET c.disabled_tools = $d", d=disabled,
         )
-        if len(body) == 1:
-            return {"saved": True, "disabled_tools": disabled}
+        result["disabled_tools"] = disabled
+
     if "system_prompt" in body:
         sp = str(body["system_prompt"])[:8000].strip()
+        if sp and "{bootstrap}" not in sp:
+            # zonder deze placeholder verliest Span zijn hele geheugen-context
+            sp += "\n\n{bootstrap}"
+            result["system_prompt_note"] = ("{bootstrap} ontbrak en is automatisch "
+                                            "toegevoegd — anders start Span zonder geheugen.")
         await asyncio.to_thread(
             _state["brain"].run,
             "MERGE (c:Config {id:'runtime'}) SET c.system_prompt = $sp",
             sp=sp or None,  # leeg = terug naar de ingebouwde standaard
         )
-        if len(body) == 1:
-            return {"saved": True, "custom": bool(sp)}
+        result["custom"] = bool(sp)
+
     if "triage_rules" in body:
         rules = str(body["triage_rules"])[:2000]
         _state["triage_rules"] = rules
@@ -274,35 +300,37 @@ async def save_settings(request: Request) -> dict[str, Any]:
             _state["brain"].run,
             "MERGE (c:Config {id:'runtime'}) SET c.triage_rules = $r", r=rules,
         )
-        if len(body) == 1:
-            return {"saved": True}
+
     if "briefing_time" in body:
         try:
-            saved = await asyncio.to_thread(
+            result["briefing_time"] = await asyncio.to_thread(
                 set_briefing_time, _state["brain"], str(body["briefing_time"])
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
-        if len(body) == 1:
-            return {"saved": True, "briefing_time": saved}
-    main = str(body.get("model_main", "")).strip()
-    light = str(body.get("model_light", "")).strip()
-    base: Settings = _state["settings"]
-    if main == base.model_main:
-        main = ""  # default expliciet gekozen → geen override
-    if light == base.model_light:
-        light = ""
-    brain: BrainDB = _state["brain"]
-    await asyncio.to_thread(
-        brain.run,
-        "MERGE (c:Config {id:'runtime'}) "
-        "SET c.model_main = $main, c.model_light = $light, c.updated = datetime()",
-        main=main or None,
-        light=light or None,
-    )
-    _state["model_overrides"] = {"model_main": main or None, "model_light": light or None}
-    eff = _effective_settings()
-    return {"saved": True, "model_main": eff.model_main, "model_light": eff.model_light}
+
+    if "model_main" in body or "model_light" in body:
+        main = str(body.get("model_main", "")).strip()
+        light = str(body.get("model_light", "")).strip()
+        base: Settings = _state["settings"]
+        if main == base.model_main:
+            main = ""  # default expliciet gekozen → geen override
+        if light == base.model_light:
+            light = ""
+        await asyncio.to_thread(
+            _state["brain"].run,
+            "MERGE (c:Config {id:'runtime'}) "
+            "SET c.model_main = $main, c.model_light = $light, c.updated = datetime()",
+            main=main or None,
+            light=light or None,
+        )
+        _state["model_overrides"] = {"model_main": main or None,
+                                     "model_light": light or None}
+        eff = _effective_settings()
+        result["model_main"] = eff.model_main
+        result["model_light"] = eff.model_light
+
+    return result
 
 
 @app.get("/api/models")
@@ -379,15 +407,19 @@ async def inbox_approve(request: Request, item_id: int) -> dict[str, Any]:
     """Keur een actie goed en voer hem uit; needs_reply = concept laten schrijven."""
     _require_rest_auth(request)
     inbox: AgentInbox = _state["inbox"]
-    item = inbox.get(item_id)
-    if item is None or item["status"] != "open":
+    item = inbox.claim(item_id)  # atomair: dubbelklik kan nooit twee keer uitvoeren
+    if item is None:
         raise HTTPException(status_code=404, detail="Item niet gevonden of al afgehandeld.")
     from span.jarvis.ambient import execute_approval
-    result = await asyncio.to_thread(
-        execute_approval, item, _state.get("o365"),
-        _state["llm"], _effective_settings().model_light, _state.get("asana"),
-    )
-    _audit(item["action"] or item["kind"], item["title"])
+    try:
+        result = await asyncio.to_thread(
+            execute_approval, item, _state.get("o365"),
+            _state["llm"], _effective_settings().model_light, _state.get("asana"),
+        )
+    except Exception:
+        inbox.release(item_id)  # mislukt: item blijft open voor een nieuwe poging
+        raise
+    await asyncio.to_thread(_audit, item["action"] or item["kind"], item["title"])
     inbox.resolve(item_id, "done")
     return {"approved": True, "result": result}
 
@@ -440,12 +472,14 @@ async def upload_document(request: Request, filename: str = Query(...)) -> dict[
     raw = await request.body()
     if not raw:
         raise HTTPException(status_code=422, detail="Leeg bestand.")
+    if len(raw) > 20_000_000:
+        raise HTTPException(status_code=413, detail="Bestand groter dan 20 MB.")
     from span.jarvis.documents import ingest_document
     try:
         result = await asyncio.to_thread(ingest_document, _state, filename, raw)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    _audit("document_ingest", f"{filename} ({result['chunks']} delen)")
+    await asyncio.to_thread(_audit, "document_ingest", f"{filename} ({result['chunks']} delen)")
     return result
 
 
@@ -622,7 +656,8 @@ async def ws_chat(ws: WebSocket) -> None:
     except (json.JSONDecodeError, WebSocketDisconnect):
         await ws.close(code=1002)
         return
-    if not _check_token(str(hello.get("token", "")), client_host):
+    ws_forwarded = bool(ws.headers.get("x-forwarded-for") or ws.headers.get("x-real-ip"))
+    if not _check_token(str(hello.get("token", "")), client_host, forwarded=ws_forwarded):
         await ws.send_json({"type": "error", "error": "auth", "message": "Token ongeldig."})
         await ws.close(code=4401)
         return
@@ -648,9 +683,7 @@ async def ws_chat(ws: WebSocket) -> None:
 
             if msg.get("type") == "location":
                 try:
-                    agent.user_location = {"lat": float(msg["lat"]), "lon": float(msg["lon"])}
-                    if agent._toolbox is not None:  # sessie loopt al: direct bijwerken
-                        agent._toolbox._user_location = agent.user_location
+                    agent.set_location(float(msg["lat"]), float(msg["lon"]))
                 except (KeyError, TypeError, ValueError):
                     pass
                 continue
@@ -681,12 +714,23 @@ async def ws_chat(ws: WebSocket) -> None:
                 future.add_done_callback(
                     lambda _f: loop.call_soon_threadsafe(queue.put_nowait, None)
                 )
-                while True:
-                    chunk = await queue.get()
-                    if chunk is None:
-                        break
-                    await ws.send_json({"type": "delta", "text": chunk})
-                answer = await future
+                try:
+                    while True:
+                        chunk = await queue.get()
+                        if chunk is None:
+                            break
+                        await ws.send_json({"type": "delta", "text": chunk})
+                    answer = await future
+                except Exception as exc:
+                    # beurt netjes laten aflopen (recorder schrijft nog), dan melden
+                    await asyncio.wait([future])
+                    if isinstance(exc, WebSocketDisconnect):
+                        raise
+                    await ws.send_json({
+                        "type": "error", "error": "turn",
+                        "message": f"Er ging iets mis in deze beurt: {exc}",
+                    })
+                    continue
                 if agent.last_touched:
                     await ws.send_json({"type": "touched", "ids": agent.last_touched})
                 await ws.send_json({"type": "done", "answer": answer})

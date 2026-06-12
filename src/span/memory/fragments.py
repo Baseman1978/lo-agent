@@ -24,9 +24,11 @@ MF_TYPES = {
 
 
 def new_mf_id(mf_type: str) -> str:
-    """Id-vorm volgt het origineel: mf-<epoch-ms>-<typecode>-<slug komt erachter>."""
+    """Id-vorm volgt het origineel, plus random suffix: twee recorder-threads
+    in dezelfde milliseconde mogen nooit op de unique constraint klappen."""
+    from uuid import uuid4
     code = "".join(part[0] for part in mf_type.split("-"))
-    return f"mf-{int(time.time() * 1000)}-{code}"
+    return f"mf-{int(time.time() * 1000)}-{code}-{uuid4().hex[:6]}"
 
 
 class FragmentStore:

@@ -9,7 +9,6 @@ niet via losse schrijfacties middenin een gesprek.
 from __future__ import annotations
 
 import json
-import time
 from typing import Any
 
 from span.db.brain import BrainDB
@@ -605,8 +604,10 @@ class ToolBox:
         return results
 
     def _tool_brain_cypher(self, query: str) -> Any:
-        assert_read_only(query)
-        return self._brain.run(query)[:50]
+        assert_read_only(query)  # vriendelijke eerste foutmelding
+        # de database dwingt het af: READ_ACCESS weigert elke schrijfactie,
+        # ook via procedures die de regex niet kent
+        return self._brain.run_read(query)[:50]
 
     def _tool_remember(self, type: str, content: str, context: str = "") -> Any:
         mf_id = self._fragments.write(
@@ -621,7 +622,8 @@ class ToolBox:
         id: str = "",
         steps: list[dict[str, Any]] | None = None,
     ) -> Any:
-        quest_id = id.strip() or f"quest-{int(time.time()) % 100000}"
+        from uuid import uuid4
+        quest_id = id.strip() or f"quest-{uuid4().hex[:12]}"
         self._brain.run(
             """
             MERGE (q:Quest {id: $id})
@@ -675,6 +677,7 @@ class ToolBox:
                 title=f"Mail aan {', '.join(to)}",
                 detail=f"{subject} — {body[:120]}",
                 payload={"to": to, "subject": subject, "body": body},
+                origin="agent",  # door Span gequeued → alleen Bas mag goedkeuren
             )
             return {"queued": item_id,
                     "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
@@ -704,6 +707,7 @@ class ToolBox:
                 detail=f"{start} – {end}" + (f" · {len(attendees)} genodigden" if attendees else ""),
                 payload={"subject": subject, "start": start, "end": end,
                          "attendees": attendees or [], "body": body},
+                origin="agent",  # door Span gequeued → alleen Bas mag goedkeuren
             )
             return {"queued": item_id,
                     "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
@@ -747,11 +751,21 @@ class ToolBox:
 
     def _tool_inbox_approve(self, item_id: int) -> Any:
         from span.jarvis.ambient import execute_approval
-        item = self._inbox.get(int(item_id))
-        if item is None or item["status"] != "open":
+        peek = self._inbox.get(int(item_id))
+        if peek is not None and peek.get("origin") == "agent":
+            # injectie-vangrail: een actie die Span zelf heeft klaargezet mag
+            # Span niet ook zelf goedkeuren — dat doet Bas in de HUD of CLI
+            return {"error": "Dit item is door mijzelf klaargezet; goedkeuren kan "
+                             "alleen via de knop in de HUD (of de terminal)."}
+        item = self._inbox.claim(int(item_id))
+        if item is None:
             return {"error": "Item niet gevonden of al afgehandeld."}
-        result = execute_approval(item, self._o365, self._llm, self._light_model,
-                                  asana=self._asana)
+        try:
+            result = execute_approval(item, self._o365, self._llm, self._light_model,
+                                      asana=self._asana)
+        except Exception:
+            self._inbox.release(int(item_id))
+            raise
         self._inbox.resolve(int(item_id), "done")
         return {"approved": True, "result": result}
 
@@ -792,11 +806,13 @@ class ToolBox:
         return self._fireflies.recent_transcripts(limit=limit)
 
     def _tool_fireflies_sync(self, deep: bool = False) -> Any:
+        from types import SimpleNamespace
+
         from span.jarvis.meetings import sync_meetings
         # mini-state met wat sync_meetings nodig heeft
         state = {"fireflies": self._fireflies, "brain": self._brain,
                  "llm": self._llm, "inbox": self._inbox, "asana": self._asana,
-                 "settings": type("S", (), {"model_light": self._light_model})()}
+                 "settings": SimpleNamespace(model_light=self._light_model)}
         return sync_meetings(state, deep=bool(deep))
 
     def _tool_weather(self, place: str = "", days: int = 3) -> Any:

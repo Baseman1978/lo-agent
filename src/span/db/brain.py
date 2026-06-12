@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from neo4j import GraphDatabase, Driver
+from neo4j import GraphDatabase, Driver, READ_ACCESS
 
 from span.config import Settings
 
@@ -29,6 +29,15 @@ class BrainDB:
 
     def run(self, query: str, **params: Any) -> list[dict[str, Any]]:
         with self._driver.session(database=self.database) as session:
+            result = session.run(query, **params)
+            return [record.data() for record in result]
+
+    def run_read(self, query: str, **params: Any) -> list[dict[str, Any]]:
+        """Strikt lezen: de database zelf weigert schrijfacties (READ_ACCESS),
+        onafhankelijk van wat een regex-check ervan vindt."""
+        with self._driver.session(
+            database=self.database, default_access_mode=READ_ACCESS
+        ) as session:
             result = session.run(query, **params)
             return [record.data() for record in result]
 

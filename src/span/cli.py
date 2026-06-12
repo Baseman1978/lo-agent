@@ -162,6 +162,12 @@ def chat() -> None:
             _handle_inbox(inbox, o365, asana, llm, settings)
             message = None
     finally:
+        # recorder-threads eerst laten landen: ook bij /quit of een crash
+        # blijven de fragmenten van de laatste beurt bewaard
+        try:
+            agent.flush_recording(timeout=10)
+        except Exception:
+            pass
         brain.close()
         if work:
             work.close()
@@ -227,12 +233,17 @@ def _handle_inbox(inbox, o365, asana, llm, settings) -> None:
         ))
         answer = console.input("[bold yellow]uitvoeren? (j/n)[/bold yellow] > ").strip().lower()
         if answer in {"j", "ja", "y", "yes"}:
+            claimed = inbox.claim(item["id"])
+            if claimed is None:
+                console.print("[dim]Al afgehandeld via een ander kanaal.[/dim]")
+                continue
             try:
-                execute_approval(item, o365, llm=llm,
+                execute_approval(claimed, o365, llm=llm,
                                  light_model=settings.model_light, asana=asana)
                 inbox.resolve(item["id"], "approved")
                 console.print("[green]Uitgevoerd.[/green]")
             except Exception as exc:
+                inbox.release(item["id"])  # blijft open voor een nieuwe poging
                 console.print(f"[red]Mislukt:[/red] {exc}")
         else:
             inbox.resolve(item["id"], "rejected")

@@ -13,7 +13,6 @@ from __future__ import annotations
 import io
 import os
 import re
-import time
 from pathlib import Path
 from typing import Any
 
@@ -119,7 +118,8 @@ def ingest_document(state: dict[str, Any], filename: str, raw: bytes) -> dict[st
 
     brain = state["brain"]
     llm = state["llm"]
-    doc_id = f"doc-{int(time.time() * 1000) % 100_000_000}"
+    from uuid import uuid4
+    doc_id = f"doc-{uuid4().hex[:12]}"
 
     # opslag op schijf: origineel + markdown (zacht falend)
     try:

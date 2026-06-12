@@ -49,6 +49,7 @@ class AgentInbox:
         action: str = "",     # bij kind=action: mail_send | event_create
         payload: dict[str, Any] | None = None,
         urgency: str = "normal",
+        origin: str = "",     # "agent" = door Span zelf gequeued (zie inbox_approve)
     ) -> int:
         item = {
             "id": next(self._ids),
@@ -58,6 +59,7 @@ class AgentInbox:
             "action": action,
             "payload": payload or {},
             "urgency": urgency,
+            "origin": origin,
             "status": "open",
             "created": now_local().isoformat(timespec="seconds"),
         }
@@ -70,12 +72,34 @@ class AgentInbox:
         with self._lock:
             return next((i for i in self._items if i["id"] == item_id), None)
 
+    def claim(self, item_id: int) -> dict[str, Any] | None:
+        """Atomair open → processing. Alleen de aanroeper die het item te
+        pakken krijgt mag het uitvoeren — dubbelklik in de HUD of HUD+voice
+        tegelijk kan zo nooit twee keer dezelfde mail versturen."""
+        with self._lock:
+            item = next((i for i in self._items if i["id"] == item_id), None)
+            if item is None or item["status"] != "open":
+                return None
+            item["status"] = "processing"
+            return dict(item)
+
+    def release(self, item_id: int) -> None:
+        """Processing → open (uitvoering mislukt; item blijft beschikbaar)."""
+        with self._lock:
+            item = next((i for i in self._items if i["id"] == item_id), None)
+            if item is not None and item["status"] == "processing":
+                item["status"] = "open"
+
     def resolve(self, item_id: int, status: str) -> dict[str, Any] | None:
-        item = self.get(item_id)
-        if item and item["status"] == "open":
+        """Open/processing → eindstatus. Geeft None terug als er geen
+        transitie plaatsvond (al afgehandeld door een ander pad)."""
+        with self._lock:
+            item = next((i for i in self._items if i["id"] == item_id), None)
+            if item is None or item["status"] not in {"open", "processing"}:
+                return None
             item["status"] = status
             item["resolved"] = now_local().isoformat(timespec="seconds")
-        return item
+            return dict(item)
 
     def snapshot(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -193,8 +217,9 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
     Eerste ronde seedt alleen de 'gezien'-set, zodat een herstart geen
     stortvloed aan oude meldingen geeft.
     """
-    seen: set[str] = set()
-    prepped: set[str] = set()
+    # dicts als geordende sets: trimmen verwijdert het óúdste, niet willekeur
+    seen: dict[str, bool] = {}
+    prepped: dict[str, bool] = {}
     first_run = True
     while True:
         try:
@@ -243,21 +268,21 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
                     except ValueError:
                         continue
                     if 0 < minutes <= 20:
-                        prepped.add(key)
+                        prepped[key] = True
                         detail = await asyncio.to_thread(build_meeting_prep, state, event)
                         inbox.add(kind="notify", title="Meeting prep", detail=detail,
                                   urgency="high")
                         tg = state.get("telegram")
                         if tg is not None and tg.linked:
                             await asyncio.to_thread(tg.send, "📋 MEETING PREP\n" + detail)
-                if len(prepped) > 100:
-                    prepped = set(list(prepped)[-50:])
+                while len(prepped) > 100:  # oudste eruit, niet willekeurig
+                    prepped.pop(next(iter(prepped)))
                 mails = await asyncio.to_thread(o365.inbox, 15, True)
                 for mail in mails:
                     mid = mail.get("graph_id") or ""
                     if not mid or mid in seen:
                         continue
-                    seen.add(mid)
+                    seen[mid] = True
                     if first_run:
                         continue  # alleen seeden
                     triage = await asyncio.to_thread(
@@ -280,9 +305,10 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
                         },
                         urgency=triage["urgency"],
                     )
-                if len(seen) > 500:
-                    seen = set(list(seen)[-250:])
+                while len(seen) > 500:  # oudste eruit, niet willekeurig
+                    seen.pop(next(iter(seen)))
                 first_run = False
-        except Exception:
-            pass  # watcher mag nooit sterven
+        except Exception as exc:
+            # watcher mag nooit sterven, maar fouten zijn wél zichtbaar
+            print(f"[watcher] tick-fout: {type(exc).__name__}: {exc}", flush=True)
         await asyncio.sleep(interval)

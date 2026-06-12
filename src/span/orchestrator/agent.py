@@ -138,6 +138,12 @@ class SpanAgent:
             raise RuntimeError("Sessie niet gestart.")
         return self._session_id
 
+    def set_location(self, lat: float, lon: float) -> None:
+        """Browser-GPS doorzetten naar de weer-tool, ook mid-sessie."""
+        self.user_location = {"lat": lat, "lon": lon}
+        if self._toolbox is not None:
+            self._toolbox._user_location = self.user_location
+
     def begin(self, session_id: str, first_message: str | None = None) -> BootstrapContext:
         """Bootstrap: cirkel rond — vorige sessies komen mee als context."""
         self._session_id = session_id
@@ -176,6 +182,9 @@ class SpanAgent:
         if self._toolbox is None:
             raise RuntimeError("Roep eerst begin() aan.")
 
+        # RAG-memo is efemeer: alleen voor déze beurt meegegeven, niet in de
+        # historie bewaard — voorkomt token-groei en verouderde hints
+        memo_msg: dict[str, str] | None = None
         relevant = self._fragments.search(user_message, k=4)
         if relevant:
             memo = "\n".join(
@@ -184,12 +193,10 @@ class SpanAgent:
                 if r["score"] > 0.55
             )
             if memo:
-                self._messages.append(
-                    {
-                        "role": "system",
-                        "content": f"Geheugen dient zich aan (mogelijk relevant):\n{memo}",
-                    }
-                )
+                memo_msg = {
+                    "role": "system",
+                    "content": f"Geheugen dient zich aan (mogelijk relevant):\n{memo}",
+                }
 
         self._messages.append({"role": "user", "content": user_message})
 
@@ -200,7 +207,7 @@ class SpanAgent:
         answer_parts: list[str] = []
         for _ in range(MAX_TOOL_ITERATIONS):
             message = self._llm.chat(
-                self._messages,
+                self._messages + ([memo_msg] if memo_msg else []),
                 model=self._settings.model_main,
                 tools=self._toolbox.specs(),
                 on_text=on_text,

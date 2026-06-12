@@ -9,7 +9,6 @@ uitbreidingsvoorstel (Idea, kind 'schema'). Protocollen mogen evolueren.
 from __future__ import annotations
 
 import json
-import time
 from typing import Any
 
 from span.config import Settings
@@ -79,7 +78,7 @@ def reflect_session(
     written: dict[str, list[str]] = {}
 
     for label, key in (("Insight", "insights"), ("Mistake", "mistakes"), ("Idea", "ideas")):
-        for item in parsed.get(key, []):
+        for index, item in enumerate(parsed.get(key, []), start=1):
             content = (item.get("content") or "").strip()
             if not content:
                 continue
@@ -88,17 +87,22 @@ def reflect_session(
                 props["lesson"] = (item.get("lesson") or "").strip()
             if label == "Idea":
                 props["kind"] = item.get("kind", "general")
-            node_id = _write_formal_node(brain, llm, label, props, item.get("source_ids", []))
+            # deterministische id: een retry van dezelfde sessie maakt
+            # geen duplicaten (MERGE) en kan nooit botsen met andere sessies
+            node_id = f"{label.lower()}-{session_id.removeprefix('session-')}-{index}"
+            _write_formal_node(brain, llm, label, node_id, props,
+                               item.get("source_ids", []))
             written.setdefault(key, []).append(node_id)
 
-    for quest in parsed.get("quests", []):
+    for index, quest in enumerate(parsed.get("quests", []), start=1):
         title = (quest.get("title") or "").strip()
         if not title:
             continue
-        quest_id = f"quest-{int(time.time() * 1000) % 1000000}"
+        quest_id = f"quest-{session_id.removeprefix('session-')}-{index}"
         brain.run(
             """
-            CREATE (q:Quest {id: $id, title: $title, status: $status, created: datetime()})
+            MERGE (q:Quest {id: $id})
+            ON CREATE SET q.title = $title, q.status = $status, q.created = datetime()
             """,
             id=quest_id,
             title=title,
@@ -108,7 +112,8 @@ def reflect_session(
             brain.run(
                 """
                 MATCH (q:Quest {id: $id})
-                CREATE (q)-[:HAS_STEP]->(:QuestStep {order: $order, body: $body, status: 'open'})
+                MERGE (q)-[:HAS_STEP]->(st:QuestStep {order: $order})
+                ON CREATE SET st.body = $body, st.status = 'open'
                 """,
                 id=quest_id,
                 order=order,
@@ -160,10 +165,9 @@ def reflect_session(
 
 
 def _write_formal_node(
-    brain: BrainDB, llm: LLMClient, label: str, props: dict[str, Any],
-    source_ids: list[str],
+    brain: BrainDB, llm: LLMClient, label: str, node_id: str,
+    props: dict[str, Any], source_ids: list[str],
 ) -> str:
-    node_id = f"{label.lower()}-{int(time.time() * 1000) % 10000000}"
     assert label in {"Insight", "Mistake", "Idea"}  # label komt uit vaste set hierboven
     # embedding maakt formele kennis vindbaar via brain_search (cirkel-leeskant)
     embed_text = f"{label}: {props['content']}"
@@ -174,7 +178,8 @@ def _write_formal_node(
     except Exception as exc:
         print(f"[reflect] embedding {node_id} mislukt: {exc}", flush=True)
     brain.run(
-        f"CREATE (n:{label} {{id: $id, created: datetime()}}) SET n += $props",
+        f"MERGE (n:{label} {{id: $id}}) ON CREATE SET n.created = datetime() "
+        "SET n += $props",
         id=node_id,
         props=props,
     )

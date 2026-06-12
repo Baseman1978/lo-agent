@@ -24,12 +24,16 @@ class AsanaClient:
     # -- helpers ------------------------------------------------------------
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        resp = self._session.get(f"{BASE}{path}", params=params, timeout=30)
+        from span.integrations.http import request_with_retry
+        resp = request_with_retry(lambda: self._session.get(
+            f"{BASE}{path}", params=params, timeout=30))
         resp.raise_for_status()
         return resp.json()["data"]
 
     def _request(self, method: str, path: str, payload: dict[str, Any]) -> Any:
-        resp = self._session.request(method, f"{BASE}{path}", json={"data": payload}, timeout=30)
+        from span.integrations.http import request_with_retry
+        resp = request_with_retry(lambda: self._session.request(
+            method, f"{BASE}{path}", json={"data": payload}, timeout=30))
         resp.raise_for_status()
         return resp.json()["data"]
 

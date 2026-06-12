@@ -121,8 +121,10 @@ SPAN.sys = (text, cls) => {
   if (cls === "warn" && SPAN.glitch) SPAN.glitch();
 };
 
-let wsWanted = true, reconnectDelay = 1500;
+let wsWanted = true, reconnectDelay = 1500, reconnectTimer = 0;
 function connect() {
+  clearTimeout(reconnectTimer);
+  if (ws && ws.readyState <= 1) return;  // al verbonden of bezig: geen dubbele socket
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws/chat`);
   ws.onopen = () => {
@@ -143,7 +145,8 @@ function connect() {
     SPAN.busy = false; SPAN.setState("idle");
     if (!wsWanted) return;  // bewust gesloten (na evaluatie)
     SPAN.sys("Verbinding verbroken — opnieuw verbinden…");
-    setTimeout(connect, reconnectDelay);
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connect, reconnectDelay);
     reconnectDelay = Math.min(15000, reconnectDelay * 1.6);
   };
 }
@@ -250,13 +253,23 @@ function fill(id, nodes, emptyText) {
   if (!nodes.length) { box.innerHTML = `<div class="empty">${emptyText}</div>`; return; }
   nodes.forEach((n) => box.appendChild(n));
 }
-const esc = (s) => String(s || "").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+const esc = SPAN.esc = (s) => String(s || "").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
 const hhmm = (iso) => (iso || "").slice(11, 16);
+
+/* panelen in herkenbare foutstaat zetten i.p.v. eeuwig 'geen data' */
+function panelsError(reason) {
+  for (const id of ["agenda", "taken", "mail", "quests"]) {
+    const box = $(id);
+    if (box && !box.querySelector(".item")) {
+      box.innerHTML = `<div class="empty warn-text">kon niet verversen (${esc(reason)}) — probeert het zo opnieuw</div>`;
+    }
+  }
+}
 
 async function loadPanels() {
   try {
     const res = await fetch("/api/jarvis/briefing", { headers: SPAN.authHeaders() });
-    if (!res.ok) return;
+    if (!res.ok) { panelsError("HTTP " + res.status); return; }
     const d = await res.json();
 
     fill("agenda", (d.calendar || []).map((e) =>
@@ -284,7 +297,7 @@ async function loadPanels() {
       d.integrations && d.integrations.o365 ? "inbox leeg ✦" : "O365 niet verbonden");
     const unreadCount = (d.unread_mail || []).length;
     const mailTitle = document.querySelector("#panel-mail h2 span");
-    if (mailTitle) mailTitle.textContent = "⟢ Inbox" + (unreadCount ? ` · ${unreadCount} ongelezen` : "");
+    if (mailTitle) mailTitle.textContent = "⟢ Mail" + (unreadCount ? ` · ${unreadCount} nieuw` : "");
 
     const REPEAT_LABEL = { once: "eenmalig", daily: "dagelijks",
       weekdays: "werkdagen", weekly: "wekelijks" };
@@ -298,13 +311,15 @@ async function loadPanels() {
     ];
     fill("quests", questItems, "geen open quests of geplande taken");
 
-  } catch (e) { /* stil */ }
+  } catch (e) { panelsError("netwerk"); }
   try {
     const res = await fetch("/api/status", { headers: SPAN.authHeaders() });
     if (!res.ok) return;
     const c = (await res.json()).counts;
     $("brein").innerHTML = "";
-    localStorage.setItem("span_mf_count", c.MemoryFragment);
+    if (Number.isFinite(c.MemoryFragment)) {
+      localStorage.setItem("span_mf_count", c.MemoryFragment);
+    }
     for (const [label, key] of [["herinneringen", "MemoryFragment"], ["inzichten", "Insight"],
       ["skills", "Skill"], ["quests", "Quest"], ["sessies", "Session"]]) {
       const div = document.createElement("div");
@@ -321,25 +336,45 @@ async function loadPanels() {
 setInterval(loadPanels, 90000);
 
 /* -- O365 device login ----------------------------------------------------- */
+let o365Poll = 0;
+function o365Status(text, isError) {
+  // code + status zichtbaar in de settings-rij zelf (de chat zit achter de overlay)
+  const slot = $("set-o365-code");
+  if (slot) {
+    slot.textContent = text;
+    slot.classList.toggle("warn-text", !!isError);
+  }
+  SPAN.sys(text, isError ? "warn" : undefined);
+}
 $("o365-login").onclick = async () => {
+  clearInterval(o365Poll);
   try {
     const res = await fetch("/api/auth/o365/start", { method: "POST", headers: SPAN.authHeaders() });
     const d = await res.json();
-    if (!res.ok) { SPAN.sys(d.detail || "Login starten mislukt", "warn"); return; }
-    SPAN.sys(`Microsoft 365: ga naar ${d.verification_uri} en voer code ${d.user_code} in.`, "warn");
+    if (!res.ok) { o365Status(d.detail || "Login starten mislukt", true); return; }
+    o365Status(`Ga naar ${d.verification_uri} en voer code ${d.user_code} in.`);
     window.open(d.verification_uri, "_blank");
-    const poll = setInterval(async () => {
-      const s = await (await fetch("/api/auth/o365/status", { headers: SPAN.authHeaders() })).json();
-      if (s.authenticated) {
-        clearInterval(poll);
-        SPAN.sys(`Microsoft 365 verbonden: ${s.account}`);
-        SPAN.chime(880, .12); loadPanels();
-        if (SPAN.refreshSettings) SPAN.refreshSettings();
-      } else if (s.flow && s.flow.status === "error") {
-        clearInterval(poll); SPAN.sys("O365 login mislukt: " + s.flow.error, "warn");
-      }
+    let tries = 0;
+    o365Poll = setInterval(async () => {
+      try {
+        if (++tries > 90) {  // ~6 min: device code is dan toch verlopen
+          clearInterval(o365Poll);
+          o365Status("Login verlopen — klik opnieuw op verbinden.", true);
+          return;
+        }
+        const s = await (await fetch("/api/auth/o365/status", { headers: SPAN.authHeaders() })).json();
+        if (s.authenticated) {
+          clearInterval(o365Poll);
+          o365Status(`Microsoft 365 verbonden: ${s.account}`);
+          SPAN.chime(880, .12); loadPanels();
+          if (SPAN.refreshSettings) SPAN.refreshSettings();
+        } else if (s.flow && s.flow.status === "error") {
+          clearInterval(o365Poll);
+          o365Status("O365 login mislukt: " + s.flow.error, true);
+        }
+      } catch (e) { /* netwerk-hapering: volgende tick opnieuw */ }
     }, 4000);
-  } catch (e) { SPAN.sys("Login starten mislukt.", "warn"); }
+  } catch (e) { o365Status("Login starten mislukt.", true); }
 };
 
 $("o365-logout").onclick = async () => {
@@ -387,6 +422,23 @@ addEventListener("dragover", (e) => { e.preventDefault(); });
 addEventListener("drop", async (e) => {
   e.preventDefault();
   for (const f of e.dataTransfer.files) await uploadDoc(f);
+});
+
+/* -- Escape sluit de bovenste open overlay ---------------------------------- */
+addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  for (const id of ["holo-overlay", "settings-overlay", "inbox-overlay"]) {
+    const ov = $(id);
+    if (ov && ov.classList.contains("open")) {
+      if (id === "holo-overlay") {
+        $("holo-close").click();  // verhuist de 3D-scene netjes terug
+      } else {
+        ov.classList.remove("open");
+      }
+      e.preventDefault();
+      return;
+    }
+  }
 });
 
 /* -- invoer ----------------------------------------------------------------- */
