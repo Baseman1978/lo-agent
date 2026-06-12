@@ -124,6 +124,7 @@ def reflect_session(
             """
             MERGE (sk:Skill {name: $name})
             ON CREATE SET sk.created = datetime(), sk.usage_count = 0
+            ON MATCH SET sk.usage_count = coalesce(sk.usage_count, 0) + 1
             SET sk.description = $description, sk.trigger = $trigger,
                 sk.body = $body, sk.updated = datetime()
             """,

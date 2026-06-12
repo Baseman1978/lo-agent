@@ -397,6 +397,46 @@ class TestDaily:
         assert out["spoken"]  # valt terug op greeting
 
 
+class TestZelflerendSysteem:
+    def test_skill_herhaling_verhoogt_usage_count(self):
+        from span.evaluation.reflect import reflect_session
+        brain = MagicMock()
+        brain.run.return_value = []
+        fragments = MagicMock()
+        fragments.session_fragments.return_value = [{"id": "mf-1", "content": "x"}]
+        llm = MagicMock()
+        llm.chat_json.return_value = {
+            "summary": "s",
+            "skills": [{"name": "ssh-agent-fix", "description": "d",
+                        "trigger": "t", "body": "b", "source_ids": []}],
+        }
+        reflect_session(MagicMock(model_main="m"), brain, llm, fragments, "s-1")
+        skill_query = next(q.args[0] for q in brain.run.call_args_list
+                           if "MERGE (sk:Skill" in q.args[0])
+        assert "ON MATCH SET sk.usage_count" in skill_query
+
+    def test_orphan_sessies_worden_gereflecteerd(self):
+        from span.jarvis.daily import reflect_orphan_sessions
+        brain = MagicMock()
+        brain.run.return_value = [{"id": "session-oud"}]
+        state = {"brain": brain, "llm": MagicMock(), "inbox": None,
+                 "settings": MagicMock()}
+        with patch("span.evaluation.reflect.reflect_session",
+                   return_value={"summary": "ok", "written": {"insights": ["i-1"]}}) as rs, \
+             patch("span.memory.fragments.FragmentStore"):
+            assert reflect_orphan_sessions(state) == 1
+            rs.assert_called_once()
+
+    def test_orphan_query_filtert_op_leeftijd_en_inhoud(self):
+        from span.jarvis.daily import reflect_orphan_sessions
+        brain = MagicMock()
+        brain.run.return_value = []
+        assert reflect_orphan_sessions({"brain": brain, "llm": MagicMock(),
+                                        "settings": MagicMock()}) == 0
+        q = brain.run.call_args.args[0]
+        assert "s.ended IS NULL" in q and "PT3H" in q and "MemoryFragment" in q
+
+
 class TestProactief:
     def test_overlappende_afspraken_gedetecteerd(self):
         from span.jarvis.briefing import _overlaps

@@ -250,6 +250,42 @@ def _mark_run(brain, key: str) -> None:
     )
 
 
+def reflect_orphan_sessions(state: dict[str, Any], max_sessions: int = 2) -> int:
+    """Sessies die nooit netjes met /end zijn afgesloten (tab dicht, verbinding
+    weg) alsnog evalueren zodra ze > 3 uur oud zijn — de cirkel blijft rond."""
+    brain = state["brain"]
+    orphans = brain.run(
+        """
+        MATCH (s:Session)
+        WHERE s.ended IS NULL
+          AND s.started < datetime() - duration('PT3H')
+          AND EXISTS { MATCH (:MemoryFragment)-[:FROM_SESSION]->(s) }
+        RETURN s.id AS id ORDER BY s.started LIMIT $n
+        """,
+        n=max_sessions,
+    )
+    if not orphans:
+        return 0
+    from span.evaluation.reflect import reflect_session
+    from span.memory.fragments import FragmentStore
+    fragments = FragmentStore(brain, state["llm"])
+    done = 0
+    for row in orphans:
+        try:
+            result = reflect_session(state["settings"], brain, state["llm"],
+                                     fragments, row["id"])
+            done += 1
+            inbox = state.get("inbox")
+            if inbox is not None and result.get("written"):
+                inbox.add(
+                    kind="notify", title="Achtergelaten sessie geëvalueerd",
+                    detail=f"{row['id']}: {result['summary'][:160]}",
+                )
+        except Exception:
+            continue
+    return done
+
+
 EVENING_TIME = "17:15"
 CONSOLIDATE_TIME = "03:30"
 
@@ -323,6 +359,10 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
             # door Span zelf geplande taken/herinneringen
             from span.jarvis.crons import run_due_crons
             await asyncio.to_thread(run_due_crons, state)
+
+            # verweesde sessies alsnog door de evaluatiecirkel (elk half uur)
+            if now.minute % 30 == 10:
+                await asyncio.to_thread(reflect_orphan_sessions, state)
 
             # Fireflies-meetings binnenhalen (idempotent, elke ~30 min)
             if state.get("fireflies") is not None and now.minute % 30 == 0:
