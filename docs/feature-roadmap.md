@@ -118,6 +118,14 @@ Binnen elke categorie gerangschikt op waarde.
 78. **OneDrive-bestanden as tool** (M) — zoeken/lezen in eigen bestanden via Graph.
 79. **Weer + verkeer in dagstart** (S) — open-meteo + ANWB-feed; relevant voor bouwplaatsbezoek.
 80. **iCal-publicatie** (S) — Span-gegenereerde focus-blokken als abonneerbare agenda.
+101. **WhatsApp-bridge "Nova Agent"-groep** (M, backlog 12-6-2026) — zelfde rol als
+    de Telegram-bridge maar in WhatsApp, met QR-koppeling en een eigen groep.
+    Besluit na afweging: officiële Business Cloud API ondersteunt géén groepen en
+    vereist publieke webhook + apart zakelijk nummer; onofficiële route (Baileys,
+    QR via Linked Devices) kan groepen wél maar schendt de WhatsApp-voorwaarden →
+    reëel ban-risico voor het gekoppelde nummer. Alléén uitvoeren met een apart
+    prepaid nummer, nooit met Bas' eigen nummer. Telegram blijft het primaire
+    kanaal tot dit opgepakt wordt.
 
 ## 9. Taken, quests & productiviteit
 
