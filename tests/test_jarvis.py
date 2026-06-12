@@ -735,3 +735,49 @@ class TestAuditFixes:
             _handle_inbox(inbox, o365, None, MagicMock(), MagicMock())
         o365.send_mail.assert_called_once_with("jan@x.nl", "s", "b")
         assert inbox.snapshot()[0]["status"] == "approved"
+
+
+class TestO365Relogin:
+    """Token-refresh kan niet voorbij Lomans' 8-uursbeleid; wel: detectie +
+    her-login vanaf de telefoon via Telegram /login."""
+
+    def _bridge(self, state_extra=None):
+        from span.integrations.telegram import TelegramBridge
+        brain = MagicMock()
+        brain.run.return_value = [{"cid": "123", "d": ""}]
+        state = {"brain": brain}
+        state.update(state_extra or {})
+        bridge = TelegramBridge("tok", state)
+        bridge._chat_id = "123"
+        bridge.send = MagicMock()
+        return bridge
+
+    def test_login_zonder_o365_geeft_nette_melding(self):
+        bridge = self._bridge({"o365": None})
+        bridge._handle_text("123", "/login")
+        assert "niet geconfigureerd" in bridge.send.call_args.args[0]
+
+    def test_login_al_ingelogd(self):
+        o365 = MagicMock()
+        o365.is_authenticated.return_value = True
+        o365.account_name.return_value = "b.spaan@lomans.nl"
+        bridge = self._bridge({"o365": o365})
+        bridge._handle_text("123", "/login")
+        assert "Al ingelogd" in bridge.send.call_args.args[0]
+        o365.start_device_flow.assert_not_called()
+
+    def test_login_stuurt_device_code_en_rondt_af(self):
+        import time as _t
+        o365 = MagicMock()
+        o365.is_authenticated.return_value = False
+        o365.start_device_flow.return_value = {"message": "Ga naar microsoft.com/devicelogin en voer code ABC123 in."}
+        o365.complete_device_flow.return_value = "b.spaan@lomans.nl"
+        bridge = self._bridge({"o365": o365})
+        bridge._handle_text("123", "/login")
+        for _ in range(50):  # wacht op de achtergrond-thread
+            if bridge.send.call_count >= 2:
+                break
+            _t.sleep(0.02)
+        sent = [c.args[0] for c in bridge.send.call_args_list]
+        assert any("ABC123" in s for s in sent)
+        assert any("Ingelogd als b.spaan@lomans.nl" in s for s in sent)

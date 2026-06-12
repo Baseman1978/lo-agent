@@ -110,6 +110,10 @@ class TelegramBridge:
         if chat_id != self._chat_id:
             return  # alleen de gekoppelde chat wordt bediend
 
+        if text.strip() == "/login":
+            self._start_o365_login()
+            return
+
         if text.strip() == "/end":
             if self._agent is not None:
                 from span.evaluation.reflect import reflect_session
@@ -130,6 +134,36 @@ class TelegramBridge:
         agent = self._ensure_agent()
         answer = agent.turn(text)
         self.send(answer)
+
+    def _start_o365_login(self) -> None:
+        """O365 opnieuw koppelen vanaf de telefoon: device code via Telegram.
+        De code invoeren gebeurt bij Microsoft zelf — er gaat geen wachtwoord
+        of token door deze chat."""
+        o365 = self._state.get("o365")
+        if o365 is None:
+            self.send("Microsoft 365 is niet geconfigureerd op de server.")
+            return
+        if o365.is_authenticated():
+            self.send(f"Al ingelogd als {o365.account_name()}.")
+            return
+        try:
+            flow = o365.start_device_flow()
+        except Exception as exc:
+            self.send(f"Kon geen login starten: {exc}")
+            return
+        self.send("🔐 " + flow.get("message", "Login gestart."))
+
+        import threading
+
+        def _complete() -> None:
+            try:
+                account = o365.complete_device_flow(flow)
+                self._state["o365_authenticated"] = True
+                self.send(f"Ingelogd als {account}. Mail, agenda en taken draaien weer.")
+            except Exception as exc:
+                self.send(f"Inloggen niet afgerond: {exc}")
+
+        threading.Thread(target=_complete, daemon=True).start()
 
     # -- hoofd-loop ------------------------------------------------------------
 

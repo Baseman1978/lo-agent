@@ -208,7 +208,27 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
                 state["triage_rules"] = (rows[0]["r"] if rows else None) or ""
             except Exception:
                 pass
-            if o365 is not None and o365.is_authenticated():
+            # token-bewaking: silent refresh gebeurt bij elke check; verloopt
+            # de koppeling toch (Lomans sign-in frequency, 8u) → één melding
+            now_auth = o365 is not None and await asyncio.to_thread(o365.is_authenticated)
+            if state.get("o365_authenticated") and not now_auth:
+                inbox.add(
+                    kind="notify", title="Microsoft 365-koppeling verlopen",
+                    detail="Lomans vraagt elke 8 uur een nieuwe login (conditional "
+                           "access). Koppel opnieuw via ⚙ in de HUD, of stuur "
+                           "/login via Telegram.",
+                    urgency="high",
+                )
+                tg = state.get("telegram")
+                if tg is not None and tg.linked:
+                    await asyncio.to_thread(
+                        tg.send,
+                        "🔐 Je Microsoft 365-login is verlopen (8-uursbeleid van "
+                        "Lomans). Stuur /login om opnieuw te koppelen.",
+                    )
+            state["o365_authenticated"] = now_auth
+
+            if now_auth:
                 # meeting prep: 0-20 min vóór de start
                 events = await asyncio.to_thread(o365.calendar, 1)
                 # naive NL-tijd: agenda-starttijden uit Graph zijn ook naive lokaal
