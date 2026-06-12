@@ -105,7 +105,11 @@ def chat() -> None:
     """Interactieve sessie. /end = evalueren + afsluiten, /mem <vraag> = geheugen zoeken."""
     settings, brain, llm, work = _connect()
     o365, asana = build_integrations(settings)
-    agent = SpanAgent(settings, brain, llm, work, o365=o365, asana=asana)
+    # zelfde vangrail als de web-UI: gevoelige acties (mail, agenda, Asana)
+    # gaan via de Agent Inbox en wachten op expliciet akkoord in de terminal
+    from span.jarvis.ambient import AgentInbox
+    inbox = AgentInbox()
+    agent = SpanAgent(settings, brain, llm, work, o365=o365, asana=asana, inbox=inbox)
     try:
         console.print(
             Panel.fit(
@@ -155,6 +159,7 @@ def chat() -> None:
 
             agent.turn(message, on_text=stream_chunk)
             console.print("\n")
+            _handle_inbox(inbox, o365, asana, llm, settings)
             message = None
     finally:
         brain.close()
@@ -207,6 +212,31 @@ def reflect(session_id: str) -> None:
         _run_reflect(settings, brain, llm, fragments, session_id)
     finally:
         brain.close()
+
+
+def _handle_inbox(inbox, o365, asana, llm, settings) -> None:
+    """Open actie-items uit de Agent Inbox interactief afhandelen — de
+    CLI-tegenhanger van de goedkeuringsknoppen in de HUD."""
+    from span.jarvis.ambient import execute_approval
+    for item in inbox.snapshot():
+        if item["status"] != "open" or item["kind"] != "action":
+            continue
+        console.print(Panel(
+            f"{item['title']}\n[dim]{item['detail']}[/dim]",
+            title=f"Wacht op akkoord · {item['action']}", border_style="yellow",
+        ))
+        answer = console.input("[bold yellow]uitvoeren? (j/n)[/bold yellow] > ").strip().lower()
+        if answer in {"j", "ja", "y", "yes"}:
+            try:
+                execute_approval(item, o365, llm=llm,
+                                 light_model=settings.model_light, asana=asana)
+                inbox.resolve(item["id"], "approved")
+                console.print("[green]Uitgevoerd.[/green]")
+            except Exception as exc:
+                console.print(f"[red]Mislukt:[/red] {exc}")
+        else:
+            inbox.resolve(item["id"], "rejected")
+            console.print("[dim]Afgewezen — niets verstuurd.[/dim]")
 
 
 def _run_reflect(settings, brain, llm, fragments, session_id: str) -> None:

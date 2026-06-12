@@ -12,8 +12,10 @@ Opslag in het brein (Cron-nodes), dus herstart-bestendig.
 from __future__ import annotations
 
 import time
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
+
+from span.jarvis.daily import now_local, today_local
 
 REPEATS = {"once", "daily", "weekdays", "weekly"}
 WEEKDAYS = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]
@@ -26,7 +28,7 @@ def create_cron(brain, text: str, at: str, repeat: str = "once",
     if repeat not in REPEATS:
         raise ValueError(f"repeat moet één van {sorted(REPEATS)} zijn")
     if repeat == "once" and not run_date:
-        run_date = date.today().isoformat()
+        run_date = today_local()
     if repeat == "once":
         datetime.strptime(run_date, "%Y-%m-%d")
     if repeat == "weekly" and (weekday is None or not 0 <= int(weekday) <= 6):
@@ -65,7 +67,7 @@ def delete_cron(brain, cron_id: str) -> bool:
 
 
 def _is_due(cron: dict[str, Any], now: datetime) -> bool:
-    today = date.today().isoformat()
+    today = now.date().isoformat()
     if cron["last_run"] == today:
         return False
     if now.strftime("%H:%M") < cron["at"]:
@@ -85,7 +87,7 @@ def _is_due(cron: dict[str, Any], now: datetime) -> bool:
 def run_due_crons(state: dict[str, Any]) -> int:
     """Draait in de minuut-scheduler. Idempotent via last_run/verwijdering."""
     brain = state["brain"]
-    now = datetime.now()
+    now = now_local()
     ran = 0
     for cron in list_crons(brain):
         if not _is_due(cron, now):
@@ -94,7 +96,7 @@ def run_due_crons(state: dict[str, Any]) -> int:
             delete_cron(brain, cron["id"])
         else:
             brain.run("MATCH (c:Cron {id: $id}) SET c.last_run = $d",
-                      id=cron["id"], d=date.today().isoformat())
+                      id=cron["id"], d=today_local())
         ran += 1
 
         if cron["mode"] == "execute":

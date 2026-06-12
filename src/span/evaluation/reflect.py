@@ -88,7 +88,7 @@ def reflect_session(
                 props["lesson"] = (item.get("lesson") or "").strip()
             if label == "Idea":
                 props["kind"] = item.get("kind", "general")
-            node_id = _write_formal_node(brain, label, props, item.get("source_ids", []))
+            node_id = _write_formal_node(brain, llm, label, props, item.get("source_ids", []))
             written.setdefault(key, []).append(node_id)
 
     for quest in parsed.get("quests", []):
@@ -160,10 +160,19 @@ def reflect_session(
 
 
 def _write_formal_node(
-    brain: BrainDB, label: str, props: dict[str, Any], source_ids: list[str]
+    brain: BrainDB, llm: LLMClient, label: str, props: dict[str, Any],
+    source_ids: list[str],
 ) -> str:
     node_id = f"{label.lower()}-{int(time.time() * 1000) % 10000000}"
     assert label in {"Insight", "Mistake", "Idea"}  # label komt uit vaste set hierboven
+    # embedding maakt formele kennis vindbaar via brain_search (cirkel-leeskant)
+    embed_text = f"{label}: {props['content']}"
+    if props.get("lesson"):
+        embed_text += f"\nLes: {props['lesson']}"
+    try:
+        props = {**props, "embedding": llm.embed_one(embed_text)}
+    except Exception as exc:
+        print(f"[reflect] embedding {node_id} mislukt: {exc}", flush=True)
     brain.run(
         f"CREATE (n:{label} {{id: $id, created: datetime()}}) SET n += $props",
         id=node_id,

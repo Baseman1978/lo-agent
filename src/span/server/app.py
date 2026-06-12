@@ -422,7 +422,8 @@ async def backup(request: Request) -> Any:
             "MATCH (a)-[r]->(b) RETURN elementId(a) AS source, type(r) AS type, "
             "elementId(b) AS target"
         )
-        return {"exported": str(__import__('datetime').datetime.now()),
+        from span.jarvis.daily import now_local
+        return {"exported": now_local().isoformat(timespec="seconds"),
                 "nodes": nodes, "relationships": rels}
 
     data = await asyncio.to_thread(dump)
@@ -508,14 +509,15 @@ async def jarvis_daily(request: Request, force: bool = Query(False)) -> dict[str
     """De dagstart van vandaag; genereert hem alsnog als de scheduler nog
     niet geweest is (of bij force=true)."""
     _require_rest_auth(request)
-    from datetime import date
+    from span.jarvis.daily import today_local
     cached = _state.get("daily")
-    if force or not cached or cached.get("date") != date.today().isoformat():
+    if force or not cached or cached.get("date") != today_local():
         _state["daily"] = await asyncio.to_thread(
             generate_daily, _state["brain"], _state["llm"],
             _state.get("o365"), _state.get("asana"),
             _effective_settings().model_light,
         )
+        _state["daily"]["date"] = today_local()
     return _state["daily"]
 
 

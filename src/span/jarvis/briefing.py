@@ -9,8 +9,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from span.db.brain import BrainDB
+
+TZ = ZoneInfo("Europe/Amsterdam")  # niet uit daily.py importeren: circulair
 from span.integrations.asana import AsanaClient
 from span.integrations.o365 import O365Client
 
@@ -39,7 +42,7 @@ def build_briefing(
     owner: str = "Bas",
 ) -> dict[str, Any]:
     """Alles voor 'JARVIS, geef me mijn briefing' — en voor de HUD-panelen."""
-    now = datetime.now()
+    now = datetime.now(TZ)
     briefing: dict[str, Any] = {
         "greeting": f"{_greeting(now)}, {owner}.",
         "timestamp": now.isoformat(timespec="seconds"),

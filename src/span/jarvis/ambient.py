@@ -16,6 +16,8 @@ import threading
 from datetime import datetime
 from typing import Any
 
+from span.jarvis.daily import now_local
+
 TRIAGE_PROMPT = """Je bent het triage-subsysteem van Span, de JARVIS van Bas Spaan
 (installatietechniek, Lomans). Hieronder één nieuwe e-mail. Classificeer:
 
@@ -57,7 +59,7 @@ class AgentInbox:
             "payload": payload or {},
             "urgency": urgency,
             "status": "open",
-            "created": datetime.now().isoformat(timespec="seconds"),
+            "created": now_local().isoformat(timespec="seconds"),
         }
         with self._lock:
             self._items.append(item)
@@ -72,7 +74,7 @@ class AgentInbox:
         item = self.get(item_id)
         if item and item["status"] == "open":
             item["status"] = status
-            item["resolved"] = datetime.now().isoformat(timespec="seconds")
+            item["resolved"] = now_local().isoformat(timespec="seconds")
         return item
 
     def snapshot(self) -> list[dict[str, Any]]:
@@ -209,7 +211,8 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
             if o365 is not None and o365.is_authenticated():
                 # meeting prep: 0-20 min vóór de start
                 events = await asyncio.to_thread(o365.calendar, 1)
-                now = datetime.now()
+                # naive NL-tijd: agenda-starttijden uit Graph zijn ook naive lokaal
+                now = now_local().replace(tzinfo=None)
                 for event in events[:6]:
                     key = f"{event.get('subject')}|{event.get('start')}"
                     start_raw = (event.get("start") or "")[:19]

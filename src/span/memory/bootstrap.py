@@ -27,6 +27,8 @@ class BootstrapContext:
     skills: list[dict[str, Any]]
     relevant: list[dict[str, Any]] = field(default_factory=list)
     recent_sessions: list[dict[str, Any]] = field(default_factory=list)
+    insights: list[dict[str, Any]] = field(default_factory=list)
+    lessons: list[dict[str, Any]] = field(default_factory=list)
 
 
 def start_session(brain: BrainDB) -> str:
@@ -96,6 +98,22 @@ def load_bootstrap(
         """
     )
 
+    # formele kennis uit de evaluatiecirkel — de leeskant van het leren
+    insights = brain.run(
+        """
+        MATCH (n:Insight) WHERE n.content IS NOT NULL
+        RETURN n.id AS id, n.content AS content
+        ORDER BY n.created DESC LIMIT 8
+        """
+    )
+    lessons = brain.run(
+        """
+        MATCH (n:Mistake) WHERE n.content IS NOT NULL
+        RETURN n.id AS id, n.content AS content, coalesce(n.lesson, '') AS lesson
+        ORDER BY n.created DESC LIMIT 6
+        """
+    )
+
     relevant: list[dict[str, Any]] = []
     if first_message and first_message.strip():
         relevant = fragments.search(first_message, k=6)
@@ -119,6 +137,8 @@ def load_bootstrap(
         skills=skills,
         relevant=relevant,
         recent_sessions=recent_sessions,
+        insights=insights,
+        lessons=lessons,
     )
 
 
@@ -161,6 +181,17 @@ def render_bootstrap(ctx: BootstrapContext) -> str:
         lines.append("\n# Soul (persoonlijkheidsmomenten)")
         for s in ctx.soul:
             lines.append(f"- {s['content']}")
+
+    if ctx.insights:
+        lines.append("\n# Inzichten (gedestilleerd door de evaluatiecirkel)")
+        for i in ctx.insights:
+            lines.append(f"- [{i['id']}] {i['content']}")
+
+    if ctx.lessons:
+        lines.append("\n# Lessen uit fouten")
+        for m in ctx.lessons:
+            les = f" → Les: {m['lesson']}" if m.get("lesson") else ""
+            lines.append(f"- [{m['id']}] {m['content']}{les}")
 
     if ctx.recent_sessions:
         lines.append("\n# Recente sessies (waar het de laatste tijd over ging)")

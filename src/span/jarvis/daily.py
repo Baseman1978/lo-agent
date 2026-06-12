@@ -1,4 +1,4 @@
-"""Autonome dagstart — elke ochtend staat de briefing klaar, ongevraagd.
+﻿"""Autonome dagstart — elke ochtend staat de briefing klaar, ongevraagd.
 
 Een achtergrondtaak genereert op het ingestelde tijdstip (Config-node,
 default 07:00) de briefing plus een spreekbare samenvatting (licht model).
@@ -9,8 +9,20 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
+
+TZ = ZoneInfo("Europe/Amsterdam")
+
+
+def now_local() -> datetime:
+    """Lokale tijd, ook in een UTC-container — planners denken in NL-tijd."""
+    return datetime.now(TZ)
+
+
+def today_local() -> str:
+    return now_local().date().isoformat()
 
 from span.db.brain import BrainDB
 from span.jarvis.briefing import build_briefing
@@ -88,7 +100,7 @@ def generate_daily(
         spoken = (message.content or "").strip()
     except Exception:
         spoken = data.get("greeting", "Goedemorgen.")
-    return {"date": date.today().isoformat(), "spoken": spoken, "briefing": data}
+    return {"date": today_local(), "spoken": spoken, "briefing": data}
 
 
 def _weather(lat: float = 52.156, lon: float = 5.387) -> dict[str, Any]:
@@ -115,6 +127,24 @@ def _weather(lat: float = 52.156, lon: float = 5.387) -> dict[str, Any]:
         }
     except Exception:
         return {}
+
+
+def _store_insight(brain, llm, content: str, source: str) -> str:
+    """Insight in hetzelfde schema als reflect.py: id + content + embedding,
+    zodat bootstrap en brain_search hem net zo vinden als sessie-inzichten."""
+    import time as _time
+    node_id = f"insight-{int(_time.time() * 1000) % 10000000}"
+    embedding = None
+    try:
+        embedding = llm.embed_one(f"Insight: {content}")
+    except Exception as exc:
+        print(f"[insight] embedding mislukt: {exc}", flush=True)
+    brain.run(
+        "CREATE (n:Insight {id: $id, content: $content, source: $source, "
+        "created: datetime()}) SET n.embedding = $embedding",
+        id=node_id, content=content, source=source, embedding=embedding,
+    )
+    return node_id
 
 
 WEEKREVIEW_PROMPT = """Je bent Span. Hieronder de sessie-samenvattingen en fragmenten van
@@ -144,11 +174,7 @@ def generate_weekreview(brain, llm, light_model=None) -> str:
     )
     review = (message.content or "").strip()
     if review:
-        brain.run(
-            "CREATE (:Insight {title: $title, body: $body, source: 'weekreview', "
-            "created: datetime()})",
-            title=f"Weekreview {date.today().isoformat()}", body=review,
-        )
+        _store_insight(brain, llm, f"Weekreview {today_local()}: {review}", "weekreview")
     return review
 
 
@@ -172,7 +198,7 @@ def generate_evening(brain, llm, o365=None, asana=None, light_model=None) -> dic
         spoken = (message.content or "").strip()
     except Exception:
         spoken = "De dag zit erop."
-    return {"date": date.today().isoformat(), "spoken": spoken, "briefing": data}
+    return {"date": today_local(), "spoken": spoken, "briefing": data}
 
 
 def consolidate_memory(brain, llm, light_model=None) -> dict[str, int]:
@@ -207,11 +233,7 @@ def consolidate_memory(brain, llm, light_model=None) -> dict[str, int]:
         title = (ins.get("title") or "").strip()
         body = (ins.get("body") or "").strip()
         if title and body:
-            brain.run(
-                "CREATE (:Insight {title: $title, body: $body, "
-                "source: 'consolidatie', created: datetime()})",
-                title=title, body=body,
-            )
+            _store_insight(brain, llm, f"{title}: {body}", "consolidatie")
             insight_count += 1
     # tegenspraken: alleen melden als ze niet eerder gemeld zijn, daarna vlaggen
     contradictions = []
@@ -246,7 +268,7 @@ def _last_run(brain, key: str) -> str:
 def _mark_run(brain, key: str) -> None:
     brain.run(
         f"MERGE (c:Config {{id:'runtime'}}) SET c.last_{key} = $d",
-        d=date.today().isoformat(),
+        d=today_local(),
     )
 
 
@@ -281,7 +303,8 @@ def reflect_orphan_sessions(state: dict[str, Any], max_sessions: int = 2) -> int
                     kind="notify", title="Achtergelaten sessie geëvalueerd",
                     detail=f"{row['id']}: {result['summary'][:160]}",
                 )
-        except Exception:
+        except Exception as exc:
+            print(f"[orphan-reflectie] {row['id']}: {type(exc).__name__}: {exc}", flush=True)
             continue
     return done
 
@@ -290,108 +313,151 @@ EVENING_TIME = "17:15"
 CONSOLIDATE_TIME = "03:30"
 
 
+MAX_ATTEMPTS = 3  # daarna geven we de dagtaak op (met melding) i.p.v. te spammen
+
+
 async def daily_scheduler(state: dict[str, Any]) -> None:
-    """Achtergrondtaak: dagstart, dagafsluiting en nachtelijke consolidatie.
-    Laatste-run-datums staan in de Config-node, zodat een herstart niets
-    dubbel uitvoert."""
+    """Achtergrondtaak in NL-tijd: dagstart, dagafsluiting, consolidatie,
+    weekreview, crons, orphan-reflectie en Fireflies-sync.
+
+    Faal-gedrag: een taak wordt pas als 'gedaan' gemarkeerd NA succes; bij een
+    fout volgt een log-regel en een retry op de volgende tick, met een cap van
+    MAX_ATTEMPTS per dag (daarna één melding in de Agent Inbox)."""
+    attempts: dict[str, int] = {}
+
+    def log(msg: str) -> None:
+        print(f"[scheduler {now_local():%H:%M}] {msg}", flush=True)
+
+    async def run_task(key: str, coro_fn) -> None:
+        """Voer een dagtaak uit met mark-after-success en attempt-cap."""
+        attempt_key = f"{key}:{today_local()}"
+        if attempts.get(attempt_key, 0) >= MAX_ATTEMPTS:
+            return
+        try:
+            await coro_fn()
+            _mark_run(state["brain"], key)
+            attempts.pop(attempt_key, None)
+            log(f"{key}: gelukt")
+        except Exception as exc:
+            attempts[attempt_key] = attempts.get(attempt_key, 0) + 1
+            log(f"{key}: poging {attempts[attempt_key]} mislukt — {type(exc).__name__}: {exc}")
+            if attempts[attempt_key] >= MAX_ATTEMPTS:
+                _mark_run(state["brain"], key)  # opgeven voor vandaag
+                inbox = state.get("inbox")
+                if inbox is not None:
+                    inbox.add(kind="notify", title=f"Taak '{key}' vandaag mislukt",
+                              detail=f"{MAX_ATTEMPTS}x geprobeerd; laatste fout: {exc}",
+                              urgency="high")
 
     def due(target: str, key: str, now: datetime) -> bool:
-        today = date.today().isoformat()
         return (now.strftime("%H:%M") >= target
-                and _last_run(state["brain"], key) != today)
+                and _last_run(state["brain"], key) != today_local())
 
-    def mark(key: str) -> None:
-        _mark_run(state["brain"], key)
+    async def do_evening() -> None:
+        evening = await asyncio.to_thread(
+            generate_evening, state["brain"], state["llm"],
+            state.get("o365"), state.get("asana"), state["settings"].model_light,
+        )
+        state["evening"] = evening
+        inbox = state.get("inbox")
+        if inbox is not None:
+            inbox.add(kind="notify", title="Dagafsluiting", detail=evening["spoken"][:240])
+        tg = state.get("telegram")
+        if tg is not None and tg.linked:
+            await asyncio.to_thread(tg.send, "🌇 DAGAFSLUITING\n\n" + evening["spoken"])
+
+    async def do_consolidate() -> None:
+        result = await asyncio.to_thread(
+            consolidate_memory, state["brain"], state["llm"],
+            state["settings"].model_light,
+        )
+        inbox = state.get("inbox")
+        if inbox is not None:
+            if result["duplicates"] or result["insights"]:
+                inbox.add(kind="notify", title="Nachtelijke consolidatie",
+                          detail=f"{result['duplicates']} duplicaten samengevoegd, "
+                                 f"{result['insights']} nieuwe inzichten.")
+            for c in result.get("contradictions", []):
+                inbox.add(kind="notify", title="Tegenspraak in het geheugen",
+                          detail=f"{c['issue']} ({', '.join(c['ids'])}) — welke klopt?",
+                          urgency="high")
+
+    async def do_weekreview() -> None:
+        review = await asyncio.to_thread(
+            generate_weekreview, state["brain"], state["llm"],
+            state["settings"].model_light,
+        )
+        if review:
+            inbox = state.get("inbox")
+            if inbox is not None:
+                inbox.add(kind="notify", title="Weekreview", detail=review[:240])
+            tg = state.get("telegram")
+            if tg is not None and tg.linked:
+                await asyncio.to_thread(tg.send, "📊 WEEKREVIEW\n\n" + review)
 
     while True:
         try:
-            now = datetime.now()
-            today = date.today().isoformat()
+            now = now_local()
+            today = today_local()
 
             target = briefing_time(state["brain"])
             cached = state.get("daily")
             if now.strftime("%H:%M") >= target and (
                 not cached or cached.get("date") != today
             ):
-                state["daily"] = await asyncio.to_thread(
-                    generate_daily, state["brain"], state["llm"],
-                    state.get("o365"), state.get("asana"),
-                    state["settings"].model_light,
-                )
+                try:
+                    state["daily"] = await asyncio.to_thread(
+                        generate_daily, state["brain"], state["llm"],
+                        state.get("o365"), state.get("asana"),
+                        state["settings"].model_light,
+                    )
+                    state["daily"]["date"] = today  # NL-dag, niet UTC-dag
+                    log("dagstart: gegenereerd")
+                except Exception as exc:
+                    log(f"dagstart: mislukt — {exc}")
 
             if due(EVENING_TIME, "evening", now):
-                mark("evening")
-                evening = await asyncio.to_thread(
-                    generate_evening, state["brain"], state["llm"],
-                    state.get("o365"), state.get("asana"),
-                    state["settings"].model_light,
-                )
-                state["evening"] = evening
-                inbox = state.get("inbox")
-                if inbox is not None:
-                    inbox.add(kind="notify", title="Dagafsluiting",
-                              detail=evening["spoken"][:240])
-                tg = state.get("telegram")
-                if tg is not None and tg.linked:
-                    await asyncio.to_thread(tg.send, "🌇 DAGAFSLUITING\n\n" + evening["spoken"])
-
+                await run_task("evening", do_evening)
             if due(CONSOLIDATE_TIME, "consolidate", now):
-                mark("consolidate")
-                result = await asyncio.to_thread(
-                    consolidate_memory, state["brain"], state["llm"],
-                    state["settings"].model_light,
-                )
-                inbox = state.get("inbox")
-                if inbox is not None:
-                    if result["duplicates"] or result["insights"]:
-                        inbox.add(
-                            kind="notify", title="Nachtelijke consolidatie",
-                            detail=f"{result['duplicates']} duplicaten samengevoegd, "
-                                   f"{result['insights']} nieuwe inzichten.",
-                        )
-                    for c in result.get("contradictions", []):
-                        inbox.add(
-                            kind="notify", title="Tegenspraak in het geheugen",
-                            detail=f"{c['issue']} ({', '.join(c['ids'])}) — welke klopt?",
-                            urgency="high",
-                        )
+                await run_task("consolidate", do_consolidate)
+            if now.weekday() == 4 and due("16:30", "weekreview", now):
+                await run_task("weekreview", do_weekreview)
 
             # door Span zelf geplande taken/herinneringen
             from span.jarvis.crons import run_due_crons
-            await asyncio.to_thread(run_due_crons, state)
+            try:
+                ran = await asyncio.to_thread(run_due_crons, state)
+                if ran:
+                    log(f"crons: {ran} uitgevoerd")
+            except Exception as exc:
+                log(f"crons: mislukt — {exc}")
 
             # verweesde sessies alsnog door de evaluatiecirkel (elk half uur)
             if now.minute % 30 == 10:
-                await asyncio.to_thread(reflect_orphan_sessions, state)
+                try:
+                    done = await asyncio.to_thread(reflect_orphan_sessions, state)
+                    if done:
+                        log(f"orphan-reflectie: {done} sessies geëvalueerd")
+                except Exception as exc:
+                    log(f"orphan-reflectie: mislukt — {exc}")
 
             # Fireflies-meetings binnenhalen (idempotent, elke ~30 min)
             if state.get("fireflies") is not None and now.minute % 30 == 0:
                 from span.jarvis.meetings import sync_meetings
-                result = await asyncio.to_thread(sync_meetings, state)
-                if result["new"]:
-                    inbox = state.get("inbox")
-                    if inbox is not None:
-                        inbox.add(
-                            kind="notify", title="Meetings vastgelegd",
-                            detail=f"{result['new']} nieuwe meeting(s) in het geheugen; "
-                                   f"{result['tasks']} actiepunt(en) klaar voor Asana "
-                                   "in de Agent Inbox.",
-                        )
-
-            if now.weekday() == 4 and due("16:30", "weekreview", now):
-                mark("weekreview")
-                review = await asyncio.to_thread(
-                    generate_weekreview, state["brain"], state["llm"],
-                    state["settings"].model_light,
-                )
-                if review:
-                    inbox = state.get("inbox")
-                    if inbox is not None:
-                        inbox.add(kind="notify", title="Weekreview",
-                                  detail=review[:240])
-                    tg = state.get("telegram")
-                    if tg is not None and tg.linked:
-                        await asyncio.to_thread(tg.send, "📊 WEEKREVIEW\n\n" + review)
-        except Exception:
-            pass  # scheduler mag nooit sterven
+                try:
+                    result = await asyncio.to_thread(sync_meetings, state)
+                    if result["new"]:
+                        log(f"fireflies: {result['new']} nieuw, {result['tasks']} taken")
+                        inbox = state.get("inbox")
+                        if inbox is not None:
+                            inbox.add(
+                                kind="notify", title="Meetings vastgelegd",
+                                detail=f"{result['new']} nieuwe meeting(s) in het geheugen; "
+                                       f"{result['tasks']} actiepunt(en) klaar voor Asana "
+                                       "in de Agent Inbox.",
+                            )
+                except Exception as exc:
+                    log(f"fireflies: mislukt — {exc}")
+        except Exception as exc:
+            print(f"[scheduler] tick-fout: {type(exc).__name__}: {exc}", flush=True)
         await asyncio.sleep(60)

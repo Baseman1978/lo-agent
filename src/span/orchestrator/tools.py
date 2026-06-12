@@ -24,9 +24,10 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "brain_search",
-            "description": "Semantisch zoeken in het eigen geheugen (MemoryFragments). "
-            "Gebruik dit vóór je een vraag beantwoordt waarvan je vermoedt dat er "
-            "eerdere kennis over bestaat.",
+            "description": "Semantisch zoeken in het eigen geheugen: MemoryFragments "
+            "én formele kennis (Insights, Mistakes/lessen, Ideas). Gebruik dit vóór "
+            "je een vraag beantwoordt waarvan je vermoedt dat er eerdere kennis over "
+            "bestaat.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -595,8 +596,12 @@ class ToolBox:
     # -- handlers --------------------------------------------------------
 
     def _tool_brain_search(self, query: str, k: int = 5) -> Any:
-        results = self._fragments.search(query, k=min(int(k), 20))
+        embedding = self._fragments.embed(query)
+        results = self._fragments.search(query, k=min(int(k), 20), embedding=embedding)
         self.touched.extend(r["id"] for r in results if r.get("score", 0) > 0.5)
+        formal = self._fragments.search_formal(query, k=3, embedding=embedding)
+        if formal:
+            return {"fragments": results, "formal_knowledge": formal}
         return results
 
     def _tool_brain_cypher(self, query: str) -> Any:

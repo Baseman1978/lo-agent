@@ -90,9 +90,15 @@ class TelegramBridge:
         expected = os.environ.get("SPAN_AUTH_TOKEN", "").strip()
 
         if not self._chat_id:
+            if not expected:
+                # fail-closed: zonder SPAN_AUTH_TOKEN geen pairing mogelijk
+                self.send("Koppelen is uitgeschakeld: er is geen SPAN_AUTH_TOKEN "
+                          "ingesteld op de server.", chat_id)
+                return
             if text.startswith("/koppel"):
+                import hmac
                 supplied = text.removeprefix("/koppel").strip()
-                if not expected or supplied == expected:
+                if hmac.compare_digest(supplied, expected):
                     self._save_chat_id(chat_id)
                     self.send("Gekoppeld. Ik ben er, waar je ook bent. — Span", chat_id)
                 else:

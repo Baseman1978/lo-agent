@@ -31,7 +31,7 @@ Werkwijze:
 - Volg je protocollen (hieronder). Ze zijn jouw werkafspraken met jezelf.
 - Gebruik brain_search/brain_cypher vóór je antwoordt over iets dat eerder
   besproken kan zijn. Citeer MF-ids waar je op eerdere kennis leunt.
-- Een achtergrondproces logt elke beurt automatisch als MemoryFragment.
+- Een achtergrondproces logt waardevolle momenten automatisch als MemoryFragment.
   Gebruik remember dus alleen voor momenten die je expliciet wilt vastpinnen:
   belangrijke beslissingen, valkuilen, persoonlijkheidsmomenten. Antwoord
   eerst, onthoud daarna — laat de gebruiker niet wachten op je geheugen.
@@ -284,8 +284,8 @@ class SpanAgent:
                 tools=tools_used,
                 touched=touched,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[trace] schrijven mislukt: {type(exc).__name__}: {exc}", flush=True)
 
     def flush_recording(self, timeout: float = 20.0) -> None:
         """Wacht op lopende recordings — aanroepen vóór de sessie-evaluatie,
@@ -324,7 +324,8 @@ class SpanAgent:
                 stored.append(mf_id)
                 self._link_entities(mf_id, frag.get("entities") or [])
             return stored
-        except Exception:
+        except Exception as exc:
+            print(f"[recorder] beurt niet gelogd: {type(exc).__name__}: {exc}", flush=True)
             return []
 
     def _link_entities(self, mf_id: str, entities: list[dict[str, Any]]) -> None:

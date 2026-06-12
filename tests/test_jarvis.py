@@ -581,3 +581,157 @@ class TestJarvisConfig:
         cfg = JarvisConfig(ms_client_id="abc", asana_token="tok")
         assert cfg.o365_enabled and cfg.asana_enabled
         assert cfg.ms_tenant_id == "common"
+
+
+class TestAuditFixes:
+    """De zes risico's uit de multi-agent audit — elk fix heeft een test."""
+
+    # Fix 4: superseded fragmenten worden niet meer teruggegeven
+    def test_search_filtert_superseded(self):
+        from span.memory.fragments import FragmentStore
+        brain = MagicMock()
+        brain.vector_search.return_value = [
+            {"node": {"id": "mf-1", "type": "observation", "content": "a",
+                      "superseded": True}, "score": 0.9},
+            {"node": {"id": "mf-2", "type": "observation", "content": "b"}, "score": 0.8},
+            {"node": {"id": "mf-3", "type": "observation", "content": "c"}, "score": 0.7},
+        ]
+        llm = MagicMock()
+        llm.embed_one.return_value = [0.1]
+        results = FragmentStore(brain, llm).search("vraag", k=2)
+        assert [r["id"] for r in results] == ["mf-2", "mf-3"]
+
+    def test_recent_query_sluit_superseded_uit(self):
+        from span.memory.fragments import FragmentStore
+        brain = MagicMock()
+        brain.run.return_value = []
+        FragmentStore(brain, MagicMock()).recent(k=5)
+        assert "superseded IS NULL" in brain.run.call_args.args[0]
+
+    # Fix 6: Telegram-pairing is fail-closed zonder SPAN_AUTH_TOKEN
+    def _bridge(self):
+        from span.integrations.telegram import TelegramBridge
+        brain = MagicMock()
+        brain.run.return_value = []
+        bridge = TelegramBridge("tok", {"brain": brain})
+        bridge.send = MagicMock()
+        return bridge
+
+    def test_pairing_geweigerd_zonder_auth_token(self):
+        bridge = self._bridge()
+        with patch.dict(os.environ, {"SPAN_AUTH_TOKEN": ""}):
+            bridge._handle_text("123", "/koppel watdanook")
+        assert not bridge.linked
+        assert "uitgeschakeld" in bridge.send.call_args.args[0]
+
+    def test_pairing_geweigerd_met_fout_token(self):
+        bridge = self._bridge()
+        with patch.dict(os.environ, {"SPAN_AUTH_TOKEN": "geheim"}):
+            bridge._handle_text("123", "/koppel fout")
+        assert not bridge.linked
+        assert "Onjuiste" in bridge.send.call_args.args[0]
+
+    def test_pairing_met_juist_token(self):
+        bridge = self._bridge()
+        with patch.dict(os.environ, {"SPAN_AUTH_TOKEN": "geheim"}):
+            bridge._handle_text("123", "/koppel geheim")
+        assert bridge.linked and bridge._chat_id == "123"
+
+    # Fix 3: planner denkt in Nederlandse tijd, ook in een UTC-container
+    def test_now_local_is_amsterdams(self):
+        from span.jarvis.daily import now_local, today_local, TZ
+        now = now_local()
+        assert now.tzinfo is not None
+        assert str(now.tzinfo) == "Europe/Amsterdam"
+        assert today_local() == now.date().isoformat()
+        assert TZ.key == "Europe/Amsterdam"
+
+    # Fix 1: formele kennis krijgt embedding en is doorzoekbaar
+    def test_reflect_geeft_insight_embedding(self):
+        from span.evaluation.reflect import _write_formal_node
+        brain = MagicMock()
+        llm = MagicMock()
+        llm.embed_one.return_value = [0.5, 0.5]
+        _write_formal_node(brain, llm, "Insight",
+                           {"content": "les", "session_id": "s"}, [])
+        props = brain.run.call_args_list[0].kwargs["props"]
+        assert props["embedding"] == [0.5, 0.5]
+
+    def test_search_formal_combineert_en_sorteert(self):
+        from span.memory.fragments import FragmentStore
+        brain = MagicMock()
+        def fake_vs(index, emb, k):
+            if index == "insight_embedding":
+                return [{"node": {"id": "insight-1", "content": "a"}, "score": 0.6}]
+            if index == "mistake_embedding":
+                return [{"node": {"id": "mistake-1", "content": "b",
+                                  "lesson": "let op"}, "score": 0.9}]
+            return []
+        brain.vector_search.side_effect = fake_vs
+        llm = MagicMock()
+        llm.embed_one.return_value = [0.1]
+        results = FragmentStore(brain, llm).search_formal("vraag", k=3)
+        assert [r["id"] for r in results] == ["mistake-1", "insight-1"]
+        assert results[0]["lesson"] == "let op"
+
+    def test_bootstrap_rendert_inzichten_en_lessen(self):
+        from span.memory.bootstrap import BootstrapContext, render_bootstrap
+        ctx = BootstrapContext(
+            identity={"name": "Span", "philosophy": "p", "origin": "o", "owner": "Bas"},
+            protocols=[], quests=[], decisions=[], anti_patterns=[], soul=[], skills=[],
+            insights=[{"id": "insight-1", "content": "Bas plant graag vooruit"}],
+            lessons=[{"id": "mistake-1", "content": "Te snel gemaild",
+                      "lesson": "Eerst checken"}],
+        )
+        out = render_bootstrap(ctx)
+        assert "Inzichten" in out and "Bas plant graag vooruit" in out
+        assert "Lessen uit fouten" in out and "Eerst checken" in out
+
+    def test_store_insight_zelfde_schema_als_reflect(self):
+        from span.jarvis.daily import _store_insight
+        brain = MagicMock()
+        llm = MagicMock()
+        llm.embed_one.return_value = [0.2]
+        _store_insight(brain, llm, "Weekreview: goede week", "weekreview")
+        kwargs = brain.run.call_args.kwargs
+        assert kwargs["content"] == "Weekreview: goede week"
+        assert kwargs["embedding"] == [0.2]
+        assert kwargs["id"].startswith("insight-")
+
+    def test_brain_search_tool_levert_ook_formele_kennis(self):
+        fragments = MagicMock()
+        fragments.embed.return_value = [0.1]
+        fragments.search.return_value = [{"id": "mf-1", "score": 0.6, "content": "x"}]
+        fragments.search_formal.return_value = [
+            {"id": "insight-1", "label": "Insight", "content": "y", "score": 0.7}]
+        tb = ToolBox(brain=MagicMock(), fragments=fragments, session_id="s")
+        out = json.loads(tb.dispatch("brain_search", {"query": "y"}))
+        assert out["formal_knowledge"][0]["id"] == "insight-1"
+        assert out["fragments"][0]["id"] == "mf-1"
+
+    # Fix 5: CLI-inbox — afgewezen actie wordt niet uitgevoerd
+    def test_cli_inbox_afwijzing_voert_niets_uit(self):
+        from span.cli import _handle_inbox
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        inbox.add(kind="action", title="Mail naar Jan", action="mail_send",
+                  payload={"to": "jan@x.nl", "subject": "s", "body": "b"})
+        o365 = MagicMock()
+        with patch("span.cli.console") as fake_console:
+            fake_console.input.return_value = "n"
+            _handle_inbox(inbox, o365, None, MagicMock(), MagicMock())
+        o365.send_mail.assert_not_called()
+        assert inbox.snapshot()[0]["status"] == "rejected"
+
+    def test_cli_inbox_akkoord_voert_uit(self):
+        from span.cli import _handle_inbox
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        inbox.add(kind="action", title="Mail naar Jan", action="mail_send",
+                  payload={"to": "jan@x.nl", "subject": "s", "body": "b"})
+        o365 = MagicMock()
+        with patch("span.cli.console") as fake_console:
+            fake_console.input.return_value = "j"
+            _handle_inbox(inbox, o365, None, MagicMock(), MagicMock())
+        o365.send_mail.assert_called_once_with("jan@x.nl", "s", "b")
+        assert inbox.snapshot()[0]["status"] == "approved"

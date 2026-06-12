@@ -34,6 +34,10 @@ class FragmentStore:
         self._brain = brain
         self._llm = llm
 
+    def embed(self, text: str) -> list[float]:
+        """Eén embedding voor hergebruik over meerdere zoekopdrachten."""
+        return self._llm.embed_one(text)
+
     def write(
         self,
         *,
@@ -73,13 +77,18 @@ class FragmentStore:
         )
         return mf_id
 
-    def search(self, query: str, k: int = 5) -> list[dict[str, Any]]:
+    def search(self, query: str, k: int = 5,
+               embedding: list[float] | None = None) -> list[dict[str, Any]]:
         """Vector search over alle fragmenten; geeft id, type, content, score."""
-        embedding = self._llm.embed_one(query)
-        rows = self._brain.vector_search("mf_embedding", embedding, k=k)
+        embedding = embedding or self._llm.embed_one(query)
+        rows = self._brain.vector_search("mf_embedding", embedding, k=k + 4)
         results = []
         for row in rows:
             node = row["node"]
+            if node.get("superseded"):
+                continue  # consolidatie heeft dit fragment afgeschreven
+            if len(results) >= k:
+                break
             results.append(
                 {
                     "id": node.get("id"),
@@ -103,11 +112,45 @@ class FragmentStore:
                 pass
         return results
 
+    FORMAL_INDEXES = [
+        ("insight_embedding", "Insight"),
+        ("mistake_embedding", "Mistake"),
+        ("idea_embedding", "Idea"),
+    ]
+
+    def search_formal(self, query: str, k: int = 3,
+                      embedding: list[float] | None = None) -> list[dict[str, Any]]:
+        """Vector search over formele kennis (Insight/Mistake/Idea) — de
+        leeskant van de evaluatiecirkel. Oude nodes zonder embedding worden
+        simpelweg niet gevonden; nieuwe wel."""
+        embedding = embedding or self._llm.embed_one(query)
+        results: list[dict[str, Any]] = []
+        for index_name, label in self.FORMAL_INDEXES:
+            try:
+                rows = self._brain.vector_search(index_name, embedding, k=k)
+            except Exception:
+                continue  # index bestaat (nog) niet — geen reden om te breken
+            for row in rows:
+                node = row["node"]
+                entry = {
+                    "id": node.get("id"),
+                    "label": label,
+                    "content": node.get("content"),
+                    "created": str(node.get("created", "")),
+                    "score": round(row["score"], 4),
+                }
+                if node.get("lesson"):
+                    entry["lesson"] = node["lesson"]
+                results.append(entry)
+        results.sort(key=lambda r: r["score"], reverse=True)
+        return results[:k]
+
     def recent(self, k: int = 10, mf_type: str | None = None) -> list[dict[str, Any]]:
-        where = "WHERE mf.type = $type" if mf_type else ""
+        type_filter = "AND mf.type = $type" if mf_type else ""
         return self._brain.run(
             f"""
-            MATCH (mf:MemoryFragment) {where}
+            MATCH (mf:MemoryFragment)
+            WHERE mf.superseded IS NULL {type_filter}
             RETURN mf.id AS id, mf.type AS type, mf.content AS content,
                    toString(mf.created) AS created
             ORDER BY mf.created DESC LIMIT $k

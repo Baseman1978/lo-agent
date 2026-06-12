@@ -27,6 +27,22 @@ OPTIONS {indexConfig: {
 }}
 """
 
+# Formele kennis (cirkel-leeskant): ook Insight/Mistake/Idea zijn doorzoekbaar.
+FORMAL_VECTOR_INDEXES = [
+    ("insight_embedding", "Insight"),
+    ("mistake_embedding", "Mistake"),
+    ("idea_embedding", "Idea"),
+]
+
+FORMAL_VECTOR_INDEX_TEMPLATE = """
+CREATE VECTOR INDEX {index_name} IF NOT EXISTS
+FOR (n:{label}) ON (n.embedding)
+OPTIONS {{indexConfig: {{
+  `vector.dimensions`: $dims,
+  `vector.similarity_function`: 'cosine'
+}}}}
+"""
+
 IDENTITY_SEED = """
 MERGE (i:Identity {name: 'Span'})
 ON CREATE SET
@@ -100,6 +116,11 @@ def init_schema(brain: BrainDB, settings: Settings) -> list[str]:
 
     brain.run(VECTOR_INDEX, dims=settings.embed_dims)
     log.append(f"vector index mf_embedding ({settings.embed_dims} dims, cosine)")
+
+    for index_name, label in FORMAL_VECTOR_INDEXES:
+        brain.run(FORMAL_VECTOR_INDEX_TEMPLATE.format(index_name=index_name, label=label),
+                  dims=settings.embed_dims)
+    log.append(f"{len(FORMAL_VECTOR_INDEXES)} formele vector indexen (Insight/Mistake/Idea)")
 
     brain.run(IDENTITY_SEED)
     log.append("identity 'Span' geseed")
