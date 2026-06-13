@@ -126,6 +126,65 @@ Binnen elke categorie gerangschikt op waarde.
     reëel ban-risico voor het gekoppelde nummer. Alléén uitvoeren met een apart
     prepaid nummer, nooit met Bas' eigen nummer. Telegram blijft het primaire
     kanaal tot dit opgepakt wordt.
+102. **Microsoft 365-login behouden (geen 8u-herinlog)** (backlog 13-6-2026) — Span
+    moet elke 8 uur opnieuw via device-code inloggen door Lomans' Conditional
+    Access "sign-in frequency". Geen bug: onze MSAL-cache + silent refresh werkt
+    al; het is tenant-beleid. Outlook/Teams blijven ingelogd via de **broker
+    (WAM) + device-gebonden Primary Refresh Token (PRT)** — een mechanisme dat
+    onze Linux-container (en de ARM64-host zonder `pymsalruntime`-wheel) niet
+    heeft. Werkplan met drie routes hieronder; aanbeveling = Route A.
+
+    **Route A — IT-uitzondering / eigen app-registratie (aanbevolen, schoonst).**
+    Doel: het 8u-venster wegnemen zonder broker.
+    - A1. Lomans IT (Entra ID-beheer) benaderen: eigen app-registratie voor
+      "Nova Agent" óf de bestaande public client uitzonderen van de sign-in
+      frequency-policy (of in een policy met een langer/uit venster zetten).
+      Scopes blijven Mail.Read/Send, Calendars.ReadWrite, Tasks.ReadWrite.
+    - A2. ✅ Al klaar in de code: `config.py` leest `MS_CLIENT_ID` en
+      `MS_TENANT_ID` uit `.env` met terugval op de publieke client-id/`common`
+      (regel 111-112). Er is dus geen codewijziging nodig — alleen `.env` vullen
+      met de id die IT aanlevert.
+    - A3. Na IT-akkoord: nieuwe client-id in `.env`, één keer device-code
+      inloggen, daarna ~90 dagen rollend venster — bestaande silent refresh
+      doet de rest. Verloop-detectie + `/login` (al gebouwd) blijven als vangnet.
+    - Inschatting: S aan onze kant (config + test); doorlooptijd hangt op IT.
+    - Risico: IT kan weigeren of beperken; dan terugvallen op Route C.
+
+    **Route B — Broker + device-PRT (technisch "zoals Outlook", nu geblokkeerd).**
+    Doel: stille reauth via de device-PRT, precies wat de officiële apps doen.
+    - B1. Vereist een auth-hulpproces op de **Windows-host** (buiten de Linux-
+      container) met `msal[broker]` + `enable_broker_on_windows=True`, dat de
+      PRT van het Entra-geregistreerde apparaat gebruikt en tokens silent
+      ophaalt; de container haalt tokens op via een lokale poort of gedeeld
+      bestand.
+    - B2. Blokkades nú: (a) `pymsalruntime` heeft **geen Windows-ARM64-wheel**
+      (open feature request) → from-source C++-build nodig; (b) het apparaat
+      moet Entra-joined/registered zijn. Pas heroverwegen als de ARM64-wheel
+      uitkomt of Span op een x64-Windows-host draait.
+    - Inschatting: L; nu **on hold** wegens de ARM64-wheel-blokkade.
+
+    **Route C — Naadloze her-login (GEDAAN, het huidige vangnet).**
+    - C1. ✅ Verloop-detectie in de ambient watcher + melding in Agent Inbox en
+      Telegram zodra de koppeling verloopt.
+    - C2. ✅ `/login`-commando in Telegram: device-code vanaf de telefoon, login
+      bij Microsoft zelf, geen wachtwoord/token door de chat.
+    - C3. Optioneel later: zelfde her-login als één-klik-knop in de HUD-settings
+      (nu via `o365-login` al aanwezig) prominenter tonen bij verloop.
+    - Inschatting: klaar; kost ±10 sec per dag tot Route A rond is.
+
+    **Bijlage — kant-en-klaar IT-verzoek (Route A1).**
+    > Onderwerp: Conditional Access-uitzondering voor persoonlijke automation-app
+    >
+    > Hoi [IT/Entra-beheer],
+    > Ik draai een persoonlijke automation-app ("Nova Agent" / Span) die via
+    > Microsoft Graph mijn eigen mail, agenda en taken leest en beheert (scopes
+    > Mail.Read, Mail.Send, Calendars.ReadWrite, Tasks.ReadWrite). De app logt nu
+    > in met de device-code-flow. Door de Conditional Access "sign-in frequency"
+    > (±8 uur) moet ik elke dag opnieuw inloggen (foutcode AADSTS70043).
+    > Kan er een eigen app-registratie voor deze app komen die uitgezonderd is
+    > van de sign-in frequency-policy (of in een policy met een langer venster)?
+    > Het draait alleen voor mijn eigen account, niet tenant-breed.
+    > Alvast dank, Bas
 
 ## 9. Taken, quests & productiviteit
 
