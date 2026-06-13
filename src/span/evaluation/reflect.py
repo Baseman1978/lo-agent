@@ -199,6 +199,23 @@ def _write_formal_node(
         props = {**props, "embedding": llm.embed_one(embed_text)}
     except Exception as exc:
         print(f"[reflect] embedding {node_id} mislukt: {exc}", flush=True)
+    # F3 dedup-vóór-schrijven: bestaat er al een bijna-identieke formele node
+    # (ook uit een andere sessie)? Dan niet dubbel opslaan — voorkomt dat
+    # dezelfde les bij elke reflectie opnieuw als nieuw inzicht binnenkomt.
+    emb = props.get("embedding")
+    if emb:
+        index = {"Insight": "insight_embedding", "Mistake": "mistake_embedding",
+                 "Idea": "idea_embedding"}[label]
+        try:
+            hits = brain.vector_search(index, emb, k=1)
+            if hits and hits[0]["score"] > 0.95:
+                existing = hits[0]["node"].get("id")
+                if existing and existing != node_id:
+                    _link_sources(brain, label, "id", existing, source_ids,
+                                  "DISTILLED_FROM")
+                    return existing  # hergebruik de bestaande node
+        except Exception:
+            pass  # geen index/leeg — gewoon doorgaan met schrijven
     brain.run(
         f"MERGE (n:{label} {{id: $id}}) ON CREATE SET n.created = datetime() "
         "SET n += $props",

@@ -235,8 +235,49 @@ def consolidate_memory(brain, llm, light_model=None) -> dict[str, int]:
             ids=ids,
         )
         contradictions.append({"ids": ids, "issue": c["issue"]})
+    merged_entities = dedup_entities(brain)
     return {"duplicates": dup_count, "insights": insight_count,
-            "contradictions": contradictions}
+            "contradictions": contradictions, "entities_merged": merged_entities}
+
+
+def dedup_entities(brain) -> int:
+    """Geheugen-hygiene (F2.8/F3): voeg Entity-nodes met een genormaliseerd-
+    gelijke naam samen (case/spaties), zodat 'Ron Meijer' en 'ron meijer' één
+    knoop met al hun MENTIONS-edges worden. Idempotent.
+
+    Houdt de oudste node als kanoniek, hangt alle MENTIONS van duplicaten
+    daaraan en verwijdert de duplicaten."""
+    groups = brain.run(
+        """
+        MATCH (e:Entity)
+        WITH toLower(trim(e.name)) AS norm, collect(e) AS nodes
+        WHERE size(nodes) > 1
+        RETURN norm, [n IN nodes | elementId(n)] AS ids
+        """
+    )
+    merged = 0
+    for g in groups:
+        ids = g.get("ids") or []
+        if len(ids) < 2:
+            continue
+        # kanoniek = oudste; herhang MENTIONS van de rest en verwijder ze
+        brain.run(
+            """
+            MATCH (e:Entity) WHERE elementId(e) IN $ids
+            WITH e ORDER BY e.created LIMIT 1
+            WITH e AS keep, $ids AS ids
+            MATCH (dup:Entity) WHERE elementId(dup) IN ids AND dup <> keep
+            OPTIONAL MATCH (mf)-[r:MENTIONS]->(dup)
+            FOREACH (_ IN CASE WHEN mf IS NULL THEN [] ELSE [1] END |
+                MERGE (mf)-[:MENTIONS]->(keep))
+            DELETE r
+            WITH keep, dup
+            DETACH DELETE dup
+            """,
+            ids=ids,
+        )
+        merged += len(ids) - 1
+    return merged
 
 
 def _last_run(brain, key: str) -> str:

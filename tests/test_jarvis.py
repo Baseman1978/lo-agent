@@ -841,6 +841,7 @@ class TestVerbeterRonde:
     def test_reflect_ids_deterministisch_per_sessie(self):
         from span.evaluation.reflect import reflect_session
         brain = MagicMock()
+        brain.vector_search.return_value = []  # geen near-duplicate
         # _valid_sources matcht mf-1 als bestaand; overige queries -> []
         brain.run.side_effect = lambda q, **kw: (
             [{"id": "mf-1"}] if "WHERE mf.id IN" in q else [])
@@ -860,6 +861,7 @@ class TestVerbeterRonde:
     def test_reflect_weigert_bronloze_insight(self):
         from span.evaluation.reflect import reflect_session
         brain = MagicMock()
+        brain.vector_search.return_value = []  # geen near-duplicate
         brain.run.side_effect = lambda q, **kw: []  # geen enkel fragment bestaat
         fragments = MagicMock()
         fragments.session_fragments.return_value = [{"id": "mf-1", "content": "x"}]
@@ -925,3 +927,25 @@ class TestVerbeterRonde:
         good = MagicMock(ok=True, status_code=200)
         with patch("span.integrations.telegram.requests.post", return_value=good):
             assert bridge.send("hoi") is True
+
+
+class TestGeheugenHygiene:
+    def test_formal_dedup_hergebruikt_bestaande(self):
+        from span.evaluation.reflect import _write_formal_node
+        brain = MagicMock()
+        brain.vector_search.return_value = [{"node": {"id": "insight-oud"}, "score": 0.97}]
+        llm = MagicMock(); llm.embed_one.return_value = [0.1]
+        out = _write_formal_node(brain, llm, "Insight", "insight-nieuw",
+                                 {"content": "een bekend inzicht"}, ["mf-1"])
+        assert out == "insight-oud"  # hergebruikt, niet dubbel geschreven
+        assert not [c for c in brain.run.call_args_list if "MERGE (n:Insight" in str(c)]
+
+    def test_formal_dedup_schrijft_nieuw_bij_lage_score(self):
+        from span.evaluation.reflect import _write_formal_node
+        brain = MagicMock()
+        brain.vector_search.return_value = [{"node": {"id": "insight-x"}, "score": 0.4}]
+        llm = MagicMock(); llm.embed_one.return_value = [0.1]
+        out = _write_formal_node(brain, llm, "Insight", "insight-nieuw",
+                                 {"content": "een nieuw inzicht"}, [])
+        assert out == "insight-nieuw"
+        assert [c for c in brain.run.call_args_list if "MERGE (n:Insight" in str(c)]
