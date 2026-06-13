@@ -20,6 +20,7 @@ TOOL_RISK: dict[str, str] = {
     "cron_list": "low", "triage_rules_get": "low",
     # eigen brein schrijven — laag (alleen-eigen, omkeerbaar)
     "remember": "low", "quest_upsert": "low", "triage_rules_set": "low",
+    "plan_goal": "med",             # maakt een plan (Quest); voert niets uit
     # eigen taken / concepten — midden
     "o365_draft_reply": "med", "o365_todo_create": "med", "o365_todo_complete": "med",
     "asana_task_create": "med", "asana_task_complete": "med",

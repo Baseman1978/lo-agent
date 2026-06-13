@@ -305,6 +305,16 @@ class ToolBox:
         from span.jarvis.crons import delete_cron
         return {"deleted": delete_cron(self._brain, cron_id)}
 
+    def _tool_plan_goal(self, goal: str) -> Any:
+        from span.orchestrator.planner import make_plan, store_plan
+        plan = make_plan(self._llm, self._light_model, goal)
+        if not plan["haalbaar"]:
+            return {"planned": False, "reason": plan["notitie"]}
+        quest_id = store_plan(self._brain, goal, plan["stappen"])
+        return {"planned": True, "quest_id": quest_id,
+                "steps": [s["titel"] for s in plan["stappen"]],
+                "note": "Plan vastgelegd als Quest; werk de stappen af."}
+
     def _tool_web_search(self, query: str, max_results: int = 5) -> Any:
         from span.integrations.reader import web_search
         from span.safety.scan import scan_text

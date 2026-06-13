@@ -949,3 +949,37 @@ class TestGeheugenHygiene:
                                  {"content": "een nieuw inzicht"}, [])
         assert out == "insight-nieuw"
         assert [c for c in brain.run.call_args_list if "MERGE (n:Insight" in str(c)]
+
+
+class TestPlanner:
+    def test_make_plan_decomponeert(self):
+        from span.orchestrator.planner import make_plan
+        llm = MagicMock()
+        llm.chat_json.return_value = {
+            "haalbaar": True,
+            "stappen": [{"titel": "Verzamel offertes", "klaar_als": "3 offertes binnen"},
+                        {"titel": "Vergelijk prijzen", "klaar_als": "tabel klaar"}],
+        }
+        plan = make_plan(llm, "m", "Kies een leverancier")
+        assert plan["haalbaar"] and len(plan["stappen"]) == 2
+        assert plan["stappen"][0]["klaar_als"] == "3 offertes binnen"
+
+    def test_make_plan_onhaalbaar(self):
+        from span.orchestrator.planner import make_plan
+        llm = MagicMock()
+        llm.chat_json.return_value = {"haalbaar": False, "notitie": "te vaag"}
+        assert make_plan(llm, "m", "doe iets")["haalbaar"] is False
+
+    def test_plan_goal_tool_slaat_quest_op(self):
+        from span.jarvis.ambient import AgentInbox
+        brain = MagicMock()
+        llm = MagicMock()
+        llm.chat_json.return_value = {
+            "haalbaar": True,
+            "stappen": [{"titel": "Stap een", "klaar_als": "x"}]}
+        tb = ToolBox(brain=brain, fragments=MagicMock(), session_id="s",
+                     llm=llm, inbox=AgentInbox())
+        out = json.loads(tb.dispatch("plan_goal", {"goal": "Een groot doel"}))
+        assert out["planned"] is True and out["quest_id"].startswith("quest-plan-")
+        # er is een Quest aangemaakt
+        assert [c for c in brain.run.call_args_list if "CREATE (q:Quest" in str(c)]

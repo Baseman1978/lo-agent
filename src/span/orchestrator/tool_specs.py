@@ -479,6 +479,23 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "plan_goal",
+            "description": "Decomponeer een groter doel of meerstaps-opdracht in een "
+            "bevroren stappenplan (Quest). Gebruik dit bij 'maak een plan voor…' of "
+            "een opdracht die meerdere stappen/sessies beslaat. Een aparte planner "
+            "zonder tools maakt het plan; daarna werk je de stappen af.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "description": "het doel in één zin"},
+                },
+                "required": ["goal"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "web_search",
             "description": "Zoek actuele informatie op het internet. Gebruik dit als "
             "de vraag recente/externe kennis vereist die niet in het geheugen of de "
@@ -548,6 +565,7 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "cron_create": ("Planning", "write"),
     "cron_list": ("Planning", "read"),
     "cron_delete": ("Planning", "write"),
+    "plan_goal": ("Planning", "write"),
     "web_search": ("Web", "read"),
     "web_read": ("Web", "read"),
 }
