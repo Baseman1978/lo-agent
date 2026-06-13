@@ -285,8 +285,23 @@ stuurde elke beslissing; 2 van de 5 voorstellen sneuvelden terecht op bewijs.
     off. Machinerie blijft beschikbaar als opt-in experiment.
 
 **Eerlijk operationeel gat dat blijft staan** (door de research benoemd, niet
-urgent): er is een backup-*export* maar geen *restore/import*-pad. Agenderen
-zodra het brein onvervangbaar voelt.
+urgent): er is een backup-*export* maar geen *restore/import*-pad. Zie 111.
+
+111. **Brein restore/import (P-ops)** (M, backlog 13-6-2026) — tegenhanger van
+    `/api/backup`. Nu is er alleen JSON-export; een corrupt/leeg brein is niet
+    terug te zetten zonder handwerk. Werkplan:
+    - 111a. `/api/restore` endpoint + CLI `span restore <file.json>`: leest de
+      backup-JSON, herbouwt nodes (per label) en relationships idempotent
+      (MERGE op id), slaat embeddings over die niet in de export zaten en
+      her-embed die desgewenst (hergebruik `scripts/backfill_formal.py`-patroon).
+    - 111b. Veiligheid: restore is destructief-aanvullend — eerst een
+      bevestiging/duplicaat-check, nooit blind overschrijven; draai binnen één
+      transactie waar mogelijk. Embeddings ontbreken in de export (bewust, te
+      groot) → na restore een her-embed-stap of waarschuwing dat vector-search
+      pas werkt na her-embedden.
+    - 111c. Test: export → wipe testbrein → restore → tel nodes/edges + steek-
+      proef op een fragment. Pas oppakken zodra het brein onvervangbaar voelt;
+      tot dan dekt de handmatige `brain_cypher`-override + JSON-export het af.
 
 ## 9. Taken, quests & productiviteit
 
