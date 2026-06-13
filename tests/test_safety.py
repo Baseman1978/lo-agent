@@ -162,3 +162,29 @@ def test_budget_kapt_iteraties_af():
     b.tick(); b.tick(); b.tick()
     with pytest.raises(BudgetExceeded):
         b.tick()
+
+
+# -- F2.1/F2.2 web-capability (SSRF + key-gating) --------------------------
+
+def test_reader_blokkeert_interne_adressen():
+    from span.integrations.reader import _is_public_url
+    assert not _is_public_url("http://localhost/x")
+    assert not _is_public_url("http://127.0.0.1/x")
+    assert not _is_public_url("http://169.254.169.254/latest/meta-data")  # cloud-metadata
+    assert not _is_public_url("file:///etc/passwd")
+    assert not _is_public_url("http://192.168.1.1/admin")
+    assert _is_public_url("https://example.com/artikel")
+
+
+def test_websearch_zonder_key_nette_melding(monkeypatch):
+    from span.integrations.reader import web_search
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    r = web_search("iets")
+    assert r["ok"] is False and "TAVILY_API_KEY" in r["error"]
+
+
+def test_web_read_tool_weigert_intern_adres():
+    from span.orchestrator.tools import ToolBox
+    tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s", llm=MagicMock())
+    out = json.loads(tb.dispatch("web_read", {"url": "http://localhost:8472/api/health"}))
+    assert out["ok"] is False

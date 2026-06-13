@@ -18,6 +18,7 @@ _ALLOWED = {
     "api.fireflies.ai",
     "api.open-meteo.com", "geocoding-api.open-meteo.com",
     "api.telegram.org",
+    "api.tavily.com",
 }
 
 

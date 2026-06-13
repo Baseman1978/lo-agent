@@ -13,6 +13,7 @@ TOOL_RISK: dict[str, str] = {
     # brein / lezen — laag
     "brain_search": "low", "brain_cypher": "low", "work_cypher": "low",
     "weather": "low", "jarvis_briefing": "low",
+    "web_search": "low", "web_read": "low",   # lezen; output is untrusted -> quarantaine
     "o365_mail_inbox": "low", "o365_thread_summary": "low", "o365_calendar": "low",
     "o365_todo_list": "low", "asana_my_tasks": "low", "asana_search": "low",
     "asana_projects": "low", "inbox_open": "low", "fireflies_meetings": "low",

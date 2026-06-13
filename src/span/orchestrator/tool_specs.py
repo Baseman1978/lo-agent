@@ -476,6 +476,38 @@ TOOL_SPECS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Zoek actuele informatie op het internet. Gebruik dit als "
+            "de vraag recente/externe kennis vereist die niet in het geheugen of de "
+            "tools zit. Citeer de bron-URL in je antwoord.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "zoekopdracht"},
+                    "max_results": {"type": "integer", "description": "1-8, default 5"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_read",
+            "description": "Haal een publieke webpagina op en lees de kern. Geef een "
+            "volledige http(s)-URL. De inhoud wordt veilig samengevat. Citeer de URL.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "volledige http(s)-URL"},
+                },
+                "required": ["url"],
+            },
+        },
+    },
 ]
 
 
@@ -516,6 +548,8 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "cron_create": ("Planning", "write"),
     "cron_list": ("Planning", "read"),
     "cron_delete": ("Planning", "write"),
+    "web_search": ("Web", "read"),
+    "web_read": ("Web", "read"),
 }
 ASANA_TOOLS = {"asana_my_tasks", "asana_task_create", "asana_task_complete",
                "asana_search", "asana_projects"}
