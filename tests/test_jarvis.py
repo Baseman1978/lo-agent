@@ -983,3 +983,49 @@ class TestPlanner:
         assert out["planned"] is True and out["quest_id"].startswith("quest-plan-")
         # er is een Quest aangemaakt
         assert [c for c in brain.run.call_args_list if "CREATE (q:Quest" in str(c)]
+
+
+class TestTelegramInbox:
+    def _bridge(self, inbox, o365):
+        from span.integrations.telegram import TelegramBridge
+        brain = MagicMock(); brain.run.return_value = [{"cid": "123", "d": ""}]
+        state = {"brain": brain, "inbox": inbox, "o365": o365, "asana": None,
+                 "llm": MagicMock(), "settings": MagicMock(model_light="m")}
+        b = TelegramBridge("tok", state)
+        b._chat_id = "123"
+        return b
+
+    def test_callback_approve_voert_uit(self):
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        iid = inbox.add(kind="action", action="mail_send", title="Mail",
+                        payload={"to": ["collega@lomans.nl"], "subject": "s", "body": "b"})
+        o365 = MagicMock(); o365.send_mail.return_value = {"sent": True}
+        b = self._bridge(inbox, o365)
+        with patch("span.integrations.telegram.requests.post"):
+            b._handle_callback({"id": "cb1", "data": f"approve:{iid}",
+                                "message": {"chat": {"id": 123}}})
+        o365.send_mail.assert_called_once()
+        assert inbox.get(iid)["status"] == "done"
+
+    def test_callback_reject_voert_niets_uit(self):
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        iid = inbox.add(kind="action", action="mail_send", title="Mail",
+                        payload={"to": ["x@y.nl"], "subject": "s", "body": "b"})
+        o365 = MagicMock()
+        b = self._bridge(inbox, o365)
+        with patch("span.integrations.telegram.requests.post"):
+            b._handle_callback({"id": "cb2", "data": f"reject:{iid}",
+                                "message": {"chat": {"id": 123}}})
+        o365.send_mail.assert_not_called()
+        assert inbox.get(iid)["status"] == "rejected"
+
+    def test_stt_model_instelbaar(self, monkeypatch):
+        monkeypatch.setenv("SPAN_STT_MODEL", "large-v3-turbo")
+        import importlib
+        from span.server import stt
+        importlib.reload(stt)
+        assert stt.MODEL_NAME == "large-v3-turbo"
+        monkeypatch.delenv("SPAN_STT_MODEL", raising=False)
+        importlib.reload(stt)

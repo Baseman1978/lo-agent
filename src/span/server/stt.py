@@ -9,12 +9,16 @@ het model (~75 MB, gecachet in het span-models volume).
 from __future__ import annotations
 
 import io
+import os
 import threading
 
 _model = None
 _lock = threading.Lock()
 
-MODEL_NAME = "base"  # goede NL-kwaliteit, snel genoeg op CPU
+# F2.4 — instelbaar via SPAN_STT_MODEL. 'base' = veilige CPU-default;
+# 'large-v3-turbo' is nauwkeuriger maar zwaarder (meet latency op ARM64 vóór
+# je het de default maakt — vandaar instelbaar i.p.v. hard gewijzigd).
+MODEL_NAME = os.environ.get("SPAN_STT_MODEL", "base").strip() or "base"
 
 
 def available() -> bool:

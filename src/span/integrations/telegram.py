@@ -74,6 +74,64 @@ class TelegramBridge:
                 ok = False
         return ok
 
+    def send_inbox_item(self, item: dict[str, Any]) -> None:
+        """F2.3 — stuur een actie-item met inline goedkeur/afwijs-knoppen, zodat
+        Bas vanaf zijn telefoon kan goedkeuren. callback_data draagt het item-id."""
+        if not self._chat_id:
+            return
+        iid = item["id"]
+        text = f"✓ Ter goedkeuring\n{item['title']}\n{item.get('detail','')[:300]}"
+        keyboard = {"inline_keyboard": [[
+            {"text": "✅ Goedkeuren", "callback_data": f"approve:{iid}"},
+            {"text": "✖ Afwijzen", "callback_data": f"reject:{iid}"},
+        ]]}
+        try:
+            requests.post(f"{self._base}/sendMessage",
+                          json={"chat_id": self._chat_id, "text": text,
+                                "reply_markup": keyboard}, timeout=30)
+        except Exception as exc:
+            print(f"[telegram] inbox-item sturen mislukt: {exc}", flush=True)
+
+    def _handle_callback(self, cb: dict[str, Any]) -> None:
+        """Verwerk een knop-druk (callback_query) op een inbox-item."""
+        data = cb.get("data") or ""
+        cb_id = cb.get("id")
+        chat_id = str(((cb.get("message") or {}).get("chat") or {}).get("id", ""))
+        if chat_id != self._chat_id or ":" not in data:
+            return
+        action, _, iid = data.partition(":")
+        inbox = self._state.get("inbox")
+        result = ""
+        try:
+            if inbox is None:
+                result = "Geen inbox actief."
+            elif action == "reject":
+                inbox.resolve(int(iid), "rejected")
+                result = "Afgewezen — niets uitgevoerd."
+            elif action == "approve":
+                claimed = inbox.claim(int(iid))
+                if claimed is None:
+                    result = "Al afgehandeld."
+                else:
+                    from span.jarvis.ambient import execute_approval
+                    execute_approval(claimed, self._state.get("o365"),
+                                     self._state.get("llm"),
+                                     self._state["settings"].model_light,
+                                     self._state.get("asana"))
+                    inbox.resolve(int(iid), "done")
+                    result = "✅ Uitgevoerd."
+        except Exception as exc:
+            if inbox is not None:
+                inbox.release(int(iid))
+            result = f"Mislukt: {exc}"
+        # bevestig de knop-druk (anders blijft Telegram 'laden' tonen)
+        try:
+            requests.post(f"{self._base}/answerCallbackQuery",
+                          json={"callback_query_id": cb_id, "text": result}, timeout=15)
+        except Exception:
+            pass
+        self.send(result, chat_id)
+
     # -- gesprek ------------------------------------------------------------
 
     def _ensure_agent(self):
@@ -172,6 +230,40 @@ class TelegramBridge:
 
         threading.Thread(target=_complete, daemon=True).start()
 
+    def _push_new_inbox_items(self) -> None:
+        """Stuur openstaande actie-items die nog niet als knop-bericht gingen."""
+        if not self._chat_id:
+            return
+        inbox = self._state.get("inbox")
+        if inbox is None:
+            return
+        pushed = getattr(self, "_pushed_items", None)
+        if pushed is None:
+            pushed = self._pushed_items = set()
+        for item in inbox.snapshot():
+            if (item["status"] == "open" and item["kind"] == "action"
+                    and item["id"] not in pushed):
+                pushed.add(item["id"])
+                self.send_inbox_item(item)
+        if len(pushed) > 200:
+            self._pushed_items = set(list(pushed)[-100:])
+
+    def _transcribe_voice(self, voice: dict[str, Any]) -> str:
+        """Download een Telegram voice-note en transcribeer via server-Whisper."""
+        from span.server import stt
+        if not stt.available():
+            return ""
+        fid = voice.get("file_id")
+        meta = requests.get(f"{self._base}/getFile",
+                            params={"file_id": fid}, timeout=30).json()
+        path = (meta.get("result") or {}).get("file_path")
+        if not path:
+            return ""
+        token = self._base.rsplit("/bot", 1)[-1]
+        audio = requests.get(
+            f"https://api.telegram.org/file/bot{token}/{path}", timeout=60).content
+        return stt.transcribe(audio)
+
     # -- hoofd-loop ------------------------------------------------------------
 
     async def run(self) -> None:
@@ -191,14 +283,31 @@ class TelegramBridge:
                             "MERGE (c:Config {id:'runtime'}) SET c.last_tg_daily = $d",
                             d=daily["date"],
                         )
+                # nieuwe inbox-acties als knop-bericht pushen (F2.3)
+                await asyncio.to_thread(self._push_new_inbox_items)
                 updates = await asyncio.to_thread(self._get_updates)
                 for upd in updates:
                     # offset meteen door: een kapot bericht mag de stroom niet
                     # blokkeren — maar de fout gaat wél terug naar de chat
                     self._offset = max(self._offset, upd.get("update_id", 0))
+                    if upd.get("callback_query"):  # knop-druk op een inbox-item
+                        try:
+                            await asyncio.to_thread(self._handle_callback,
+                                                    upd["callback_query"])
+                        except Exception as exc:
+                            print(f"[telegram] callback-fout: {exc}", flush=True)
+                        continue
                     msg = upd.get("message") or {}
-                    text = (msg.get("text") or "").strip()
                     chat_id = str((msg.get("chat") or {}).get("id", ""))
+                    # voice-note -> server-Whisper -> als tekst behandelen (F2.3)
+                    if msg.get("voice") and chat_id:
+                        try:
+                            text = await asyncio.to_thread(self._transcribe_voice, msg["voice"])
+                        except Exception as exc:
+                            print(f"[telegram] voice-fout: {exc}", flush=True)
+                            text = ""
+                    else:
+                        text = (msg.get("text") or "").strip()
                     if not text or not chat_id:
                         continue
                     try:
