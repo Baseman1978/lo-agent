@@ -4,6 +4,31 @@ Develop-klare uitwerking van het strategisch optimalisatie-onderzoek
 (`optimalisatie-onderzoek.md`), gekoppeld aan de componentdecompositie
 (`architecture.md`). Elke stap is los oppakbaar.
 
+## Uitvoeringsstatus (13-6-2026)
+
+Fase 0-4 zijn grotendeels gebouwd, getest en gepusht in deze ronde; 136 tests
+groen, retrieval-eval onveranderd, een onafhankelijke security-review op het
+fundament uitgevoerd en de gaten gedicht.
+
+| Fase | Gebouwd + getest | Als werkplan / mens-checkpoint |
+|------|------------------|-------------------------------|
+| 0 Discipline | k=1..2 + tokencap, prompt-caching, tool-result-clearing, confidence-signaling, HUD-afrondingen | F0.4 thinking (ORQ levert geen reasoning_tokens — bewezen niet haalbaar) |
+| 1 Veiligheid | risk-tier, bindende guard, exfiltratie-vangnet, injectie-scan, egress-allowlist, run-budget, dual-LLM-quarantaine, adversariële suite | — (fundament compleet) |
+| 2 Capabilities | web_search (key-gated) + web_read (SSRF-veilig, ge-quarantained) | F2.3 Telegram-keyboard, F2.4 Whisper-latency, F2.5 delta-polling, F2.6 iCal/inbound, F2.7 host-bridge |
+| 3 Geheugen | entity-dedup, dedup-vóór-schrijven formele kennis | F3.4 scope-tags (classificatie-ontwerp), F3.5 provenance-HUD (UI) |
+| 4 Autonomie | Plan-Execute-Verify kern (tool-loze planner + bevroren Quest) | F4.4 HITL-feedback, F4.5 webhooks (tunnel), F4.6 hash-chain-audit |
+| 5 Zware sprongen | — | F5.* allemaal: ReasoningBank, WASM/CodeAct-sandbox, browser-/desktop-use |
+| 6 Wachtkamer | — | F6.* allemaal (pas bij groei/bewezen fundament) |
+
+**Mens-checkpoints (wat Bas moet aanleveren/beslissen vóór een werkplan-item):**
+- `TAVILY_API_KEY` in `.env` → web_search live (F2.1).
+- Ingelogde O365-sessie → delta-polling (F2.5); IT-uitzondering → 8u-herlogin (feature 102).
+- Cloudflare Tunnel + akkoord → Graph-webhooks (F4.5), iCal-feed extern (F2.6).
+- Akkoord op een host-proces onder Bas' Windows-user → kijk-modus → browser-/desktop-use (F2.7, F5.3, F5.4). Strikt gefaseerd, read-only eerst, elke actie via de poort.
+- Keuze om een eval-set met namen wel/niet te committen (nu lokaal/gitignored).
+
+---
+
 **Leesformaat per stap:**
 - **Wat/waarom** — in één zin.
 - **Onderdeel** — bestand(en) uit de architectuur.
