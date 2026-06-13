@@ -186,6 +186,66 @@ Binnen elke categorie gerangschikt op waarde.
     > Het draait alleen voor mijn eigen account, niet tenant-breed.
     > Alvast dank, Bas
 
+## 8b. Technisch onderhoud (uit de multi-agent audit, 12-6-2026)
+
+Drie punten die de audit bewust apart hield van de security/dataverlies-fixes —
+"nuttig maar niet dringend, doe ze in eigen PR's zonder gedragswijziging". Geen
+van drieën raakt het gedrag van Span; het zijn onderhoud + één ontwerpkeuze.
+
+103. **Grote bestanden splitsen** (M, backlog 13-6-2026) — `tools.py` (838 r.) en
+    `app.py` (758 r.) staan ruim boven de 500-regel-projectregel. Pure
+    verplaatsing, geen gedragswijziging; daarom in een eigen PR ná de
+    audit-fixes zodat de review schoon blijft.
+    - 103a. `tools.py` → splits de toolspecs + `TOOL_META`-registry naar
+      `orchestrator/tool_specs.py`; laat de `ToolBox`-klasse (dispatch +
+      handlers) in `tools.py`. Natuurlijke snijlijn staat al op regel 595
+      (`# -- handlers`). Eventueel de handlers per domein groeperen
+      (brein / O365 / Asana / inbox / cron / overig) als losse mixins.
+    - 103b. `app.py` → routes naar `APIRouter`-modules per domein
+      (`routes/settings.py`, `routes/inbox.py`, `routes/graph.py`,
+      `routes/jarvis.py`); `app.py` houdt de lifespan + auth-helpers + mount.
+    - Test-impact: de bestaande imports (`from span.orchestrator.tools import
+      ToolBox, TOOL_META`) moeten blijven werken — re-export vanuit het oude
+      pad, anders breken de 104 tests. Verifiëren met de volledige suite.
+    - Inschatting: M; raakt veel regels maar nul gedrag. Risico: laag, mits
+      één PR zonder andere wijzigingen + groene tests.
+
+104. **Integratie-constructie uniformeren** (S, backlog 13-6-2026) — nu twee
+    patronen naast elkaar: O365/Asana gaan via `Settings.jarvis` +
+    `build_integrations()`, maar **Fireflies en Telegram** worden los met
+    `os.environ.get(...)` in `app.py` (regel 102-114) gemaakt en zitten niet in
+    `JarvisConfig`.
+    - 104a. `fireflies_api_key` en `telegram_bot_token` toevoegen aan
+      `JarvisConfig` (met `*_enabled`-properties, zoals o365/asana).
+    - 104b. `build_integrations()` (of een nieuwe `build_all`) ook Fireflies +
+      Telegram laten teruggeven, zodat `app.py` en `cli.py` één bron hebben.
+    - 104c. De losse `os.environ.get`-reads uit `app.py` halen.
+    - Test-impact: klein; `test_config.py` uitbreiden met de nieuwe velden.
+    - Inschatting: S. Risico: laag. Doen ná 103 of los; niet verweven met de
+      kritieke fixes (advies audit).
+
+105. **Echt geheugen-verval-algoritme** (M-L, backlog 13-6-2026, ONTWERP eerst) —
+    feature 36 is nu alleen *administratie*: `last_accessed` en `access_count`
+    worden in `fragments.search()` wél geschreven, maar nergens gelézen om
+    fragmenten te laten "vervagen". De audit waarschuwt nadrukkelijk: een echt
+    decay-mechanisme dat fragmenten uit de bootstrap/zoekresultaten weert is een
+    **ontwerpkeuze met risico op het stil wegfilteren van relevante kennis** —
+    niet meesmokkelen in een bugfix-ronde.
+    - 105a. ONTWERP: definieer een recency/frequency-score (bv. halfwaardetijd
+      op `last_accessed` × `access_count`, plus type-gewicht: soul/decision
+      zwaarder dan interaction-log). Op papier, mét voorbeelden.
+    - 105b. Beslis waar de score ingrijpt: alleen ranking-bijsturing in
+      `search()` (zacht, omkeerbaar) — NIET hard wegfilteren. `superseded`
+      blijft het enige harde uitsluit-mechanisme.
+    - 105c. Bouw achter een vlag (`SPAN_DECAY=off` default) + meetlogging:
+      welke fragmenten zouden zakken/stijgen, vóórdat het live invloed heeft.
+    - 105d. Valideer op het echte brein: zou relevante kennis verdwijnen? Pas
+      daarna default aanzetten.
+    - Inschatting: M-L, grotendeels ontwerp + validatie. Risico: MIDDEN —
+      raakt wat Span zich "herinnert". Pas oppakken als A/103/104 rond zijn.
+    - Tussentijds: de roadmap-claim is al eerlijk gelabeld ("alleen decay-
+      administratie"); geen overclaim meer.
+
 ## 9. Taken, quests & productiviteit
 
 81. **Commitment-tracker** (M) — beloftes uit gesprekken/mail als Commitment-nodes met deadline-bewaking in de dagstart.
