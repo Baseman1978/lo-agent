@@ -91,12 +91,15 @@ class FragmentStore:
         context: str = "",
         source: str = "span",
         event_date: str = "",
+        scope: str = "algemeen",
     ) -> str:
         if mf_type not in MF_TYPES:
             raise ValueError(f"Onbekend MF-type '{mf_type}'. Kies uit: {sorted(MF_TYPES)}")
         content = content.strip()
         if not content:
             raise ValueError("Leeg MemoryFragment wordt niet opgeslagen.")
+        # F3.4 scope-tag: scheidt privé van Lomans-werk in het brein
+        scope = scope if scope in {"algemeen", "werk", "prive"} else "algemeen"
 
         mf_id = new_mf_id(mf_type)
         embedding = self._llm.embed_one(f"{mf_type}: {content}\n{context}".strip())
@@ -106,7 +109,7 @@ class FragmentStore:
             CREATE (mf:MemoryFragment {
               id: $id, type: $type, content: $content, context: $context,
               source: $source, created: datetime(), embedding: $embedding,
-              event_date: $event_date
+              event_date: $event_date, scope: $scope
             })
             CREATE (mf)-[:FROM_SESSION]->(s)
             """,
@@ -118,6 +121,7 @@ class FragmentStore:
             source=source,
             embedding=embedding,
             event_date=event_date or None,  # bi-temporeel: wanneer gebeurde het
+            scope=scope,
         )
         return mf_id
 

@@ -12,7 +12,7 @@ import os
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 from span import AGENT_NAME, __version__
 from span.config import Settings
@@ -479,3 +479,65 @@ async def o365_auth_status(request: Request) -> dict[str, Any]:
         "account": o365.account_name(),
         "flow": _state.get("o365_flow"),
     }
+
+
+def _ical_token() -> str:
+    return (os.environ.get("SPAN_ICAL_TOKEN", "").strip()
+            or os.environ.get("SPAN_AUTH_TOKEN", "").strip())
+
+
+@router.get("/api/ical")
+async def ical_feed(token: str = Query("")) -> PlainTextResponse:
+    """iCal-feed (F2.6) van Spans geplande crons — abonneerbaar in je agenda.
+    Auth via ?token= (agenda-apps sturen geen header). Bevat alleen titels +
+    tijden, geen gevoelige inhoud."""
+    import hmac as _hmac
+    expected = _ical_token()
+    if not expected or not _hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Ongeldige feed-token.")
+
+    def build() -> str:
+        from span.jarvis.crons import list_crons
+        crons = list_crons(_state["brain"])
+        lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Span//Cron//NL"]
+        for c in crons:
+            at = (c.get("at") or "09:00").replace(":", "") + "00"
+            # eenvoudige dagelijkse/eenmalige weergave; DTSTART zonder datum =
+            # floating time, agenda's tonen het als terugkerend tijdstip
+            uid = f"{c.get('id','cron')}@span"
+            summ = (c.get("text") or "Span-taak").replace("\n", " ")[:120]
+            lines += ["BEGIN:VEVENT", f"UID:{uid}", f"SUMMARY:Span: {summ}",
+                      f"DTSTART:20260101T{at}", "RRULE:FREQ=DAILY", "END:VEVENT"]
+        lines.append("END:VCALENDAR")
+        return "\r\n".join(lines)
+
+    body = await asyncio.to_thread(build)
+    return PlainTextResponse(body, media_type="text/calendar")
+
+
+@router.post("/api/inbound")
+async def inbound(request: Request) -> dict[str, Any]:
+    """Generiek inbound-webhook (F2.6/feature 74): externe systemen (CI,
+    monitoring, domotica) sturen een ondertekend bericht -> belandt als melding
+    in de Agent Inbox. HMAC-SHA256 over de body in header X-Span-Signature;
+    secret = SPAN_INBOUND_SECRET. Zonder secret is het endpoint uit."""
+    import hashlib
+    import hmac as _hmac
+    secret = os.environ.get("SPAN_INBOUND_SECRET", "").strip()
+    if not secret:
+        raise HTTPException(status_code=404, detail="Inbound niet geconfigureerd.")
+    raw = await request.body()
+    sig = request.headers.get("x-span-signature", "")
+    expected = _hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+    if not _hmac.compare_digest(sig, expected):
+        raise HTTPException(status_code=401, detail="Ongeldige signatuur.")
+    try:
+        import json as _json
+        payload = _json.loads(raw or b"{}")
+    except Exception:
+        payload = {}
+    title = str(payload.get("title") or "Externe melding")[:120]
+    detail = str(payload.get("detail") or "")[:500]
+    _state["inbox"].add(kind="notify", title=f"⇲ {title}", detail=detail,
+                        urgency=payload.get("urgency", "normal"))
+    return {"received": True}

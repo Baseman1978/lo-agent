@@ -123,11 +123,13 @@ class ToolBox:
         # ook via procedures die de regex niet kent
         return self._brain.run_read(query)[:50]
 
-    def _tool_remember(self, type: str, content: str, context: str = "") -> Any:
+    def _tool_remember(self, type: str, content: str, context: str = "",
+                       scope: str = "algemeen") -> Any:
         mf_id = self._fragments.write(
-            mf_type=type, content=content, context=context, session_id=self._session_id
+            mf_type=type, content=content, context=context,
+            session_id=self._session_id, scope=scope,
         )
-        return {"stored": mf_id}
+        return {"stored": mf_id, "scope": scope}
 
     def _tool_quest_upsert(
         self,

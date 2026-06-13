@@ -61,6 +61,11 @@ TOOL_SPECS: list[dict[str, Any]] = [
                     },
                     "content": {"type": "string", "description": "De observatie zelf, beknopt"},
                     "context": {"type": "string", "description": "Optionele context/bron"},
+                    "scope": {
+                        "type": "string",
+                        "enum": ["algemeen", "werk", "prive"],
+                        "description": "Domein: 'werk' (Lomans), 'prive', of 'algemeen' (default)",
+                    },
                 },
                 "required": ["type", "content"],
             },

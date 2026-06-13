@@ -188,3 +188,50 @@ def test_web_read_tool_weigert_intern_adres():
     tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s", llm=MagicMock())
     out = json.loads(tb.dispatch("web_read", {"url": "http://localhost:8472/api/health"}))
     assert out["ok"] is False
+
+
+# -- F4.6 audit hash-chain -------------------------------------------------
+
+def test_audit_hashchain_detecteert_tampering():
+    from span.safety import audit
+    # in-memory nep-brein dat Action-nodes bewaart
+    store = []
+    seq_counter = {"n": 0}
+
+    class FakeBrain:
+        def run(self, q, **kw):
+            if "RETURN toString(datetime())" in q:
+                seq_counter["n"] += 1
+                return [{"now": f"2026-06-13T00:00:{seq_counter['n']:02d}"}]
+            if "ORDER BY a.seq DESC LIMIT 1" in q:
+                return [store[-1]] if store else []
+            if q.strip().startswith("CREATE (:Action"):
+                store.append({"seq": kw["seq"], "type": kw["type"],
+                              "detail": kw["detail"], "at": kw["at"],
+                              "prev": kw["prev"], "hash": kw["hash"]})
+                return []
+            if "WHERE a.seq IS NOT NULL" in q:
+                return sorted(store, key=lambda r: r["seq"])
+            return []
+
+    b = FakeBrain()
+    audit.record_action(b, "mail_send", "naar jan")
+    audit.record_action(b, "event_create", "overleg")
+    assert audit.verify_chain(b)["ok"] is True
+    # tamper: wijzig een detail zonder de hash bij te werken
+    store[0]["detail"] = "naar dief@evil.com"
+    res = audit.verify_chain(b)
+    assert res["ok"] is False and res["broken_at"] == 1
+
+
+# -- F3.4 scope-tags -------------------------------------------------------
+
+def test_remember_scope_wordt_opgeslagen():
+    from span.orchestrator.tools import ToolBox
+    fragments = MagicMock()
+    fragments.write.return_value = "mf-1"
+    tb = ToolBox(brain=MagicMock(), fragments=fragments, session_id="s")
+    out = json.loads(tb.dispatch("remember",
+                                 {"type": "decision", "content": "x", "scope": "werk"}))
+    assert out["scope"] == "werk"
+    assert fragments.write.call_args.kwargs["scope"] == "werk"
