@@ -29,12 +29,16 @@ MS_PUBLIC_CLIENT_ID = "14d82eec-204b-4c2f-b7e8-296a70dab67e"
 
 @dataclass(frozen=True)
 class JarvisConfig:
-    """Optionele JARVIS-integraties: O365 (Microsoft Graph) en Asana."""
+    """Optionele JARVIS-integraties: O365 (Microsoft Graph), Asana, Fireflies,
+    Telegram. Eén bron voor alle integratie-config — geen losse env-reads
+    verspreid over app.py/cli.py."""
 
     ms_client_id: str = MS_PUBLIC_CLIENT_ID
     ms_tenant_id: str = "common"
     asana_token: str = ""
     asana_workspace: str = ""
+    fireflies_api_key: str = ""
+    telegram_bot_token: str = ""
 
     @property
     def o365_enabled(self) -> bool:
@@ -43,6 +47,14 @@ class JarvisConfig:
     @property
     def asana_enabled(self) -> bool:
         return bool(self.asana_token)
+
+    @property
+    def fireflies_enabled(self) -> bool:
+        return bool(self.fireflies_api_key)
+
+    @property
+    def telegram_enabled(self) -> bool:
+        return bool(self.telegram_bot_token)
 
 
 @dataclass(frozen=True)
@@ -112,5 +124,7 @@ def load_settings(env_file: Path | None = None) -> Settings:
             ms_tenant_id=os.environ.get("MS_TENANT_ID", "common").strip() or "common",
             asana_token=os.environ.get("ASANA_TOKEN", "").strip(),
             asana_workspace=os.environ.get("ASANA_WORKSPACE", "").strip(),
+            fireflies_api_key=os.environ.get("FIREFLIES_API_KEY", "").strip(),
+            telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN", "").strip(),
         ),
     )

@@ -104,7 +104,7 @@ def init() -> None:
 def chat() -> None:
     """Interactieve sessie. /end = evalueren + afsluiten, /mem <vraag> = geheugen zoeken."""
     settings, brain, llm, work = _connect()
-    o365, asana = build_integrations(settings)
+    o365, asana, _ = build_integrations(settings)
     # zelfde vangrail als de web-UI: gevoelige acties (mail, agenda, Asana)
     # gaan via de Agent Inbox en wachten op expliciet akkoord in de terminal
     from span.jarvis.ambient import AgentInbox
@@ -280,7 +280,7 @@ def o365_login() -> None:
     except RuntimeError as exc:
         console.print(f"[red]Config-fout:[/red] {exc}")
         raise typer.Exit(1)
-    o365, _ = build_integrations(settings)
+    o365, _, _ = build_integrations(settings)
     if o365 is None:
         console.print("[red]MS_CLIENT_ID ontbreekt in .env — registreer een app in Entra ID.[/red]")
         raise typer.Exit(1)
@@ -297,7 +297,7 @@ def o365_login() -> None:
 def o365_logout() -> None:
     """Ontkoppel het gekoppelde Microsoft 365-account."""
     settings = load_settings()
-    o365, _ = build_integrations(settings)
+    o365, _, _ = build_integrations(settings)
     if o365 is None or not o365.is_authenticated():
         console.print("[dim]Geen O365-account gekoppeld.[/dim]")
         return

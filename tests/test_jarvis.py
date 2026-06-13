@@ -302,8 +302,9 @@ class TestCrons:
 
     def test_due_logica(self):
         from span.jarvis.crons import _is_due
-        from datetime import datetime, date
+        from datetime import datetime
         now = datetime(2026, 6, 12, 10, 0)  # vrijdag
+        today = now.date().isoformat()  # vergelijk tegen now, niet de echte klok
         base = {"at": "09:30", "last_run": "", "run_date": "", "weekday": -1}
         assert _is_due({**base, "repeat": "daily"}, now)
         assert _is_due({**base, "repeat": "weekdays"}, now)
@@ -311,9 +312,8 @@ class TestCrons:
         assert not _is_due({**base, "repeat": "weekly", "weekday": 2}, now)
         assert not _is_due({**base, "repeat": "daily", "at": "11:00"}, now)  # nog niet
         assert not _is_due({**base, "repeat": "daily",
-                            "last_run": date.today().isoformat()}, now)  # al gedraaid
-        assert _is_due({**base, "repeat": "once",
-                        "run_date": date.today().isoformat()}, now)
+                            "last_run": today}, now)  # al gedraaid
+        assert _is_due({**base, "repeat": "once", "run_date": today}, now)
 
     def test_remind_naar_inbox_en_once_verwijderd(self):
         from span.jarvis.ambient import AgentInbox

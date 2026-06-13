@@ -9,7 +9,8 @@ from span.config import load_settings
 def clean_env(monkeypatch, tmp_path):
     for var in [
         "ORQ_API_KEY", "ORQ_BASE_URL", "NEO4J_PASSWORD", "SPAN_EMBED_DIMS",
-        "WORK_NEO4J_URI", "BRAIN_DB",
+        "WORK_NEO4J_URI", "BRAIN_DB", "ASANA_TOKEN", "FIREFLIES_API_KEY",
+        "TELEGRAM_BOT_TOKEN", "MS_CLIENT_ID",
     ]:
         monkeypatch.delenv(var, raising=False)
     # voorkom dat een echte .env meelift
@@ -61,3 +62,36 @@ def test_work_db_optional(monkeypatch):
     s = load_settings()
     assert s.work is not None
     assert s.work.uri == "bolt://prod:7687"
+
+
+def test_integraties_default_uit(monkeypatch):
+    monkeypatch.setenv("ORQ_API_KEY", "orq-test")
+    monkeypatch.setenv("NEO4J_PASSWORD", "secret")
+    for var in ("ASANA_TOKEN", "FIREFLIES_API_KEY", "TELEGRAM_BOT_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    j = load_settings().jarvis
+    assert j.o365_enabled  # publieke client-id default aan
+    assert not j.asana_enabled
+    assert not j.fireflies_enabled
+    assert not j.telegram_enabled
+
+
+def test_integraties_uit_env(monkeypatch):
+    monkeypatch.setenv("ORQ_API_KEY", "orq-test")
+    monkeypatch.setenv("NEO4J_PASSWORD", "secret")
+    monkeypatch.setenv("FIREFLIES_API_KEY", "ff-key")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tg-token")
+    j = load_settings().jarvis
+    assert j.fireflies_enabled and j.fireflies_api_key == "ff-key"
+    assert j.telegram_enabled and j.telegram_bot_token == "tg-token"
+
+
+def test_build_integrations_geeft_drietal(monkeypatch):
+    from span.integrations import build_integrations
+    monkeypatch.setenv("ORQ_API_KEY", "orq-test")
+    monkeypatch.setenv("NEO4J_PASSWORD", "secret")
+    for var in ("ASANA_TOKEN", "FIREFLIES_API_KEY", "MS_CLIENT_ID"):
+        monkeypatch.delenv(var, raising=False)
+    o365, asana, fireflies = build_integrations(load_settings())
+    assert o365 is not None  # publieke client-id
+    assert asana is None and fireflies is None  # niet geconfigureerd

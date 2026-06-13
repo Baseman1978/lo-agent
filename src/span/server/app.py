@@ -74,7 +74,7 @@ async def lifespan(app: FastAPI):
             work.verify()
         except Exception:
             work = None
-    o365, asana = build_integrations(settings)
+    o365, asana, fireflies = build_integrations(settings)
     overrides = brain.run(
         "MATCH (c:Config {id:'runtime'}) "
         "RETURN c.model_main AS model_main, c.model_light AS model_light, "
@@ -99,19 +99,16 @@ async def lifespan(app: FastAPI):
         triage_rules=cfg.get("triage_rules") or "",
         disabled_tools=set(cfg.get("disabled_tools") or []),
     )
-    ff_key = os.environ.get("FIREFLIES_API_KEY", "").strip()
-    if ff_key:
-        from span.integrations.fireflies import FirefliesClient
-        _state["fireflies"] = FirefliesClient(ff_key)
+    if fireflies is not None:
+        _state["fireflies"] = fireflies
     if not _auth_token():
         print("WAARSCHUWING: SPAN_AUTH_TOKEN niet gezet — alleen localhost toegestaan.")
     scheduler = asyncio.create_task(daily_scheduler(_state))
     watcher = asyncio.create_task(ambient_watcher(_state))
     telegram_task = None
-    tg_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    if tg_token:
+    if settings.jarvis.telegram_enabled:
         from span.integrations.telegram import TelegramBridge
-        _state["telegram"] = TelegramBridge(tg_token, _state)
+        _state["telegram"] = TelegramBridge(settings.jarvis.telegram_bot_token, _state)
         telegram_task = asyncio.create_task(_state["telegram"].run())
     yield
     tasks = [t for t in (scheduler, watcher, telegram_task) if t is not None]
