@@ -251,6 +251,43 @@ van drieën raakt het gedrag van Span; het zijn onderhoud + één ontwerpkeuze.
     - ✅ GEDAAN (13-6-2026): gebouwd, getest (111 tests groen), gevalideerd.
       Default uit, dus nul gedragswijziging tenzij bewust aangezet.
 
+## 8c. Retrieval-verbeterronde (deep research + meet-gedreven, 13-6-2026)
+
+Multi-agent deep research (15 agents) op de memory/DB-infra concludeerde:
+fundamenteel top-of-the-bill voor een single-user graph-as-brain
+(Neo4j-native HNSW-vector is juist, géén dedicated vector-DB nodig;
+architectuur loopt mee met SOTA Zep/Graphiti/Mem0/Letta). Vijf voorstellen,
+uitgevoerd mét meting + reflectie per fase. **Kernles: bouw retrieval-techniek
+nooit op generieke benchmarks — meet op de echte data.** De gouden eval-set
+stuurde elke beslissing; 2 van de 5 voorstellen sneuvelden terecht op bewijs.
+
+106. **Eval-harness + gouden set (P3)** ✅ GEDAAN — `scripts/eval_retrieval.py`
+    + `tests/eval_retrieval_set.json` (25 queries, lokaal gehouden i.v.m.
+    namen/projectinfo). Baseline op 126 nodes: cosine **recall@1 92%,
+    recall@3 100%, recall@5 100%** (lexical/paraphrase/mixed alle 100% @5).
+    De herbruikbare meetlat voor alle retrieval-keuzes.
+107. **Formele kennis per beurt (P2)** ✅ GEDAAN — `agent.py turn()` roept nu
+    `search_formal()` aan naast `search()`; Insights/Mistakes/Ideas komen in
+    de efemere RAG-memo i.p.v. alleen via de recency-only bootstrap. Echt
+    architectuurgat, schaal-onafhankelijk.
+108. **Reflection-grounding (P4)** ✅ GEDAAN — `reflect.py` weigert een
+    Insight/Mistake zonder geldige DISTILLED_FROM-bron (gevalideerd tegen
+    bestaande fragment-ids). Bescherming tegen stille kennisvervuiling /
+    over-generalisatie. Idea mag bron-loos.
+109. **Hybrid retrieval BM25+vector RRF (P1)** ❌ VERWORPEN OP BEWIJS — cosine
+    zit al op 100% recall@5 op deze schaal; hybrid kan geen recall winnen.
+    Recept ligt klaar (Neo4j FULLTEXT multi-label + RRF k=60,
+    `standard-no-stop-words`); de eval-harness is de trigger om dit alsnog te
+    bouwen zodra recall@3 bij corpusgroei onder ~90% zakt. Nu bouwen = over-
+    engineering tegen de eigen meting in.
+110. **SPAN_DECAY default 'soft' (P5)** ❌ VERWORPEN OP BEWIJS — meting toont
+    dat soft recall@1 verslechtert (92%→88%), nul winst elders. Default blijft
+    off. Machinerie blijft beschikbaar als opt-in experiment.
+
+**Eerlijk operationeel gat dat blijft staan** (door de research benoemd, niet
+urgent): er is een backup-*export* maar geen *restore/import*-pad. Agenderen
+zodra het brein onvervangbaar voelt.
+
 ## 9. Taken, quests & productiviteit
 
 81. **Commitment-tracker** (M) — beloftes uit gesprekken/mail als Commitment-nodes met deadline-bewaking in de dagstart.
