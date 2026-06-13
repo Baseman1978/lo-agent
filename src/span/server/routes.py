@@ -261,6 +261,9 @@ async def inbox_approve(request: Request, item_id: int) -> dict[str, Any]:
         raise
     await asyncio.to_thread(_audit, item["action"] or item["kind"], item["title"])
     inbox.resolve(item_id, "done")
+    from span.jarvis.feedback import record_feedback
+    await asyncio.to_thread(record_feedback, _state["brain"],
+                            item["kind"], item.get("action", ""), "approved")
     return {"approved": True, "result": result}
 
 
@@ -270,7 +273,39 @@ async def inbox_reject(request: Request, item_id: int) -> dict[str, Any]:
     item = _state["inbox"].resolve(item_id, "rejected")
     if item is None:
         raise HTTPException(status_code=404, detail="Item niet gevonden.")
+    from span.jarvis.feedback import record_feedback
+    await asyncio.to_thread(record_feedback, _state["brain"],
+                            item["kind"], item.get("action", ""), "rejected")
     return {"rejected": True}
+
+
+@router.get("/api/provenance/{key}")
+async def provenance(request: Request, key: str) -> dict[str, Any]:
+    """F3.5 — 'waarom weet je dit?': de bron-keten van een formele node of
+    fragment (DISTILLED_FROM/FROM_SESSION/MENTIONS), voor de HUD."""
+    _require_rest_auth(request)
+    brain: BrainDB = _state["brain"]
+
+    def fetch() -> dict[str, Any]:
+        node = brain.run(
+            "MATCH (n {id:$key}) RETURN labels(n)[0] AS type, "
+            "coalesce(n.content, n.title, n.name, n.id) AS label LIMIT 1", key=key)
+        if not node:
+            return {"found": False}
+        sources = brain.run(
+            "MATCH (n {id:$key})-[r:DISTILLED_FROM|FORMALIZED_FROM]->(src) "
+            "RETURN src.id AS id, labels(src)[0] AS type, "
+            "left(coalesce(src.content,''),120) AS snippet", key=key)
+        session = brain.run(
+            "MATCH (n {id:$key})-[:FROM_SESSION]->(s:Session) "
+            "RETURN s.id AS id, s.summary AS summary LIMIT 1", key=key)
+        entities = brain.run(
+            "MATCH (n {id:$key})-[:MENTIONS]->(e:Entity) RETURN e.name AS name", key=key)
+        return {"found": True, "node": node[0], "sources": sources,
+                "session": session[0] if session else None,
+                "entities": [e["name"] for e in entities]}
+
+    return await asyncio.to_thread(fetch)
 
 
 @router.get("/api/backup")

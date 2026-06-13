@@ -1029,3 +1029,34 @@ class TestTelegramInbox:
         assert stt.MODEL_NAME == "large-v3-turbo"
         monkeypatch.delenv("SPAN_STT_MODEL", raising=False)
         importlib.reload(stt)
+
+
+class TestFeedbackEnProvenance:
+    def test_feedback_summary_aggregeert_reject_ratio(self):
+        from span.jarvis.feedback import feedback_summary
+        brain = MagicMock()
+        brain.run.return_value = [
+            {"type": "mail_send", "outcome": "rejected", "n": 3},
+            {"type": "mail_send", "outcome": "approved", "n": 1},
+            {"type": "asana_task", "outcome": "approved", "n": 5},
+        ]
+        out = feedback_summary(brain)
+        mail = next(x for x in out if x["type"] == "mail_send")
+        assert mail["reject_ratio"] == 0.75
+        assert out[0]["type"] == "mail_send"  # hoogste reject-ratio bovenaan
+
+    def test_record_feedback_negeert_onbekende_outcome(self):
+        from span.jarvis.feedback import record_feedback
+        brain = MagicMock()
+        record_feedback(brain, "needs_reply", "mail_send", "onzin")
+        brain.run.assert_not_called()
+
+    def test_bootstrap_toont_feedback_patroon(self):
+        from span.memory.bootstrap import BootstrapContext, render_bootstrap
+        ctx = BootstrapContext(
+            identity={"name": "Span", "philosophy": "p", "origin": "o", "owner": "Bas"},
+            protocols=[], quests=[], decisions=[], anti_patterns=[], soul=[], skills=[],
+            feedback=[{"type": "mail_send", "approved": 1, "rejected": 4, "reject_ratio": 0.8}],
+        )
+        out = render_bootstrap(ctx)
+        assert "Feedback-patroon" in out and "mail_send" in out and "80%" in out

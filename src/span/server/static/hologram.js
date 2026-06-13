@@ -43,7 +43,27 @@
       .enableNodeDrag(false)
       .warmupTicks(40)
       .cooldownTicks(120)
-      .onNodeClick((n) => SPAN.sys(`[${n.type}] ${n.label}`));
+      .onNodeClick((n) => {
+        SPAN.sys(`[${n.type}] ${n.label}`);
+        // F3.5 — 'waarom weet je dit?': haal de bron-keten op en toon hem
+        if (n.key && SPAN.authHeaders) {
+          fetch("/api/provenance/" + encodeURIComponent(n.key),
+                { headers: SPAN.authHeaders() })
+            .then((r) => r.ok ? r.json() : null)
+            .then((p) => {
+              if (!p || !p.found) return;
+              const bits = [];
+              if (p.session && p.session.summary)
+                bits.push("uit sessie: " + p.session.summary.slice(0, 80));
+              if (p.sources && p.sources.length)
+                bits.push("gedestilleerd uit " + p.sources.length + " fragment(en)");
+              if (p.entities && p.entities.length)
+                bits.push("noemt: " + p.entities.join(", "));
+              if (bits.length) SPAN.sys("↳ herkomst — " + bits.join(" · "));
+            })
+            .catch(() => {});
+        }
+      });
     // langzame cinematic auto-rotatie
     const controls = g.controls();
     controls.autoRotate = true;

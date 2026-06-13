@@ -29,6 +29,7 @@ class BootstrapContext:
     recent_sessions: list[dict[str, Any]] = field(default_factory=list)
     insights: list[dict[str, Any]] = field(default_factory=list)
     lessons: list[dict[str, Any]] = field(default_factory=list)
+    feedback: list[dict[str, Any]] = field(default_factory=list)
 
 
 def start_session(brain: BrainDB) -> str:
@@ -114,6 +115,12 @@ def load_bootstrap(
         """
     )
 
+    # F4.4 acceptance-feedback: acties die Bas vaak afwijst -> Span wordt
+    # voorzichtiger (alleen tonen bij een duidelijk patroon)
+    from span.jarvis.feedback import feedback_summary
+    feedback = [f for f in feedback_summary(brain)
+                if f["reject_ratio"] >= 0.5 and (f["approved"] + f["rejected"]) >= 3]
+
     relevant: list[dict[str, Any]] = []
     if first_message and first_message.strip():
         relevant = fragments.search(first_message, k=6)
@@ -139,6 +146,7 @@ def load_bootstrap(
         recent_sessions=recent_sessions,
         insights=insights,
         lessons=lessons,
+        feedback=feedback,
     )
 
 
@@ -192,6 +200,13 @@ def render_bootstrap(ctx: BootstrapContext) -> str:
         for m in ctx.lessons:
             les = f" → Les: {m['lesson']}" if m.get("lesson") else ""
             lines.append(f"- [{m['id']}] {m['content']}{les}")
+
+    if ctx.feedback:
+        lines.append("\n# Feedback-patroon (Bas wijst dit vaak af — wees voorzichtig)")
+        for f in ctx.feedback:
+            lines.append(f"- {f['type']}: {int(f['reject_ratio']*100)}% afgewezen "
+                         f"({f['rejected']}/{f['approved'] + f['rejected']}) — "
+                         "stel zo'n actie liever eerst voor i.p.v. uit te voeren")
 
     if ctx.recent_sessions:
         lines.append("\n# Recente sessies (waar het de laatste tijd over ging)")
