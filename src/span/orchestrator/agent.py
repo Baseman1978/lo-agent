@@ -236,7 +236,17 @@ class SpanAgent:
         self._toolbox.touched = []
         tools_used: list[str] = []
         answer_parts: list[str] = []
+        # F1.6 RunBudget: begrenst de tool-loop in iteraties én wandklok, zodat
+        # een doorgeslagen of gekaapte loop zichzelf niet eindeloos voedt.
+        from span.safety.budget import BudgetExceeded, RunBudget
+        budget = RunBudget(max_iterations=MAX_TOOL_ITERATIONS, max_seconds=180.0)
         for _ in range(MAX_TOOL_ITERATIONS):
+            try:
+                budget.tick()
+            except BudgetExceeded as exc:
+                answer_parts.append(f"(veiligheidslimiet: {exc} — beurt gestopt)")
+                self._messages.append({"role": "assistant", "content": answer_parts[-1]})
+                break
             message = self._llm.chat(
                 self._messages + ([memo_msg] if memo_msg else []),
                 model=self._settings.model_main,

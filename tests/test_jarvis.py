@@ -133,8 +133,10 @@ class TestAgentInbox:
         o365.send_mail.return_value = {"sent": True}
         tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
                      o365=o365, inbox=AgentInbox(), autonomy={"mail": "auto"})
+        # intern adres: bij autonomy=auto stuurt Span direct (geen exfiltratie-
+        # vangnet). Extern adres zou nu altijd via de poort gaan (zie test_safety).
         result = tb.dispatch("o365_mail_send",
-                             {"to": ["x@y.nl"], "subject": "T", "body": "B"})
+                             {"to": ["collega@lomans.nl"], "subject": "T", "body": "B"})
         assert "sent" in result
         o365.send_mail.assert_called_once()
 

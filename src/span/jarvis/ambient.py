@@ -149,6 +149,20 @@ def execute_approval(item: dict[str, Any], o365: Any, llm: Any = None,
 def triage_message(llm: Any, light_model: str | None, mail: dict[str, Any],
                    rules: str = "") -> dict[str, Any]:
     """Eén mail classificeren; faalt zacht naar notify."""
+    # F1.4 — deterministische injectie-scan vóór het LLM erover oordeelt. Dit is
+    # niet afhankelijk van het model: detecteert een mail die zich tot de AI
+    # richt nog vóór die het brein/handelen raakt.
+    from span.safety.scan import scan_text
+    blob = f"{mail.get('subject') or ''}\n{mail.get('preview') or ''}"
+    sc = scan_text(blob)
+    if sc["injection"] or sc["trust"] < 0.5:
+        return {
+            "action": "notify",
+            "summary": "⚠ Verdachte mail (mogelijke prompt-injectie / verborgen "
+                       "inhoud) — alleen ter kennisgeving: "
+                       + (mail.get("subject") or ""),
+            "urgency": "high",
+        }
     system = TRIAGE_PROMPT
     if rules.strip():
         system += f"\n\nExtra regels van Bas (volg deze strikt):\n{rules.strip()}"

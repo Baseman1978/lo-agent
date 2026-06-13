@@ -15,6 +15,16 @@ import requests
 RETRYABLE = {429, 502, 503, 504}
 
 
+def guarded_get(url: str, **kwargs) -> requests.Response:
+    """GET met egress-allowlist (F1.5): weigert niet-toegestane hosts vóór de
+    request de deur uit gaat. Gebruik dit voor URLs die uit untrusted content
+    kunnen komen (web-fetch, reader-modus)."""
+    from span.safety.egress import EgressBlocked, url_allowed
+    if not url_allowed(url):
+        raise EgressBlocked(f"uitgaand verkeer naar niet-toegestane host geweigerd: {url}")
+    return request_with_retry(lambda: requests.get(url, **kwargs))
+
+
 def request_with_retry(
     do_request: Callable[[], requests.Response],
     attempts: int = 3,

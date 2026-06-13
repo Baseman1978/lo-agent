@@ -71,10 +71,30 @@ class ToolBox:
         hidden |= self._disabled
         return [t for t in TOOL_SPECS if t["function"]["name"] not in hidden]
 
+    def _autonomy_auto_for(self, name: str) -> bool:
+        if name == "o365_mail_send":
+            return self._autonomy.get("mail", "ask") == "auto"
+        if name == "o365_event_create":
+            return self._autonomy.get("event", "ask") == "auto"
+        return False
+
     def dispatch(self, name: str, arguments: dict[str, Any]) -> str:
         if name in self._disabled:
             return json.dumps({"error": f"Tool '{name}' is door Bas uitgeschakeld "
                                "in de instellingen."}, ensure_ascii=False)
+        # F1.1/F1.2 — risico-beoordeling + exfiltratie-vangnet vóór de handler
+        from span.safety.guard import assess_tool
+        assessment = assess_tool(
+            name, arguments,
+            autonomy_auto=self._autonomy_auto_for(name),
+            has_inbox=self._inbox is not None,
+        )
+        self._forced_approval = assessment["decision"] == "approval"
+        if assessment["decision"] == "block":
+            return json.dumps(
+                {"error": f"Geweigerd door de veiligheidslaag ({assessment['reason']}). "
+                          "Zet dit zo nodig via de Agent Inbox.",
+                 "risk": assessment["tier"]}, ensure_ascii=False)
         try:
             handler = getattr(self, f"_tool_{name}", None)
             if handler is None:
@@ -165,7 +185,10 @@ class ToolBox:
         return self._require_o365().inbox(top=top, unread_only=unread_only)
 
     def _tool_o365_mail_send(self, to: list[str], subject: str, body: str) -> Any:
-        if self._inbox is not None and self._autonomy.get("mail", "ask") != "auto":
+        # queue bij autonomy=ask OF wanneer de veiligheidslaag goedkeuring forceert
+        # (F1.2 exfiltratie-vangnet kan 'auto' overrulen)
+        if self._inbox is not None and (self._autonomy.get("mail", "ask") != "auto"
+                                        or getattr(self, "_forced_approval", False)):
             item_id = self._inbox.add(
                 kind="action", action="mail_send",
                 title=f"Mail aan {', '.join(to)}",
@@ -194,7 +217,8 @@ class ToolBox:
         attendees: list[str] | None = None,
         body: str = "",
     ) -> Any:
-        if self._inbox is not None and self._autonomy.get("event", "ask") != "auto":
+        if self._inbox is not None and (self._autonomy.get("event", "ask") != "auto"
+                                        or getattr(self, "_forced_approval", False)):
             item_id = self._inbox.add(
                 kind="action", action="event_create",
                 title=f"Afspraak: {subject}",
