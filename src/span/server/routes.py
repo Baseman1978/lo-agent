@@ -550,6 +550,36 @@ async def ical_feed(token: str = Query("")) -> PlainTextResponse:
     return PlainTextResponse(body, media_type="text/calendar")
 
 
+@router.api_route("/api/webhooks/graph", methods=["GET", "POST"])
+async def graph_webhook(request: Request) -> Any:
+    """F4.5 — Microsoft Graph change notifications (vereist een publieke tunnel).
+    Handshake: Graph stuurt ?validationToken= en verwacht die plain terug.
+    Notificatie: geverifieerd via clientState (SPAN_GRAPH_CLIENTSTATE) en GEBRUIKT
+    ALLEEN ALS TRIGGER — de payload is untrusted en wordt nooit als instructie
+    uitgevoerd; hij zet enkel een melding klaar zodat de watcher een read-only
+    Graph-pull doet."""
+    token = request.query_params.get("validationToken")
+    if token is not None:  # Graph-handshake bij het aanmaken van de subscription
+        return PlainTextResponse(token, media_type="text/plain")
+    secret = os.environ.get("SPAN_GRAPH_CLIENTSTATE", "").strip()
+    if not secret:
+        raise HTTPException(status_code=404, detail="Graph-webhook niet geconfigureerd.")
+    try:
+        import json as _json
+        body = _json.loads(await request.body() or b"{}")
+    except Exception:
+        body = {}
+    valid = [n for n in (body.get("value") or [])
+             if n.get("clientState") == secret]
+    if not valid:
+        raise HTTPException(status_code=401, detail="Ongeldige clientState.")
+    # trigger, geen instructie: alleen melden dat er iets veranderde
+    _state["inbox"].add(kind="notify", title="Graph-melding",
+                        detail=f"{len(valid)} wijziging(en) gesignaleerd — "
+                               "Span haalt de details read-only op.")
+    return {"received": len(valid)}
+
+
 @router.post("/api/inbound")
 async def inbound(request: Request) -> dict[str, Any]:
     """Generiek inbound-webhook (F2.6/feature 74): externe systemen (CI,

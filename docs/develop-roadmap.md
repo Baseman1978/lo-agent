@@ -20,6 +20,31 @@ fundament uitgevoerd en de gaten gedicht.
 | 5 Zware sprongen | — | F5.* allemaal: ReasoningBank, WASM/CodeAct-sandbox, browser-/desktop-use |
 | 6 Wachtkamer | — | F6.* allemaal (pas bij groei/bewezen fundament) |
 
+### Tweede bouwronde (na "implementeer alles, ik ga akkoord")
+
+Extra gebouwd + getest (144 tests groen):
+- **iCal-feed** (`/api/ical?token=`) en **HMAC-inbound** (`/api/inbound`).
+- **Tamper-evident audit-trail** (sha256-hash-keten op Action-nodes).
+- **Scope-tags** (privé/werk/algemeen op fragmenten + remember-tool).
+- **web_search live** geverifieerd met Tavily.
+- **Telegram inline-keyboard** (goedkeuren/afwijzen vanaf de telefoon) +
+  **voice-notes** (→ server-Whisper) + instelbare Whisper (`SPAN_STT_MODEL`).
+- **HITL-feedback** (leren van approve/reject → "wees voorzichtig"-blok in de
+  bootstrap) + **provenance** (`/api/provenance/{key}` + node-klik in het hologram).
+- **Graph-webhook-endpoint** (`/api/webhooks/graph`, handshake live getest;
+  notificatie = trigger, nooit instructie).
+- **Host-bridge kijk-modus**: `scripts/host_bridge.py` — draai-klaar op de
+  Windows-host (read-only screenshot, alleen localhost + token, geen besturing).
+
+Resterend als checkpoint/vervolg:
+- `screen_view`-tool + vision-interpretatie van de host-screenshot: vereist een
+  vision-model via ORQ (eerst verifiëren of dat kan).
+- O365 delta-polling: live login nodig; optimalisatie boven de werkende poll.
+- ReasoningBank (F5.1): eigen traject; de reflect+mistakes-cirkel leert al van fouten.
+- WASM/Pyodide CodeAct (F5.2), autonoom browsen/desktop-besturing (F5.3/5.4):
+  strikt gefaseerd, read-only eerst — pas ná akkoord op uitvoering en met de
+  tiered AgentInbox per actie.
+
 **Mens-checkpoints (wat Bas moet aanleveren/beslissen vóór een werkplan-item):**
 - `TAVILY_API_KEY` in `.env` → web_search live (F2.1).
 - Ingelogde O365-sessie → delta-polling (F2.5); IT-uitzondering → 8u-herlogin (feature 102).
