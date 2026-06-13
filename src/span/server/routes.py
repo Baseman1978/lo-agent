@@ -1,0 +1,480 @@
+"""REST-endpoints van de Span-server.
+
+Alle HTTP-routes (de WebSocket-chat zit in app.py). Gebruikt de gedeelde
+`_state` en helpers uit state.py; geregistreerd op de app via
+`app.include_router(router)` in app.py.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
+
+from span import AGENT_NAME, __version__
+from span.config import Settings
+from span.db.brain import BrainDB
+from span.jarvis.ambient import AgentInbox
+from span.jarvis.briefing import build_briefing
+from span.jarvis.daily import briefing_time, generate_daily, set_briefing_time
+from span.llm.client import LLMClient
+from span.memory.fragments import FragmentStore
+from span.server.state import (
+    GRAPH_LABELS, STATIC_DIR, _audit, _effective_settings, _require_rest_auth,
+    _state, _tools_overview,
+)
+
+router = APIRouter()
+
+
+@router.get("/")
+async def index() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@router.get("/api/status")
+async def status(request: Request) -> dict[str, Any]:
+    _require_rest_auth(request)
+    brain: BrainDB = _state["brain"]
+
+    def _counts() -> dict[str, int]:
+        rows = brain.run(
+            "UNWIND $labels AS label "
+            "CALL { WITH label MATCH (n) WHERE label IN labels(n) "
+            "RETURN count(n) AS n } "
+            "RETURN label, n",
+            labels=["MemoryFragment", "Insight", "Mistake", "Idea", "Quest",
+                    "Skill", "Protocol", "Session"],
+        )
+        return {r["label"]: r["n"] for r in rows}
+
+    counts = await asyncio.to_thread(_counts)
+    return {"agent": AGENT_NAME, "version": __version__, "counts": counts}
+
+
+@router.get("/api/memory")
+async def memory(request: Request, q: str = Query(...), k: int = Query(8, le=25)) -> list[dict]:
+    _require_rest_auth(request)
+    fragments = FragmentStore(_state["brain"], _state["llm"])
+    return await asyncio.to_thread(fragments.search, q, k)
+
+
+@router.get("/api/settings")
+async def get_settings(request: Request) -> dict[str, Any]:
+    _require_rest_auth(request)
+    base: Settings = _state["settings"]
+    eff = _effective_settings()
+    o365 = _state.get("o365")
+    return {
+        "model_main": eff.model_main,
+        "model_light": eff.model_light,
+        "defaults": {"model_main": base.model_main, "model_light": base.model_light},
+        "o365": {
+            "configured": o365 is not None,
+            "authenticated": bool(o365) and await asyncio.to_thread(o365.is_authenticated),
+            "account": o365.account_name() if o365 else None,
+        },
+        "asana": {"configured": _state.get("asana") is not None},
+        "work_db": _state.get("work") is not None,
+        "briefing_time": await asyncio.to_thread(briefing_time, _state["brain"]),
+        "autonomy": dict(_state["autonomy"]),
+        "triage_rules": await asyncio.to_thread(
+            lambda: ((_state["brain"].run(
+                "MATCH (c:Config {id:'runtime'}) RETURN c.triage_rules AS r"
+            ) or [{}])[0].get("r")) or ""
+        ),
+        "tools": _tools_overview(),
+        "telegram": {
+            "configured": _state.get("telegram") is not None,
+            "linked": bool(_state.get("telegram")) and _state["telegram"].linked,
+        },
+        "fireflies": {"configured": _state.get("fireflies") is not None},
+        "system_prompt": await asyncio.to_thread(
+            lambda: ((_state["brain"].run(
+                "MATCH (c:Config {id:'runtime'}) RETURN c.system_prompt AS sp"
+            ) or [{}])[0].get("sp")) or ""
+        ),
+        "system_prompt_default": __import__(
+            "span.orchestrator.agent", fromlist=["BASE_PROMPT"]).BASE_PROMPT,
+    }
+
+
+@router.post("/api/settings")
+async def save_settings(request: Request) -> dict[str, Any]:
+    """Instellingen opslaan. Elke key wordt onafhankelijk verwerkt; alleen
+    keys die in de body staan worden aangeraakt (een autonomy-POST kan dus
+    nooit per ongeluk de model-overrides wissen)."""
+    _require_rest_auth(request)
+    body = await request.json()
+    result: dict[str, Any] = {"saved": True}
+
+    if "autonomy" in body:
+        new = body["autonomy"] or {}
+        for key in ("mail", "event"):
+            if new.get(key) in ("ask", "auto"):
+                _state["autonomy"][key] = new[key]
+        await asyncio.to_thread(
+            _state["brain"].run,
+            "MERGE (c:Config {id:'runtime'}) "
+            "SET c.autonomy_mail = $m, c.autonomy_event = $e",
+            m=_state["autonomy"]["mail"], e=_state["autonomy"]["event"],
+        )
+        result["autonomy"] = dict(_state["autonomy"])
+
+    if "disabled_tools" in body:
+        from span.orchestrator.tools import TOOL_META
+        disabled = [t for t in (body["disabled_tools"] or []) if t in TOOL_META]
+        _state["disabled_tools"] = set(disabled)
+        await asyncio.to_thread(
+            _state["brain"].run,
+            "MERGE (c:Config {id:'runtime'}) SET c.disabled_tools = $d", d=disabled,
+        )
+        result["disabled_tools"] = disabled
+
+    if "system_prompt" in body:
+        sp = str(body["system_prompt"])[:8000].strip()
+        if sp and "{bootstrap}" not in sp:
+            # zonder deze placeholder verliest Span zijn hele geheugen-context
+            sp += "\n\n{bootstrap}"
+            result["system_prompt_note"] = ("{bootstrap} ontbrak en is automatisch "
+                                            "toegevoegd — anders start Span zonder geheugen.")
+        await asyncio.to_thread(
+            _state["brain"].run,
+            "MERGE (c:Config {id:'runtime'}) SET c.system_prompt = $sp",
+            sp=sp or None,  # leeg = terug naar de ingebouwde standaard
+        )
+        result["custom"] = bool(sp)
+
+    if "triage_rules" in body:
+        rules = str(body["triage_rules"])[:2000]
+        _state["triage_rules"] = rules
+        await asyncio.to_thread(
+            _state["brain"].run,
+            "MERGE (c:Config {id:'runtime'}) SET c.triage_rules = $r", r=rules,
+        )
+
+    if "briefing_time" in body:
+        try:
+            result["briefing_time"] = await asyncio.to_thread(
+                set_briefing_time, _state["brain"], str(body["briefing_time"])
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
+    if "model_main" in body or "model_light" in body:
+        main = str(body.get("model_main", "")).strip()
+        light = str(body.get("model_light", "")).strip()
+        base: Settings = _state["settings"]
+        if main == base.model_main:
+            main = ""  # default expliciet gekozen → geen override
+        if light == base.model_light:
+            light = ""
+        await asyncio.to_thread(
+            _state["brain"].run,
+            "MERGE (c:Config {id:'runtime'}) "
+            "SET c.model_main = $main, c.model_light = $light, c.updated = datetime()",
+            main=main or None,
+            light=light or None,
+        )
+        _state["model_overrides"] = {"model_main": main or None,
+                                     "model_light": light or None}
+        eff = _effective_settings()
+        result["model_main"] = eff.model_main
+        result["model_light"] = eff.model_light
+
+    return result
+
+
+@router.get("/api/models")
+async def models(request: Request) -> dict[str, Any]:
+    _require_rest_auth(request)
+    llm: LLMClient = _state["llm"]
+    available = await asyncio.to_thread(llm.list_models)
+    eff = _effective_settings()
+    for m in (eff.model_main, eff.model_light):
+        if m not in available:
+            available.insert(0, m)
+    return {"models": available}
+
+
+@router.get("/api/graph")
+async def graph(request: Request, limit: int = Query(250, le=600)) -> dict[str, Any]:
+    """Het brein als graph: nodes + links voor het 3D-hologram in de HUD."""
+    _require_rest_auth(request)
+    brain: BrainDB = _state["brain"]
+
+    def fetch() -> dict[str, Any]:
+        nodes = brain.run(
+            """
+            MATCH (n) WHERE any(l IN labels(n) WHERE l IN $labels)
+            WITH n ORDER BY coalesce(n.created, n.started, datetime('2000-01-01')) DESC
+            LIMIT $limit
+            RETURN elementId(n) AS id, labels(n)[0] AS type, coalesce(n.id, '') AS key,
+                   left(coalesce(n.title, n.name, n.content, n.summary, n.body, n.id, ''), 70) AS label
+            """,
+            labels=GRAPH_LABELS,
+            limit=limit,
+        )
+        ids = [n["id"] for n in nodes]
+        links = brain.run(
+            """
+            MATCH (a)-[r]->(b)
+            WHERE elementId(a) IN $ids AND elementId(b) IN $ids
+            RETURN elementId(a) AS source, elementId(b) AS target, type(r) AS rel
+            LIMIT 1500
+            """,
+            ids=ids,
+        )
+        return {"nodes": nodes, "links": links}
+
+    return await asyncio.to_thread(fetch)
+
+
+@router.get("/api/inbox")
+async def inbox_list(request: Request) -> dict[str, Any]:
+    """Agent Inbox: voorgenomen acties + ambient meldingen."""
+    _require_rest_auth(request)
+    inbox: AgentInbox = _state["inbox"]
+    return {"items": inbox.snapshot(), "open": inbox.open_count()}
+
+
+@router.post("/api/inbox/{item_id}/approve")
+async def inbox_approve(request: Request, item_id: int) -> dict[str, Any]:
+    """Keur een actie goed en voer hem uit; needs_reply = concept laten schrijven."""
+    _require_rest_auth(request)
+    inbox: AgentInbox = _state["inbox"]
+    item = inbox.claim(item_id)  # atomair: dubbelklik kan nooit twee keer uitvoeren
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item niet gevonden of al afgehandeld.")
+    from span.jarvis.ambient import execute_approval
+    try:
+        result = await asyncio.to_thread(
+            execute_approval, item, _state.get("o365"),
+            _state["llm"], _effective_settings().model_light, _state.get("asana"),
+        )
+    except Exception:
+        inbox.release(item_id)  # mislukt: item blijft open voor een nieuwe poging
+        raise
+    await asyncio.to_thread(_audit, item["action"] or item["kind"], item["title"])
+    inbox.resolve(item_id, "done")
+    return {"approved": True, "result": result}
+
+
+@router.post("/api/inbox/{item_id}/reject")
+async def inbox_reject(request: Request, item_id: int) -> dict[str, Any]:
+    _require_rest_auth(request)
+    item = _state["inbox"].resolve(item_id, "rejected")
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item niet gevonden.")
+    return {"rejected": True}
+
+
+@router.get("/api/backup")
+async def backup(request: Request) -> Any:
+    """Brein-export als JSON-download (zonder embeddings)."""
+    _require_rest_auth(request)
+    brain: BrainDB = _state["brain"]
+
+    def dump() -> dict[str, Any]:
+        raw_nodes = brain.run(
+            "MATCH (n) RETURN elementId(n) AS id, labels(n) AS labels, "
+            "properties(n) AS props"
+        )
+        nodes = []
+        for n in raw_nodes:  # embeddings eruit: groot en herleidbaar
+            props = {k: str(v) if not isinstance(v, (str, int, float, bool, list, type(None))) else v
+                     for k, v in (n["props"] or {}).items() if k != "embedding"}
+            nodes.append({"id": n["id"], "labels": n["labels"], "props": props})
+        rels = brain.run(
+            "MATCH (a)-[r]->(b) RETURN elementId(a) AS source, type(r) AS type, "
+            "elementId(b) AS target"
+        )
+        from span.jarvis.daily import now_local
+        return {"exported": now_local().isoformat(timespec="seconds"),
+                "nodes": nodes, "relationships": rels}
+
+    data = await asyncio.to_thread(dump)
+    return JSONResponse(
+        data,
+        headers={"Content-Disposition": "attachment; filename=span-brein-backup.json"},
+    )
+
+
+@router.post("/api/documents")
+async def upload_document(request: Request, filename: str = Query(...)) -> dict[str, Any]:
+    """Document (pdf/docx/txt/md) het geheugen in: chunks + samenvatting."""
+    _require_rest_auth(request)
+    raw = await request.body()
+    if not raw:
+        raise HTTPException(status_code=422, detail="Leeg bestand.")
+    if len(raw) > 20_000_000:
+        raise HTTPException(status_code=413, detail="Bestand groter dan 20 MB.")
+    from span.jarvis.documents import ingest_document
+    try:
+        result = await asyncio.to_thread(ingest_document, _state, filename, raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await asyncio.to_thread(_audit, "document_ingest", f"{filename} ({result['chunks']} delen)")
+    return result
+
+
+@router.post("/api/stt")
+async def speech_to_text(request: Request) -> dict[str, Any]:
+    """Audio-segment (webm/opus) → tekst via lokale Whisper.
+    Fallback voor browsers waarvan de spraakdienst geblokkeerd is."""
+    _require_rest_auth(request)
+    from span.server import stt
+    if not stt.available():
+        raise HTTPException(status_code=501, detail="Server-STT niet geïnstalleerd.")
+    audio = await request.body()
+    if len(audio) < 1000:
+        raise HTTPException(status_code=422, detail="Audio te kort of leeg.")
+    if len(audio) > 10_000_000:
+        raise HTTPException(status_code=413, detail="Audio te groot (max 10 MB).")
+    try:
+        text = await asyncio.to_thread(stt.transcribe, audio)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Transcriptie mislukt: {exc}")
+    return {"text": text}
+
+
+@router.get("/api/stt/status")
+async def stt_status(request: Request) -> dict[str, Any]:
+    _require_rest_auth(request)
+    from span.server import stt
+    return {"available": stt.available(), "model": stt.MODEL_NAME}
+
+
+@router.post("/api/fireflies/sync")
+async def fireflies_sync(request: Request, deep: bool = Query(False)) -> dict[str, Any]:
+    """Handmatige sync: meetings → brein, actiepunten → Agent Inbox.
+    deep=true verwerkt de volledige historie (idempotent)."""
+    _require_rest_auth(request)
+    if _state.get("fireflies") is None:
+        raise HTTPException(status_code=400, detail="Fireflies niet geconfigureerd.")
+    from span.jarvis.meetings import sync_meetings
+    return await asyncio.to_thread(sync_meetings, _state, 8, deep)
+
+
+@router.get("/api/health")
+async def health(request: Request) -> dict[str, Any]:
+    _require_rest_auth(request)
+    brain_ok = True
+    try:
+        await asyncio.to_thread(_state["brain"].run, "RETURN 1 AS ok")
+    except Exception:
+        brain_ok = False
+    o365 = _state.get("o365")
+    return {
+        "brain": brain_ok,
+        "o365": bool(o365) and await asyncio.to_thread(o365.is_authenticated),
+        "asana": _state.get("asana") is not None,
+        "inbox_open": _state["inbox"].open_count(),
+    }
+
+
+@router.get("/api/jarvis/daily")
+async def jarvis_daily(request: Request, force: bool = Query(False)) -> dict[str, Any]:
+    """De dagstart van vandaag; genereert hem alsnog als de scheduler nog
+    niet geweest is (of bij force=true)."""
+    _require_rest_auth(request)
+    from span.jarvis.daily import today_local
+    cached = _state.get("daily")
+    if force or not cached or cached.get("date") != today_local():
+        _state["daily"] = await asyncio.to_thread(
+            generate_daily, _state["brain"], _state["llm"],
+            _state.get("o365"), _state.get("asana"),
+            _effective_settings().model_light,
+        )
+        _state["daily"]["date"] = today_local()
+    return _state["daily"]
+
+
+@router.get("/api/netinfo")
+async def netinfo(request: Request) -> dict[str, Any]:
+    """LAN-adres voor de QR-code (Span op je telefoon, zelfde netwerk)."""
+    _require_rest_auth(request)
+    import socket
+    lan_ip = os.environ.get("SPAN_LAN_HOST", "").strip()
+    if not lan_ip:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            lan_ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            pass
+    # in Docker is het gedetecteerde adres het container-IP — niet bruikbaar
+    in_container = lan_ip.startswith("172.") or lan_ip.startswith("10.0.")
+    return {"lan_ip": "" if in_container else lan_ip, "port": 8472,
+            "hint": "vul het LAN-IP van deze pc in (ipconfig)" if in_container else ""}
+
+
+@router.get("/api/jarvis/briefing")
+async def jarvis_briefing(request: Request) -> dict[str, Any]:
+    """Briefing + paneel-data voor de HUD: agenda, mail, taken, quests."""
+    _require_rest_auth(request)
+    data = await asyncio.to_thread(
+        build_briefing, _state["brain"], _state.get("o365"), _state.get("asana")
+    )
+    o365 = _state.get("o365")
+    data["integrations"] = {
+        "o365": bool(o365) and await asyncio.to_thread(o365.is_authenticated) if o365 else False,
+        "asana": _state.get("asana") is not None,
+    }
+    return data
+
+
+@router.post("/api/auth/o365/start")
+async def o365_auth_start(request: Request) -> dict[str, Any]:
+    """Start de device code flow; een achtergrondtaak wacht de login af."""
+    _require_rest_auth(request)
+    o365 = _state.get("o365")
+    if o365 is None:
+        raise HTTPException(status_code=400, detail="O365 niet geconfigureerd (MS_CLIENT_ID).")
+    flow = await asyncio.to_thread(o365.start_device_flow)
+    _state["o365_flow"] = {"status": "pending", "account": None, "error": None}
+
+    def _complete() -> None:
+        try:
+            account = o365.complete_device_flow(flow)
+            _state["o365_flow"] = {"status": "done", "account": account, "error": None}
+        except Exception as exc:
+            _state["o365_flow"] = {"status": "error", "account": None, "error": str(exc)}
+
+    asyncio.get_running_loop().run_in_executor(None, _complete)
+    return {
+        "user_code": flow["user_code"],
+        "verification_uri": flow["verification_uri"],
+        "message": flow.get("message", ""),
+    }
+
+
+@router.post("/api/auth/o365/logout")
+async def o365_logout(request: Request) -> dict[str, Any]:
+    """Ontkoppel het gekoppelde Microsoft-account (bv. verkeerd account)."""
+    _require_rest_auth(request)
+    o365 = _state.get("o365")
+    if o365 is None:
+        raise HTTPException(status_code=400, detail="O365 niet geconfigureerd.")
+    name = await asyncio.to_thread(o365.logout)
+    _state["o365_flow"] = None
+    return {"logged_out": True, "account": name}
+
+
+@router.get("/api/auth/o365/status")
+async def o365_auth_status(request: Request) -> dict[str, Any]:
+    _require_rest_auth(request)
+    o365 = _state.get("o365")
+    if o365 is None:
+        return {"configured": False, "authenticated": False}
+    authenticated = await asyncio.to_thread(o365.is_authenticated)
+    return {
+        "configured": True,
+        "authenticated": authenticated,
+        "account": o365.account_name(),
+        "flow": _state.get("o365_flow"),
+    }
