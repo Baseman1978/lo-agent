@@ -71,6 +71,9 @@ class Settings:
     brain_db: str
     work: WorkDbConfig | None = field(default=None)
     jarvis: JarvisConfig = field(default_factory=JarvisConfig)
+    # geheugen-verval: "off" (default, pure cosine), "soft" (zacht herordenen),
+    # "log" (zacht + log welke fragmenten zouden stijgen/zakken)
+    decay_mode: str = "off"
 
 
 def _require(name: str) -> str:
@@ -119,6 +122,9 @@ def load_settings(env_file: Path | None = None) -> Settings:
         neo4j_password=_require("NEO4J_PASSWORD"),
         brain_db=os.environ.get("BRAIN_DB", "span-brain").strip(),
         work=work,
+        decay_mode=(os.environ.get("SPAN_DECAY", "off").strip().lower()
+                    if os.environ.get("SPAN_DECAY", "off").strip().lower()
+                    in {"off", "soft", "log"} else "off"),
         jarvis=JarvisConfig(
             ms_client_id=os.environ.get("MS_CLIENT_ID", "").strip() or MS_PUBLIC_CLIENT_ID,
             ms_tenant_id=os.environ.get("MS_TENANT_ID", "common").strip() or "common",

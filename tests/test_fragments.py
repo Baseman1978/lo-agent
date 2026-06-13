@@ -58,3 +58,57 @@ def test_parse_json_with_surrounding_text():
 def test_parse_json_rejects_garbage():
     with pytest.raises(ValueError):
         _parse_json_block("geen json hier")
+
+
+def _node(mf_id, score, **props):
+    return {"node": {"id": mf_id, "type": props.get("type", "observation"),
+                     "content": mf_id, **props}, "score": score}
+
+
+def test_decay_off_is_pure_cosine():
+    store, brain, llm = make_store()
+    store._decay_mode = "off"
+    brain.vector_search.return_value = [
+        _node("a", 0.9), _node("b", 0.8), _node("c", 0.7)]
+    out = store.search("q", k=2)
+    assert [r["id"] for r in out] == ["a", "b"]  # cosine-volgorde, top-k
+
+
+def test_decay_off_filtert_superseded():
+    store, brain, llm = make_store()
+    store._decay_mode = "off"
+    brain.vector_search.return_value = [
+        _node("a", 0.9, superseded=True), _node("b", 0.8), _node("c", 0.7)]
+    out = store.search("q", k=2)
+    assert [r["id"] for r in out] == ["b", "c"]
+
+
+def test_decay_soft_herordent_op_type_en_recency():
+    from datetime import datetime, timezone, timedelta
+    store, brain, llm = make_store()
+    store._decay_mode = "soft"
+    now = datetime.now(timezone.utc)
+    oud = (now - timedelta(days=400)).isoformat()
+    vers = now.isoformat()
+    # 'a' wint op cosine maar is een oude interaction-log (type 0.9, sterk vervallen);
+    # 'b' iets lagere cosine maar verse soul (type 1.3) -> moet stijgen
+    brain.vector_search.return_value = [
+        _node("a", 0.82, type="interaction-log", created=oud, access_count=0),
+        _node("b", 0.78, type="soul", created=vers, access_count=5),
+    ]
+    out = store.search("q", k=2)
+    assert out[0]["id"] == "b"  # zacht herordend
+
+
+def test_decay_factor_vloer_houdt_relevantie_dominant():
+    from span.memory.fragments import FragmentStore
+    from datetime import datetime, timezone, timedelta
+    oud = (datetime.now(timezone.utc) - timedelta(days=3650)).isoformat()
+    f_oud = FragmentStore._decay_factor({"type": "interaction-log", "created": oud,
+                                         "access_count": 0})
+    vers = datetime.now(timezone.utc).isoformat()
+    f_vers = FragmentStore._decay_factor({"type": "soul", "created": vers,
+                                          "access_count": 10})
+    # zacht: hele spread binnen ~0.83..1.18 -> cosine dominant, geen wegfiltering
+    assert 0.83 < f_oud < 0.95
+    assert 1.0 < f_vers < 1.18

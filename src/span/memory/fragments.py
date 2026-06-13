@@ -31,14 +31,56 @@ def new_mf_id(mf_type: str) -> str:
     return f"mf-{int(time.time() * 1000)}-{code}-{uuid4().hex[:6]}"
 
 
+# Verval-parameters (alleen actief als decay_mode != "off"). Bewust ZACHT:
+# de totale multiplier blijft binnen ~0.83..1.18, zodat cosine-relevantie
+# dominant blijft en verval alleen tussen bijna-gelijke scores de tiebreak
+# doet. (Eerste, te agressieve parametrisatie gaf op het echte brein 1/5
+# overlap — relevante kennis werd weggeduwd; daarom flink ingeperkt.)
+_DECAY_HALF_LIFE_DAYS = 120.0         # na 120 dagen ongebruik telt recency nog half
+_TYPE_WEIGHT = {
+    "soul": 1.08, "decision": 1.06, "anti-pattern": 1.06,
+    "reflection": 1.03, "observation": 1.00, "interaction-log": 0.96,
+}
+
+
 class FragmentStore:
-    def __init__(self, brain: BrainDB, llm: LLMClient):
+    def __init__(self, brain: BrainDB, llm: LLMClient, decay_mode: str = "off"):
         self._brain = brain
         self._llm = llm
+        self._decay_mode = decay_mode if decay_mode in {"off", "soft", "log"} else "off"
 
     def embed(self, text: str) -> list[float]:
         """Eén embedding voor hergebruik over meerdere zoekopdrachten."""
         return self._llm.embed_one(text)
+
+    @staticmethod
+    def _age_days(node: dict[str, Any]) -> float:
+        """Dagen sinds het fragment voor het laatst 'warm' was (last_accessed,
+        anders created). Robuust tegen neo4j DateTime én strings; bij twijfel 0
+        (= vers, geen straf)."""
+        from datetime import datetime, timezone
+        raw = node.get("last_accessed") or node.get("created")
+        if raw is None:
+            return 0.0
+        try:
+            dt = raw.to_native() if hasattr(raw, "to_native") else datetime.fromisoformat(str(raw))
+        except (ValueError, AttributeError):
+            return 0.0
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        delta = datetime.now(timezone.utc) - dt
+        return max(0.0, delta.total_seconds() / 86400.0)
+
+    @classmethod
+    def _decay_factor(cls, node: dict[str, Any]) -> float:
+        """Zachte multiplier op de cosine-score. Spread is klein gehouden
+        (~0.83..1.18) zodat cosine-relevantie dominant blijft: verval stuurt
+        alleen bij tussen bijna-gelijke scores, het filtert nooit."""
+        recency = 0.5 ** (cls._age_days(node) / _DECAY_HALF_LIFE_DAYS)  # 1.0 vers .. 0 oud
+        recency_f = 0.92 + 0.08 * recency          # 0.92 (oud) .. 1.00 (vers)
+        freq_boost = 1.0 + 0.008 * min(int(node.get("access_count") or 0), 10)  # max +8%
+        type_weight = _TYPE_WEIGHT.get(node.get("type"), 1.0)  # 0.96 .. 1.08
+        return recency_f * freq_boost * type_weight
 
     def write(
         self,
@@ -81,27 +123,50 @@ class FragmentStore:
 
     def search(self, query: str, k: int = 5,
                embedding: list[float] | None = None) -> list[dict[str, Any]]:
-        """Vector search over alle fragmenten; geeft id, type, content, score."""
+        """Vector search over alle fragmenten; geeft id, type, content, score.
+
+        decay_mode 'off' = pure cosine (default). 'soft'/'log' = zacht
+        herordenen op recency/frequentie/type uit een ruimere kandidatenpool;
+        'log' print bovendien welke fragmenten t.o.v. pure cosine verschuiven."""
         embedding = embedding or self._llm.embed_one(query)
-        rows = self._brain.vector_search("mf_embedding", embedding, k=k + 4)
-        results = []
-        for row in rows:
-            node = row["node"]
-            if node.get("superseded"):
-                continue  # consolidatie heeft dit fragment afgeschreven
-            if len(results) >= k:
-                break
-            results.append(
-                {
-                    "id": node.get("id"),
-                    "type": node.get("type"),
-                    "content": node.get("content"),
-                    "context": node.get("context", ""),
-                    "created": str(node.get("created", "")),
-                    "event_date": node.get("event_date") or "",
-                    "score": round(row["score"], 4),
-                }
+
+        def _entry(node: dict[str, Any], score: float) -> dict[str, Any]:
+            return {
+                "id": node.get("id"), "type": node.get("type"),
+                "content": node.get("content"), "context": node.get("context", ""),
+                "created": str(node.get("created", "")),
+                "event_date": node.get("event_date") or "",
+                "score": round(score, 4),
+            }
+
+        if self._decay_mode == "off":
+            rows = self._brain.vector_search("mf_embedding", embedding, k=k + 4)
+            results = []
+            for row in rows:
+                node = row["node"]
+                if node.get("superseded"):
+                    continue  # consolidatie heeft dit fragment afgeschreven
+                if len(results) >= k:
+                    break
+                results.append(_entry(node, row["score"]))
+        else:
+            # ruimere pool zodat herordenen daadwerkelijk iets kan verschuiven
+            pool = max(k * 3, k + 10)
+            rows = self._brain.vector_search("mf_embedding", embedding, k=pool)
+            cands = [r for r in rows if not r["node"].get("superseded")]
+            ranked = sorted(
+                cands,
+                key=lambda r: r["score"] * self._decay_factor(r["node"]),
+                reverse=True,
             )
+            if self._decay_mode == "log":
+                cosine_order = [r["node"].get("id") for r in cands[:k]]
+                decay_order = [r["node"].get("id") for r in ranked[:k]]
+                if cosine_order != decay_order:
+                    print(f"[decay] top-{k} verschoven\n  cosine: {cosine_order}"
+                          f"\n  decay : {decay_order}", flush=True)
+            results = [_entry(r["node"], r["score"]) for r in ranked[:k]]
+
         if results:  # decay-administratie: gebruik houdt herinneringen warm
             try:
                 self._brain.run(

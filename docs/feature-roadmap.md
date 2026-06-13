@@ -1,6 +1,6 @@
 # Span — 100 features (status: 12 juni 2026)
 
-**Geïmplementeerd (✅ ~50):** 1, 3, 4, 5, 7 (deels via conflicten), 8, 11, 12 (concept-stijl), 13, 14, 15 (deels), 17 (via triage-regels), 20 (prompt), 21 (detectie), 23, 24 (prompt), 30, 31, 32 (deels), 33, 34, 35, 36 (alleen decay-administratie: last_accessed/access_count worden geschreven, nog geen verval-algoritme), 37, 39 (temporele props), 40, 53, 54, 55 (prompt), 57, 61, 62, 63, 64, 65, 67 (deels), 70, 71, 79 (weer), 81 (prompt), 83 (prompt), 89, 91, 92, 93 (QR/token-basis), 95 (JSON-export), 99 — plus Agent Inbox-stembediening en entiteit-extractie naar het hologram.
+**Geïmplementeerd (✅ ~50):** 1, 3, 4, 5, 7 (deels via conflicten), 8, 11, 12 (concept-stijl), 13, 14, 15 (deels), 17 (via triage-regels), 20 (prompt), 21 (detectie), 23, 24 (prompt), 30, 31, 32 (deels), 33, 34, 35, 36 (zacht verval-algoritme achter SPAN_DECAY-vlag, default uit — zie feature 105), 37, 39 (temporele props), 40, 53, 54, 55 (prompt), 57, 61, 62, 63, 64, 65, 67 (deels), 70, 71, 79 (weer), 81 (prompt), 83 (prompt), 89, 91, 92, 93 (QR/token-basis), 95 (JSON-export), 99 — plus Agent Inbox-stembediening en entiteit-extractie naar het hologram.
 
 **Geblokkeerd op externe input van Bas:** 72 (Teams-tenant), 75 (Home Assistant), 76 (extensie-distributie), 77 (Fireflies), 25 (Maps-key), 58/93-https (domein/certificaat).
 
@@ -231,20 +231,25 @@ van drieën raakt het gedrag van Span; het zijn onderhoud + één ontwerpkeuze.
     decay-mechanisme dat fragmenten uit de bootstrap/zoekresultaten weert is een
     **ontwerpkeuze met risico op het stil wegfilteren van relevante kennis** —
     niet meesmokkelen in een bugfix-ronde.
-    - 105a. ONTWERP: definieer een recency/frequency-score (bv. halfwaardetijd
-      op `last_accessed` × `access_count`, plus type-gewicht: soul/decision
-      zwaarder dan interaction-log). Op papier, mét voorbeelden.
-    - 105b. Beslis waar de score ingrijpt: alleen ranking-bijsturing in
-      `search()` (zacht, omkeerbaar) — NIET hard wegfilteren. `superseded`
-      blijft het enige harde uitsluit-mechanisme.
-    - 105c. Bouw achter een vlag (`SPAN_DECAY=off` default) + meetlogging:
-      welke fragmenten zouden zakken/stijgen, vóórdat het live invloed heeft.
-    - 105d. Valideer op het echte brein: zou relevante kennis verdwijnen? Pas
-      daarna default aanzetten.
-    - Inschatting: M-L, grotendeels ontwerp + validatie. Risico: MIDDEN —
-      raakt wat Span zich "herinnert". Pas oppakken als A/103/104 rond zijn.
-    - Tussentijds: de roadmap-claim is al eerlijk gelabeld ("alleen decay-
-      administratie"); geen overclaim meer.
+    - 105a. ✅ ONTWERP: `final = cosine · recency_f · freq_boost · type_weight`.
+      recency_f via halfwaardetijd (120d) op `last_accessed`/`created`;
+      freq_boost klein op `access_count`; type_weight (soul/decision zwaarder
+      dan interaction-log). Bewust kleine spread.
+    - 105b. ✅ Ingrijppunt: alleen ranking-bijsturing in `search()` op een
+      ruimere kandidatenpool; NIET hard wegfilteren. `superseded` blijft het
+      enige harde uitsluit-mechanisme.
+    - 105c. ✅ Achter `SPAN_DECAY`-vlag: `off` (default, byte-identiek aan
+      pure cosine), `soft` (zacht herordenen), `log` (zacht + print welke
+      top-k t.o.v. cosine verschuift). FragmentStore krijgt decay_mode; agent
+      en /api/memory geven settings.decay_mode door.
+    - 105d. ✅ Gevalideerd op het echte brein. Eerste parametrisatie was te
+      agressief (overlap 1/5 bij sommige queries — relevante kennis werd
+      weggeduwd). Na verzachten (multiplier-spread ~0.83..1.18): gemiddeld
+      4/5 overlap, top-fragmenten blijven, alleen de staart beweegt. Default
+      blijft OFF; Bas kan `SPAN_DECAY=soft` (of `=log` om mee te kijken) in
+      `.env` zetten.
+    - ✅ GEDAAN (13-6-2026): gebouwd, getest (111 tests groen), gevalideerd.
+      Default uit, dus nul gedragswijziging tenzij bewust aangezet.
 
 ## 9. Taken, quests & productiviteit
 

@@ -121,7 +121,7 @@ class SpanAgent:
         self.user_location = user_location  # browser-GPS; mag later gezet worden
         self._fireflies = fireflies
         self.last_touched: list[str] = []
-        self._fragments = FragmentStore(brain, llm)
+        self._fragments = FragmentStore(brain, llm, decay_mode=settings.decay_mode)
         self._session_id: str | None = None
         self._toolbox: ToolBox | None = None
         self._messages: list[dict[str, Any]] = []
