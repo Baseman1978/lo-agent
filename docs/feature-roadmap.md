@@ -303,6 +303,37 @@ urgent): er is een backup-*export* maar geen *restore/import*-pad. Zie 111.
       proef op een fragment. Pas oppakken zodra het brein onvervangbaar voelt;
       tot dan dekt de handmatige `brain_cypher`-override + JSON-export het af.
 
+## 8d. Strategisch optimalisatie-onderzoek (deep research, 13-6-2026)
+
+Apart vastgelegd in `docs/optimalisatie-onderzoek.md` (31-agent deep research
+over 5 gebieden). Kernconclusie: de grootste winst zit niet in losse features
+maar in **één gedeeld veiligheidsfundament** (untrusted-quarantaine + risk-tier
+boven de AgentInbox + provenance + egress-allowlist) waar élke nieuwe
+capability doorheen erft. Voorgestelde fasering:
+- **Fase 0 — discipline (gratis):** k=1..2 retrieval + token-budget, prompt
+  caching, interleaved thinking, tool-result clearing, confidence-signaling,
+  HUD-afrondingen.
+- **Fase 1 — veiligheidsfundament (vóór elke capability):** risk-tier per tool,
+  arg/output-validatie + exfiltratie-check, gedeelde dual-LLM/quarantaine-laag,
+  aidefence_scan + spotlighting, egress-allowlist, budget/circuit-breaker,
+  adversariële pytest-suite.
+- **Fase 2 — goedkope winst:** web-search + reader-modus, read-only kijk-modus,
+  Telegram+ntfy mobiel + voice→Whisper, HMAC-inbound + iCal + Cloudflare Tunnel,
+  delta-polling mail/agenda, entity-dedup + Weibull-decay.
+- **Fase 3 — geheugen-ruggengraat:** Episode-nodes + provenance, write-gate met
+  contradictie-check, provenance-graph + citaties in de HUD.
+- **Fase 4 — autonomie-kern:** Plan-Execute-Verify + plan-immutability +
+  dual-LLM, durable checkpointing, Graph-webhooks i.p.v. polling.
+- **Fase 5 — zware sprongen (getrapt):** ReasoningBank/Reflexion, WASM/Pyodide
+  CodeAct-sandbox, en computer-/browser-use in 3 trappen (read-only kijken →
+  Playwright read-only → autonoom achter de tiered AgentInbox).
+- **Fase 6 — wachtkamer:** SSGM-reconciliation, Letta-tiers, Neo4j VECTOR-
+  migratie, GraphRAG, branche-data-APIs.
+Computer-use/web-surfen = grootste nieuwe aanvalsoppervlak → strikt gefaseerd,
+nooit volledig autonoom met mailtoegang. Bewust NIET: cloud speech-to-speech
+(omzeilt de poort), WhatsApp (ban/pricing), fine-tuning/GPU-modellen (ARM64),
+groter context-venster i.p.v. curatie (context rot).
+
 ## 9. Taken, quests & productiviteit
 
 81. **Commitment-tracker** (M) — beloftes uit gesprekken/mail als Commitment-nodes met deadline-bewaking in de dagstart.
