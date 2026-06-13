@@ -185,18 +185,26 @@ class SpanAgent:
         # RAG-memo is efemeer: alleen voor déze beurt meegegeven, niet in de
         # historie bewaard — voorkomt token-groei en verouderde hints
         memo_msg: dict[str, str] | None = None
-        relevant = self._fragments.search(user_message, k=4)
-        if relevant:
-            memo = "\n".join(
-                f"- [{r['id']} · {r['type']} · score {r['score']}] {r['content']}"
-                for r in relevant
-                if r["score"] > 0.55
-            )
-            if memo:
-                memo_msg = {
-                    "role": "system",
-                    "content": f"Geheugen dient zich aan (mogelijk relevant):\n{memo}",
-                }
+        embedding = self._fragments.embed(user_message)
+        relevant = self._fragments.search(user_message, k=4, embedding=embedding)
+        lines = [
+            f"- [{r['id']} · {r['type']} · score {r['score']}] {r['content']}"
+            for r in relevant if r["score"] > 0.55
+        ]
+        # formele kennis (Insights/Mistakes/Ideas) hoort ook per beurt mee: het
+        # is de duurste, gedestilleerde kennis en kwam tot nu toe alleen via de
+        # bootstrap binnen (recency-only) — semantisch passende kennis werd
+        # gemist als ze niet toevallig recent was.
+        for r in self._fragments.search_formal(user_message, k=2, embedding=embedding):
+            if r["score"] > 0.55:
+                les = f" → {r['lesson']}" if r.get("lesson") else ""
+                lines.append(f"- [{r['id']} · {r['label']} · score {r['score']}] "
+                             f"{r['content']}{les}")
+        if lines:
+            memo_msg = {
+                "role": "system",
+                "content": "Geheugen dient zich aan (mogelijk relevant):\n" + "\n".join(lines),
+            }
 
         self._messages.append({"role": "user", "content": user_message})
 

@@ -82,6 +82,17 @@ def reflect_session(
             content = (item.get("content") or "").strip()
             if not content:
                 continue
+            # grounding: valideer source_ids tegen echt bestaande fragmenten.
+            # Insight/Mistake ZONDER geldige bron worden geweigerd — dit is de
+            # bewezen mitigatie tegen 'compounding silent errors' / over-
+            # generalisatie, het #1 faalmodel van zelflerende agents. Een
+            # single-user agent heeft geen tweede paar ogen. Idea mag bron-loos
+            # (schema-voorstellen e.d. zijn vaak nieuw, niet gedestilleerd).
+            valid_sources = _valid_sources(brain, item.get("source_ids", []))
+            if label in ("Insight", "Mistake") and not valid_sources:
+                print(f"[reflect] {label} geweigerd (geen geldige bron-fragmenten): "
+                      f"{content[:70]}", flush=True)
+                continue
             props = {"content": content, "session_id": session_id}
             if label == "Mistake":
                 props["lesson"] = (item.get("lesson") or "").strip()
@@ -90,8 +101,7 @@ def reflect_session(
             # deterministische id: een retry van dezelfde sessie maakt
             # geen duplicaten (MERGE) en kan nooit botsen met andere sessies
             node_id = f"{label.lower()}-{session_id.removeprefix('session-')}-{index}"
-            _write_formal_node(brain, llm, label, node_id, props,
-                               item.get("source_ids", []))
+            _write_formal_node(brain, llm, label, node_id, props, valid_sources)
             written.setdefault(key, []).append(node_id)
 
     for index, quest in enumerate(parsed.get("quests", []), start=1):
@@ -162,6 +172,18 @@ def reflect_session(
     summary = (parsed.get("summary") or "").strip() or "Geen samenvatting."
     end_session(brain, session_id, summary)
     return {"summary": summary, "written": written}
+
+
+def _valid_sources(brain: BrainDB, source_ids: list[str]) -> list[str]:
+    """Filter de door de LLM aangedragen source_ids tot de fragmenten die
+    echt bestaan — voorkomt grounding op verzonnen/foute ids."""
+    ids = [s for s in (source_ids or []) if s]
+    if not ids:
+        return []
+    rows = brain.run(
+        "MATCH (mf:MemoryFragment) WHERE mf.id IN $ids RETURN mf.id AS id", ids=ids
+    )
+    return [r["id"] for r in rows]
 
 
 def _write_formal_node(

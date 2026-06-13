@@ -837,19 +837,40 @@ class TestVerbeterRonde:
     def test_reflect_ids_deterministisch_per_sessie(self):
         from span.evaluation.reflect import reflect_session
         brain = MagicMock()
-        brain.run.return_value = []
+        # _valid_sources matcht mf-1 als bestaand; overige queries -> []
+        brain.run.side_effect = lambda q, **kw: (
+            [{"id": "mf-1"}] if "WHERE mf.id IN" in q else [])
         fragments = MagicMock()
         fragments.session_fragments.return_value = [{"id": "mf-1", "content": "x"}]
         llm = MagicMock()
         llm.embed_one.return_value = [0.1]
         llm.chat_json.return_value = {
-            "summary": "s", "insights": [{"content": "A", "source_ids": []}],
+            "summary": "s", "insights": [{"content": "A", "source_ids": ["mf-1"]}],
             "mistakes": [], "ideas": [], "quests": [], "skills": [],
             "protocol_updates": [],
         }
         out1 = reflect_session(MagicMock(), brain, llm, fragments, "session-777")
         out2 = reflect_session(MagicMock(), brain, llm, fragments, "session-777")
         assert out1["written"]["insights"] == out2["written"]["insights"] == ["insight-777-1"]
+
+    def test_reflect_weigert_bronloze_insight(self):
+        from span.evaluation.reflect import reflect_session
+        brain = MagicMock()
+        brain.run.side_effect = lambda q, **kw: []  # geen enkel fragment bestaat
+        fragments = MagicMock()
+        fragments.session_fragments.return_value = [{"id": "mf-1", "content": "x"}]
+        llm = MagicMock()
+        llm.embed_one.return_value = [0.1]
+        llm.chat_json.return_value = {
+            "summary": "s",
+            "insights": [{"content": "Verzonnen inzicht", "source_ids": ["mf-bestaat-niet"]}],
+            "mistakes": [], "ideas": [{"content": "los idee", "source_ids": []}],
+            "quests": [], "skills": [], "protocol_updates": [],
+        }
+        out = reflect_session(MagicMock(), brain, llm, fragments, "session-9")
+        # Insight zonder geldige bron geweigerd; Idea (bron-loos toegestaan) wel
+        assert "insights" not in out["written"]
+        assert out["written"].get("ideas") == ["idea-9-1"]
 
     # Fase 3 — crons: overdue once-cron draait alsnog, markeren ná succes
     def test_once_cron_achterstallig_draait_alsnog(self):
