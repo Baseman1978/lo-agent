@@ -235,7 +235,9 @@ class TestSystemPromptOverride:
              patch("span.orchestrator.agent.render_bootstrap", return_value="<<CTX>>"):
             brain.run.return_value = brain_rows
             agent.begin("s-1")
-        return agent._messages[0]["content"]
+        # system-message is content-blocks (cache_control); pak de tekst
+        content = agent._messages[0]["content"]
+        return content[0]["text"] if isinstance(content, list) else content
 
     def test_default_prompt_zonder_override(self):
         system = self._agent_system([{"sp": None}])

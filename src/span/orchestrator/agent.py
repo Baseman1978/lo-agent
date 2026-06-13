@@ -73,6 +73,11 @@ Werkwijze:
   brein en vind je via brain_search.
 - Antwoord in de taal van de gebruiker (meestal Nederlands). Wees concreet,
   gegrond en traceerbaar; gok niet wat je kunt opzoeken.
+- Zekerheid: ben je zeker, antwoord dan direct. Twijfel je over een GEVOELIGE
+  of onomkeerbare actie (mail versturen, afspraak maken/verzetten, iets
+  verwijderen), voer die dan niet zomaar uit — zet hem in de Agent Inbox of
+  stel één gerichte controlevraag. Bij twijfel over een feit: zeg dat het
+  onzeker is en zoek het op, verzin niets.
 
 {bootstrap}
 """
@@ -171,7 +176,15 @@ class SpanAgent:
                   .replace("{name}", ident["name"])
                   .replace("{owner}", ident["owner"])
                   .replace("{bootstrap}", render_bootstrap(self._bootstrap)))
-        self._messages = [{"role": "system", "content": system}]
+        # F0.2 prompt caching: de system-prompt is groot en binnen een sessie
+        # stabiel. cache_control markeert hem cacheable -> elke 2e+ beurt in de
+        # sessie krijgt een cache-hit op de ORQ-route (geverifieerd: ~99% van de
+        # prompt-tokens cached op de tweede call). Content als blocks i.p.v. string.
+        self._messages = [{
+            "role": "system",
+            "content": [{"type": "text", "text": system,
+                         "cache_control": {"type": "ephemeral"}}],
+        }]
         return self._bootstrap
 
     def turn(self, user_message: str, on_text: Callable[[str], None] | None = None) -> str:
@@ -183,28 +196,38 @@ class SpanAgent:
             raise RuntimeError("Roep eerst begin() aan.")
 
         # RAG-memo is efemeer: alleen voor déze beurt meegegeven, niet in de
-        # historie bewaard — voorkomt token-groei en verouderde hints
-        memo_msg: dict[str, str] | None = None
+        # historie bewaard — voorkomt token-groei en verouderde hints.
+        # F0.1: bewust kleine k (context rot — meer geheugen verslechtert de
+        # uitkomst) + harde tekencap; de brain_search-tool blijft beschikbaar
+        # als het model méér wil ophalen.
+        memo_msg: dict[str, Any] | None = None
         embedding = self._fragments.embed(user_message)
-        relevant = self._fragments.search(user_message, k=4, embedding=embedding)
+        relevant = self._fragments.search(user_message, k=2, embedding=embedding)
         lines = [
             f"- [{r['id']} · {r['type']} · score {r['score']}] {r['content']}"
             for r in relevant if r["score"] > 0.55
         ]
-        # formele kennis (Insights/Mistakes/Ideas) hoort ook per beurt mee: het
-        # is de duurste, gedestilleerde kennis en kwam tot nu toe alleen via de
-        # bootstrap binnen (recency-only) — semantisch passende kennis werd
-        # gemist als ze niet toevallig recent was.
-        for r in self._fragments.search_formal(user_message, k=2, embedding=embedding):
+        # formele kennis (Insights/Mistakes/Ideas): duurste, gedestilleerde
+        # kennis; één sterk passende hit volstaat meestal.
+        for r in self._fragments.search_formal(user_message, k=1, embedding=embedding):
             if r["score"] > 0.55:
                 les = f" → {r['lesson']}" if r.get("lesson") else ""
                 lines.append(f"- [{r['id']} · {r['label']} · score {r['score']}] "
                              f"{r['content']}{les}")
         if lines:
-            memo_msg = {
-                "role": "system",
-                "content": "Geheugen dient zich aan (mogelijk relevant):\n" + "\n".join(lines),
-            }
+            memo = "Geheugen dient zich aan (mogelijk relevant):\n" + "\n".join(lines)
+            memo = memo[:1800]  # tekencap tegen context-bloat
+            memo_msg = {"role": "system", "content": memo}
+
+        # F0.3 tool-result clearing: tool-resultaten van eerdere beurten zijn
+        # zelden nog nodig en vervuilen de context. Kort ze in vóór deze beurt
+        # (het laatste antwoord blijft, de redenering zit in de assistant-tekst).
+        _CUT = " …(ingekort)"
+        for m in self._messages:
+            if m.get("role") == "tool":
+                c = m.get("content") or ""
+                if len(c) > 200 and not c.endswith(_CUT):
+                    m["content"] = c[:200] + _CUT
 
         self._messages.append({"role": "user", "content": user_message})
 

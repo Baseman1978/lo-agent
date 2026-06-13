@@ -175,6 +175,7 @@ function handle(msg) {
   if (msg.type === "ready") {
     SPAN.sys("Span is wakker — alle systemen online.");
     loadPanels();
+    if (SPAN.showSuggestions) SPAN.showSuggestions();
     setTimeout(() => SPAN.playDaily(false), 2200);
   }
   else if (msg.type === "session") {
@@ -201,6 +202,7 @@ function handle(msg) {
     }
     if (SPAN.reactorOk) SPAN.reactorOk();
     current = null; SPAN.busy = false; SPAN.setState("idle");
+    { const st = $("stop"); if (st) st.classList.add("hidden"); }
     if (SPAN.speakOn && SPAN.speakFlush) SPAN.speakFlush();  // rest van de stream
     if (turnStart) {
       const stat = document.getElementById("latency-stat");
@@ -221,6 +223,8 @@ function handle(msg) {
   }
   else if (msg.type === "error") {
     SPAN.sys(msg.message || "Fout", "warn");
+    SPAN.busy = false; SPAN.setState("idle");
+    { const st = $("stop"); if (st) st.classList.add("hidden"); }
     if (msg.error === "auth") localStorage.removeItem("span_token");
   }
 }
@@ -230,10 +234,35 @@ SPAN.send = (textOverride) => {
   const text = (textOverride ?? input.value).trim();
   if (!text || SPAN.busy || !ws || ws.readyState !== 1) return;
   turnStart = Date.now();
+  const sg = $("suggested"); if (sg) sg.innerHTML = "";  // suggesties weg zodra je begint
   el("user", "JIJ").appendChild(document.createTextNode(text));
   ws.send(JSON.stringify({ type: "user", text }));
   input.value = ""; input.style.height = "auto";
   SPAN.busy = true; SPAN.setState("busy");
+  const st = $("stop"); if (st) st.classList.remove("hidden");
+};
+
+/* stop: onderbreekt het voorlezen en geeft de UI weer vrij (de serverbeurt
+   loopt af op de achtergrond; de recorder bewaart wat er al was) */
+$("stop").onclick = () => {
+  try { window.speechSynthesis && speechSynthesis.cancel(); } catch (e) { /* */ }
+  SPAN.busy = false; SPAN.setState("idle");
+  $("stop").classList.add("hidden");
+};
+
+/* suggested prompts bij een lege chat — laagdrempelige startpunten */
+const SUGGESTIONS = ["Geef me mijn briefing", "Wat staat er vandaag?",
+  "Wat is er blijven liggen?", "Vat mijn laatste meeting samen"];
+SPAN.showSuggestions = () => {
+  const sg = $("suggested");
+  if (!sg || log.querySelector(".msg.user")) return;  // alleen bij lege chat
+  sg.innerHTML = "";
+  SUGGESTIONS.forEach((s) => {
+    const b = document.createElement("button");
+    b.className = "suggestion"; b.textContent = s;
+    b.onclick = () => SPAN.send(s);
+    sg.appendChild(b);
+  });
 };
 
 /* -- panelen ------------------------------------------------------------- */

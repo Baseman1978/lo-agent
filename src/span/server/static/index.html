@@ -55,16 +55,18 @@
       <div id="state-label">STANDBY</div>
     </div>
     <canvas id="wave"></canvas>
-    <div id="log"></div>
+    <div id="log" aria-live="polite" aria-label="Gesprek met Span"></div>
+    <div id="suggested"></div>
     <div id="bar">
-      <textarea id="input" rows="1"
+      <textarea id="input" rows="1" aria-label="Bericht aan Span"
         placeholder="Spreek of typ…  (Enter = verstuur · zeg 'Jarvis' bij wake word aan)"></textarea>
-      <button id="doc" title="Document toevoegen aan het geheugen (pdf/docx/pptx/xlsx/html/eml/txt/md)">📎</button>
+      <button id="doc" title="Document toevoegen aan het geheugen (pdf/docx/pptx/xlsx/html/eml/txt/md)" aria-label="Document toevoegen">📎</button>
       <input type="file" id="doc-file" accept=".pdf,.docx,.pptx,.xlsx,.xls,.html,.htm,.eml,.txt,.md,.csv,.json,.xml" multiple hidden>
-      <button id="mic" title="Gespreksmodus — doorlopend 1:1 praten">🎙</button>
-      <button id="wake" title="Wake word — passief luisteren naar 'Jarvis'">◉ WAKE</button>
-      <button id="speak" title="Antwoorden voorlezen">🔊</button>
-      <button id="end" title="Sessie afsluiten met evaluatie">/end</button>
+      <button id="mic" title="Gespreksmodus — doorlopend 1:1 praten" aria-label="Gespreksmodus">🎙</button>
+      <button id="wake" title="Wake word — passief luisteren naar 'Jarvis'" aria-label="Wake word">◉ WAKE</button>
+      <button id="speak" title="Antwoorden voorlezen" aria-label="Voorlezen aan/uit">🔊</button>
+      <button id="stop" class="hidden" title="Stop het huidige antwoord" aria-label="Stop">⏹ STOP</button>
+      <button id="end" title="Sessie afsluiten met evaluatie" aria-label="Sessie afsluiten">/end</button>
     </div>
   </section>
 
