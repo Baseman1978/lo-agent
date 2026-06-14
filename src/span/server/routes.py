@@ -217,21 +217,32 @@ async def models(request: Request) -> dict[str, Any]:
 
 
 @router.get("/api/graph")
-async def graph(request: Request, limit: int = Query(250, le=600)) -> dict[str, Any]:
-    """Het brein als graph: nodes + links voor het 3D-hologram in de HUD."""
+async def graph(request: Request, limit: int = Query(250, le=600),
+                since: int = Query(0, ge=0, le=3650)) -> dict[str, Any]:
+    """Het brein als graph: nodes + links voor het 3D-hologram in de HUD.
+    since = aantal dagen terug (0 = alles). Formele/kern-labels blijven altijd
+    zichtbaar zodat het venster het skelet van het brein niet wegfiltert."""
     _require_rest_auth(request)
     brain: BrainDB = _state["brain"]
+    # labels die altijd zichtbaar blijven, ook buiten het tijdvenster
+    always = ["Identity", "Quest", "QuestStep", "Protocol", "Skill", "Insight"]
 
     def fetch() -> dict[str, Any]:
         nodes = brain.run(
             """
             MATCH (n) WHERE any(l IN labels(n) WHERE l IN $labels)
+              AND ($since = 0
+                   OR any(l IN labels(n) WHERE l IN $always)
+                   OR coalesce(n.created, n.started, datetime('2000-01-01'))
+                      >= datetime() - duration({days: $since}))
             WITH n ORDER BY coalesce(n.created, n.started, datetime('2000-01-01')) DESC
             LIMIT $limit
             RETURN elementId(n) AS id, labels(n)[0] AS type, coalesce(n.id, '') AS key,
                    left(coalesce(n.title, n.name, n.content, n.summary, n.body, n.id, ''), 70) AS label
             """,
             labels=GRAPH_LABELS,
+            always=always,
+            since=since,
             limit=limit,
         )
         ids = [n["id"] for n in nodes]

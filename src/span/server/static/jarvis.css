@@ -203,8 +203,55 @@ body.glitching main, body.glitching header {
   height: 215px; border: 1px solid var(--line); border-radius: 8px;
   overflow: hidden; margin-bottom: 6px; position: relative;
   background: radial-gradient(circle at 50% 45%, rgba(13,35,56,.65), rgba(2,6,12,.9));
+  /* holografische gloed buiten WebGL (geen per-frame kosten) */
+  box-shadow: 0 0 22px rgba(56,225,255,.22), inset 0 0 34px rgba(56,225,255,.10);
 }
-#holo-scene { width: 100%; height: 100%; }
+/* fijn cyaan grid + fresnel-vignette als statische overlay (CSP-proof, geen GPU) */
+#holo-canvas::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background:
+    repeating-linear-gradient(0deg, rgba(56,225,255,.035) 0 1px, transparent 1px 22px),
+    repeating-linear-gradient(90deg, rgba(56,225,255,.035) 0 1px, transparent 1px 22px),
+    radial-gradient(circle at 50% 48%, transparent 55%, rgba(2,6,12,.55) 100%);
+}
+#holo-scene { width: 100%; height: 100%; position: relative; z-index: 0; }
+
+/* infopaneel bij een gepinde node */
+.holo-card {
+  position: absolute; top: 8px; right: 8px; width: 232px; z-index: 3;
+  max-height: calc(100% - 16px); overflow: auto;
+  background: var(--panel); backdrop-filter: blur(6px);
+  border: 1px solid var(--cyan-dim); border-radius: 8px;
+  box-shadow: 0 0 16px var(--cyan-soft); color: var(--text);
+  font-size: 11.5px; padding: 10px 10px 8px;
+  transform: translateX(8px); opacity: 0; pointer-events: none;
+  transition: opacity .18s, transform .18s;
+}
+.holo-card.open { opacity: 1; transform: none; pointer-events: auto; }
+.holo-card h3 { margin: 0; font-size: 9px; letter-spacing: .22em; color: var(--cyan); text-transform: uppercase; }
+.holo-card h4 { margin: 9px 0 3px; font-size: 8.5px; letter-spacing: .18em; color: var(--dim); text-transform: uppercase; }
+.holo-title { font-size: 13px; color: var(--text); margin: 2px 0 2px; font-weight: 600; }
+.holo-src { color: var(--dim); margin: 2px 0; line-height: 1.35; }
+.holo-rel { margin: 2px 0; }
+.holo-rel i { color: var(--cyan-dim); font-style: normal; font-size: 9px; letter-spacing: .06em; }
+.holo-hint { color: var(--dim); opacity: .6; font-size: 9.5px; margin-top: 8px; }
+.holo-x { position: absolute; top: 6px; right: 6px; padding: 0 6px; font-size: 11px; }
+
+/* zoekbalk + suggesties */
+#holo-search-wrap { position: relative; margin-bottom: 5px; }
+#holo-search {
+  width: 100%; box-sizing: border-box; background: rgba(6,12,22,.6);
+  border: 1px solid var(--line); border-radius: 6px; color: var(--text);
+  font-size: 11px; padding: 4px 8px; outline: none;
+}
+#holo-search:focus { border-color: var(--cyan-dim); box-shadow: 0 0 8px var(--cyan-soft); }
+#holo-suggest { position: absolute; left: 0; right: 0; z-index: 5; display: flex; flex-direction: column; }
+.holo-sug {
+  text-align: left; background: rgba(6,12,22,.96); border: 1px solid var(--line);
+  border-top: none; color: var(--text); font-size: 10.5px; padding: 4px 8px; cursor: pointer;
+}
+.holo-sug:hover { background: rgba(20,40,60,.96); color: var(--cyan); }
+.holo-chip.win { letter-spacing: .04em; border-color: var(--cyan-dim); }
 #holo-count { font-size: 10px; color: var(--dim); margin-bottom: 6px; letter-spacing: .08em; }
 #holo-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
 .holo-chip {
