@@ -587,6 +587,127 @@ async def graph_webhook(request: Request) -> Any:
     return {"received": len(valid)}
 
 
+def _rebuild_mcp() -> None:
+    from span.integrations.mcp_client import MCPRegistry, load_servers
+    try:
+        _state["mcp"] = MCPRegistry(load_servers(_state["brain"]))
+    except Exception as exc:
+        print(f"[mcp] herbouw mislukt: {exc}", flush=True)
+
+
+@router.get("/api/mcp")
+async def mcp_list(request: Request) -> dict[str, Any]:
+    """Gekoppelde MCP-servers + status (zonder tokens te lekken)."""
+    _require_rest_auth(request)
+    from span.integrations.mcp_client import load_servers
+    servers = await asyncio.to_thread(load_servers, _state["brain"])
+    reg = _state.get("mcp")
+    connected = set()
+    if reg is not None:
+        connected = {n.split("__")[1] for n in reg.tool_names()}
+    return {"servers": [
+        {"name": s["name"], "url": s["url"],
+         "connected": bool(s.get("token")) and s["name"] in connected,
+         "logged_in": bool(s.get("token"))}
+        for s in servers]}
+
+
+@router.post("/api/mcp")
+async def mcp_add(request: Request) -> dict[str, Any]:
+    """Voeg een MCP-server toe (naam + url). Inloggen gaat via /connect."""
+    _require_rest_auth(request)
+    from span.integrations.mcp_client import load_servers, save_servers
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    url = (body.get("url") or "").strip()
+    if not name or not url.startswith("http"):
+        raise HTTPException(status_code=422, detail="Naam en geldige https-URL vereist.")
+    servers = await asyncio.to_thread(load_servers, _state["brain"])
+    servers = [s for s in servers if s["name"] != name] + [{"name": name, "url": url}]
+    await asyncio.to_thread(save_servers, _state["brain"], servers)
+    return {"added": name}
+
+
+@router.delete("/api/mcp/{name}")
+async def mcp_delete(request: Request, name: str) -> dict[str, Any]:
+    _require_rest_auth(request)
+    from span.integrations.mcp_client import load_servers, save_servers
+    servers = [s for s in await asyncio.to_thread(load_servers, _state["brain"])
+               if s["name"] != name]
+    await asyncio.to_thread(save_servers, _state["brain"], servers)
+    await asyncio.to_thread(_rebuild_mcp)
+    return {"deleted": name}
+
+
+def _callback_uri(request: Request) -> str:
+    # redirect terug naar deze server; host uit de request (browser van Bas)
+    return str(request.base_url).rstrip("/") + "/api/mcp/oauth/callback"
+
+
+@router.post("/api/mcp/{name}/connect")
+async def mcp_connect(request: Request, name: str) -> dict[str, Any]:
+    """Start de OAuth-login: discover + dynamische registratie + PKCE.
+    Geeft de authorize-URL terug; Bas opent die en logt in."""
+    _require_rest_auth(request)
+    from span.integrations import mcp_oauth as ox
+    from span.integrations.mcp_client import load_servers
+    servers = await asyncio.to_thread(load_servers, _state["brain"])
+    server = next((s for s in servers if s["name"] == name), None)
+    if server is None:
+        raise HTTPException(status_code=404, detail="MCP-server niet gevonden.")
+    redirect_uri = _callback_uri(request)
+
+    def prep() -> dict[str, Any]:
+        meta = ox.discover(server["url"])
+        reg = ox.register_client(meta, redirect_uri)
+        verifier, challenge = ox.make_pkce()
+        import secrets as _s
+        state = _s.token_urlsafe(16)
+        url = ox.authorize_url(meta, reg["client_id"], redirect_uri, challenge, state)
+        _state.setdefault("mcp_pending", {})[state] = {
+            "name": name, "meta": meta, "client_id": reg["client_id"],
+            "verifier": verifier, "redirect_uri": redirect_uri,
+        }
+        return {"authorize_url": url}
+
+    try:
+        return await asyncio.to_thread(prep)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"OAuth-start mislukt: {exc}")
+
+
+@router.get("/api/mcp/oauth/callback")
+async def mcp_oauth_callback(code: str = Query(""), state: str = Query("")) -> Any:
+    """OAuth-redirect: wissel de code in voor tokens en sla ze op."""
+    from span.integrations import mcp_oauth as ox
+    from span.integrations.mcp_client import load_servers, save_servers
+    pending = (_state.get("mcp_pending") or {}).pop(state, None)
+    if not pending or not code:
+        return PlainTextResponse("Ongeldige of verlopen login-poging.", status_code=400)
+
+    def finish() -> str:
+        tok = ox.exchange_code(pending["meta"], pending["client_id"], code,
+                               pending["verifier"], pending["redirect_uri"])
+        servers = load_servers(_state["brain"])
+        for s in servers:
+            if s["name"] == pending["name"]:
+                s["token"] = tok.get("access_token", "")
+                s["refresh"] = tok.get("refresh_token", "")
+                s["client_id"] = pending["client_id"]
+                s["token_endpoint"] = pending["meta"].get("token_endpoint", "")
+        save_servers(_state["brain"], servers)
+        _rebuild_mcp()
+        return pending["name"]
+
+    try:
+        name = await asyncio.to_thread(finish)
+    except Exception as exc:
+        return PlainTextResponse(f"Token-uitwisseling mislukt: {exc}", status_code=502)
+    return PlainTextResponse(
+        f"MCP-server '{name}' is gekoppeld. Je kunt dit tabblad sluiten en terug "
+        "naar Span — de tools verschijnen bij een nieuwe sessie.")
+
+
 @router.post("/api/inbound")
 async def inbound(request: Request) -> dict[str, Any]:
     """Generiek inbound-webhook (F2.6/feature 74): externe systemen (CI,

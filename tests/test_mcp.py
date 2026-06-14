@@ -69,3 +69,35 @@ def test_mcp_tool_output_gequarantained_bij_injectie():
 def test_mcp_tool_risk_is_med():
     from span.safety.risk import risk_for
     assert risk_for("mcp__lomans__anything") == "med"
+
+
+# -- OAuth-flow (MCP-2) ----------------------------------------------------
+
+def test_pkce_s256_geldig():
+    import base64, hashlib
+    from span.integrations.mcp_oauth import make_pkce
+    v, c = make_pkce()
+    expect = base64.urlsafe_b64encode(hashlib.sha256(v.encode()).digest()).rstrip(b"=").decode()
+    assert c == expect and len(v) >= 43
+
+
+def test_authorize_url_bevat_pkce_en_scope():
+    from span.integrations.mcp_oauth import authorize_url
+    meta = {"authorization_endpoint": "https://x/oauth/authorize", "_scopes": ["mcp:tools"]}
+    url = authorize_url(meta, "cid", "https://span/cb", "chal", "st8")
+    assert "code_challenge=chal" in url and "code_challenge_method=S256" in url
+    assert "scope=mcp%3Atools" in url and "client_id=cid" in url and "state=st8" in url
+
+
+def test_discover_leest_metadata():
+    from span.integrations import mcp_oauth as ox
+    pr = MagicMock(ok=True); pr.json.return_value = {
+        "authorization_servers": ["https://x"], "scopes_supported": ["mcp:tools"]}
+    meta = MagicMock(); meta.raise_for_status.return_value = None
+    meta.json.return_value = {"authorization_endpoint": "https://x/oauth/authorize",
+                              "token_endpoint": "https://x/oauth/token",
+                              "registration_endpoint": "https://x/oauth/register",
+                              "code_challenge_methods_supported": ["S256"]}
+    with patch("span.integrations.mcp_oauth.requests.get", side_effect=[pr, meta]):
+        m = ox.discover("https://x/mcp")
+    assert m["token_endpoint"].endswith("/oauth/token") and m["_scopes"] == ["mcp:tools"]

@@ -88,7 +88,7 @@
     } catch (e) { /* stil */ }
   }
 
-  $("settings-btn").onclick = () => { overlay.classList.add("open"); load(); };
+  $("settings-btn").onclick = () => { overlay.classList.add("open"); load(); loadMcp(); };
   $("settings-close").onclick = () => overlay.classList.remove("open");
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) overlay.classList.remove("open");
@@ -219,6 +219,64 @@
       SPAN.sys("Autonomie-instellingen opgeslagen.");
       SPAN.chime(740, .1);
     } catch (e) { SPAN.sys("Autonomie opslaan mislukt.", "warn"); }
+  };
+
+  /* -- MCP-servers ---------------------------------------------------------- */
+  async function loadMcp() {
+    const box = $("mcp-list");
+    if (!box) return;
+    try {
+      const res = await fetch("/api/mcp", { headers: SPAN.authHeaders() });
+      if (!res.ok) return;
+      const d = await res.json();
+      box.innerHTML = "";
+      if (!d.servers.length) { box.textContent = "nog geen servers gekoppeld"; return; }
+      for (const s of d.servers) {
+        const row = document.createElement("div");
+        row.className = "setrow";
+        const status = s.connected ? "✅ verbonden"
+          : (s.logged_in ? "ingelogd (herstart voor tools)" : "niet ingelogd");
+        const label = document.createElement("span");
+        label.className = "m"; label.textContent = `${s.name} — ${status}`;
+        const connect = document.createElement("button");
+        connect.className = "ghost"; connect.textContent = s.logged_in ? "opnieuw inloggen" : "inloggen";
+        connect.onclick = () => mcpConnect(s.name);
+        const del = document.createElement("button");
+        del.className = "ghost"; del.textContent = "✕";
+        del.onclick = () => mcpDelete(s.name);
+        row.append(label, connect, del);
+        box.appendChild(row);
+      }
+    } catch (e) { /* stil */ }
+  }
+  async function mcpConnect(name) {
+    try {
+      const res = await fetch(`/api/mcp/${encodeURIComponent(name)}/connect`,
+        { method: "POST", headers: SPAN.authHeaders() });
+      const d = await res.json();
+      if (!res.ok) { SPAN.sys(d.detail || "OAuth starten mislukt", "warn"); return; }
+      SPAN.sys(`Open de login voor '${name}' in je browser…`);
+      window.open(d.authorize_url, "_blank");
+    } catch (e) { SPAN.sys("OAuth starten mislukt.", "warn"); }
+  }
+  async function mcpDelete(name) {
+    if (!confirm(`MCP-server '${name}' verwijderen?`)) return;
+    await fetch(`/api/mcp/${encodeURIComponent(name)}`,
+      { method: "DELETE", headers: SPAN.authHeaders() });
+    loadMcp();
+  }
+  $("mcp-add").onclick = async () => {
+    const name = $("mcp-name").value.trim(), url = $("mcp-url").value.trim();
+    if (!name || !url) { SPAN.sys("Naam en URL invullen.", "warn"); return; }
+    const res = await fetch("/api/mcp", {
+      method: "POST",
+      headers: { ...SPAN.authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ name, url }),
+    });
+    if (!res.ok) { const d = await res.json(); SPAN.sys(d.detail || "Toevoegen mislukt", "warn"); return; }
+    $("mcp-name").value = ""; $("mcp-url").value = "";
+    SPAN.sys(`MCP-server '${name}' toegevoegd — klik 'inloggen' om te koppelen.`);
+    loadMcp();
   };
 
   /* -- beveiliging ---------------------------------------------------------- */
