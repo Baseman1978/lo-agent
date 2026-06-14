@@ -22,7 +22,7 @@ from span.safety import audit
 def main() -> None:
     s = load_settings()
     b = BrainDB(s)
-    algo = "hmac" if audit._AUDIT_KEY else "sha256"
+    algo = "hmac" if audit._audit_key() else "sha256"
     rows = b.run(
         "MATCH (a:Action) WHERE a.seq IS NOT NULL "
         "RETURN a.seq AS seq, a.type AS type, a.detail AS detail, a.at AS at "

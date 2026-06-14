@@ -17,25 +17,73 @@ from typing import Any
 
 GENESIS = "0" * 64
 
-# Server-side sleutel BUITEN het brein: wie alleen schrijftoegang tot het brein
-# heeft kan de keten dan niet herberekenen (M1). SPAN_AUTH_TOKEN is zo'n geheim;
-# een aparte SPAN_AUDIT_HMAC_KEY heeft voorrang. Zonder sleutel valt de keten
-# terug op kale sha256 = alleen tegen toevallige/naïeve wijziging bestand.
-_AUDIT_KEY = (os.environ.get("SPAN_AUDIT_HMAC_KEY")
-              or os.environ.get("SPAN_AUTH_TOKEN") or "").encode("utf-8")
-
 # M2: record_action atomair binnen het proces (ambient-watcher + interactieve
 # beurt draaien in dezelfde process; een lock voorkomt dubbele seq -> geen
 # valse keten-breuk).
 _LOCK = threading.Lock()
 
 
+def _audit_key() -> bytes:
+    """Server-side sleutel BUITEN het brein (M1): wie enkel schrijftoegang tot
+    het brein heeft kan de keten dan niet herberekenen. Voorkeur:
+    SPAN_AUDIT_HMAC_KEY (eigen, gescheiden geheim) > SPAN_AUTH_TOKEN (legacy).
+    ensure_audit_key() zet bij een verse installatie zelf een eigen sleutel in
+    de env. Zonder sleutel: kale sha256 (alleen tegen toevallige wijziging)."""
+    return (os.environ.get("SPAN_AUDIT_HMAC_KEY")
+            or os.environ.get("SPAN_AUTH_TOKEN") or "").encode("utf-8")
+
+
+def ensure_audit_key(brain: Any) -> str:
+    """Zorg dat er een audit-sleutel is — zonder dat Bas eraan hoeft te denken.
+
+    Verse installatie -> genereer een eigen sleutel en bewaar 'm in het
+    persistente state-volume (buiten het brein, overleeft rebuilds). Een
+    BESTAANDE keten wordt nooit stil omgesleuteld (dat zou 'm breken): die
+    blijft op z'n huidige sleutel tot je bewust her-ankert (scripts/). Een
+    expliciete SPAN_AUDIT_HMAC_KEY in de omgeving wint altijd. Geeft de
+    gekozen modus terug (env|keyfile|generated|legacy-authtoken|fallback)."""
+    from pathlib import Path
+    if os.environ.get("SPAN_AUDIT_HMAC_KEY"):
+        return "env"
+    keyfile = Path.home() / ".span" / "audit_hmac.key"
+    try:
+        if keyfile.exists():
+            k = keyfile.read_text(encoding="utf-8").strip()
+            if k:
+                os.environ["SPAN_AUDIT_HMAC_KEY"] = k
+                return "keyfile"
+    except Exception:
+        pass
+    # geen keyfile: alleen genereren als er nog geen keten is die we breken
+    try:
+        rows = brain.run("MATCH (a:Action) RETURN count(a) AS n")
+        existing = int(rows[0]["n"]) if rows else 0
+    except Exception:
+        existing = 0
+    if existing > 0 and os.environ.get("SPAN_AUTH_TOKEN"):
+        return "legacy-authtoken"   # bestaande keten op auth-token; niet breken
+    import secrets
+    k = secrets.token_urlsafe(48)
+    try:
+        keyfile.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        keyfile.write_text(k, encoding="utf-8")
+        try:
+            keyfile.chmod(0o600)
+        except Exception:
+            pass
+        os.environ["SPAN_AUDIT_HMAC_KEY"] = k
+        return "generated"
+    except Exception:
+        return "fallback"   # kon niet schrijven -> val terug, nooit crashen
+
+
 def _digest(prev_hash: str, seq: int, action: str, detail: str, at: str,
             algo: str = "") -> str:
+    key = _audit_key()
     raw = f"{prev_hash}|{seq}|{action}|{detail}|{at}".encode("utf-8")
-    use_hmac = (algo == "hmac") or (algo == "" and bool(_AUDIT_KEY))
-    if use_hmac and _AUDIT_KEY:
-        return hmac.new(_AUDIT_KEY, raw, hashlib.sha256).hexdigest()
+    use_hmac = (algo == "hmac") or (algo == "" and bool(key))
+    if use_hmac and key:
+        return hmac.new(key, raw, hashlib.sha256).hexdigest()
     return hashlib.sha256(raw).hexdigest()
 
 
@@ -57,7 +105,7 @@ def record_action(brain: Any, action: str, detail: str) -> None:
             # at deterministisch vastleggen zodat de hash herberekenbaar is
             at_rows = brain.run("RETURN toString(datetime()) AS now")
             at = at_rows[0]["now"] if at_rows else ""
-            algo = "hmac" if _AUDIT_KEY else "sha256"
+            algo = "hmac" if _audit_key() else "sha256"
             h = _digest(prev, seq, action, detail, at, algo)
             brain.run(
                 "CREATE (:Action {type:$type, detail:$detail, at:$at, "

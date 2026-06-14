@@ -46,6 +46,11 @@ async def lifespan(app: FastAPI):
     brain = BrainDB(settings)
     brain.verify()
     init_schema(brain, settings)  # idempotent — server is meteen bruikbaar
+    # audit-sleutel zelfstandig regelen: verse installatie krijgt een eigen
+    # gegenereerde sleutel in het state-volume (zero-touch); bestaande keten
+    # blijft op z'n huidige sleutel staan (geen stille herschrijving)
+    from span.safety.audit import ensure_audit_key
+    print(f"[audit] sleutel-modus: {ensure_audit_key(brain)}", flush=True)
     work = None
     if settings.work:
         try:
