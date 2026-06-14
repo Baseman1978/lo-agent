@@ -101,3 +101,64 @@ def test_discover_leest_metadata():
     with patch("span.integrations.mcp_oauth.requests.get", side_effect=[pr, meta]):
         m = ox.discover("https://x/mcp")
     assert m["token_endpoint"].endswith("/oauth/token") and m["_scopes"] == ["mcp:tools"]
+
+
+# -- MCP write-gating (veiligheidsfix na live koppeling) -------------------
+
+def test_mcp_write_tool_is_high():
+    from span.safety.risk import risk_for
+    assert risk_for("mcp__lomans__m365_mail_send") == "high"
+    assert risk_for("mcp__lomans__m365_mail_delete") == "high"
+    assert risk_for("mcp__lomans__m365_mail_list") == "med"   # lezen
+    assert risk_for("mcp__lomans__m365_calendar_view") == "med"
+
+
+def test_mcp_write_zonder_inbox_geblokkeerd():
+    from span.safety.guard import assess_tool
+    a = assess_tool("mcp__lomans__m365_mail_send", {"to": "x"},
+                    autonomy_auto=False, has_inbox=False)
+    assert a["decision"] == "block"
+
+
+def test_mcp_write_met_inbox_naar_approval():
+    from span.safety.guard import assess_tool
+    a = assess_tool("mcp__lomans__m365_mail_send", {"to": "x"},
+                    autonomy_auto=False, has_inbox=True)
+    assert a["decision"] == "approval"
+
+
+def test_mcp_write_queue_t_via_inbox():
+    from span.jarvis.ambient import AgentInbox
+    reg = MagicMock()
+    reg.tool_specs.return_value = []
+    inbox = AgentInbox()
+    tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
+                 mcp=reg, inbox=inbox)
+    out = json.loads(tb.dispatch("mcp__lomans__m365_mail_send",
+                                 {"to": "x@y.nl", "subject": "s", "body": "b"}))
+    assert "queued" in out
+    reg.call.assert_not_called()  # niet direct uitgevoerd
+    item = inbox.snapshot()[0]
+    assert item["action"] == "mcp_call" and item["payload"]["mcp_name"].endswith("mail_send")
+
+
+def test_mcp_read_tool_draait_direct():
+    reg = MagicMock()
+    reg.tool_specs.return_value = []
+    reg.call.return_value = {"text": "10 mails", "isError": False}
+    from span.jarvis.ambient import AgentInbox
+    tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
+                 mcp=reg, inbox=AgentInbox())
+    out = json.loads(tb.dispatch("mcp__lomans__m365_mail_list", {}))
+    assert out.get("result") == "10 mails"
+    reg.call.assert_called_once()
+
+
+def test_execute_approval_mcp_call():
+    from span.jarvis.ambient import execute_approval
+    reg = MagicMock(); reg.call.return_value = {"text": "verzonden"}
+    item = {"action": "mcp_call", "kind": "action",
+            "payload": {"mcp_name": "mcp__lomans__m365_mail_send", "arguments": {"to": "x"}}}
+    out = execute_approval(item, None, mcp=reg)
+    assert out["text"] == "verzonden"
+    reg.call.assert_called_once()

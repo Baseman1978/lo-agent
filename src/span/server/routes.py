@@ -262,6 +262,7 @@ async def inbox_approve(request: Request, item_id: int) -> dict[str, Any]:
         result = await asyncio.to_thread(
             execute_approval, item, _state.get("o365"),
             _state["llm"], _effective_settings().model_light, _state.get("asana"),
+            _state.get("mcp"),
         )
     except Exception:
         inbox.release(item_id)  # mislukt: item blijft open voor een nieuwe poging

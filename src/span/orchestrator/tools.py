@@ -119,9 +119,22 @@ class ToolBox:
             return json.dumps({"error": f"{type(exc).__name__}: {exc}"}, ensure_ascii=False)
 
     def _dispatch_mcp(self, name: str, arguments: dict[str, Any]) -> str:
-        """Externe MCP-tool aanroepen; de output is untrusted -> quarantaine."""
+        """Externe MCP-tool aanroepen; de output is untrusted -> quarantaine.
+        Schrijf-tools (high) gaan via de Agent Inbox als de guard goedkeuring
+        forceert — Span stuurt/wist nooit ongezien via een MCP-server."""
         if self._mcp is None:
             return json.dumps({"error": "Geen MCP-servers gekoppeld."})
+        if getattr(self, "_forced_approval", False) and self._inbox is not None:
+            item_id = self._inbox.add(
+                kind="action", action="mcp_call",
+                title=f"MCP-actie: {name}",
+                detail=json.dumps(arguments, ensure_ascii=False)[:240],
+                payload={"mcp_name": name, "arguments": arguments},
+                origin="agent",
+            )
+            return json.dumps({"queued": item_id,
+                               "status": "Wacht op goedkeuring in de Agent Inbox."},
+                              ensure_ascii=False)
         res = self._mcp.call(name, arguments)
         if res.get("error"):
             return json.dumps(res, ensure_ascii=False)
@@ -311,7 +324,7 @@ class ToolBox:
             return {"error": "Item niet gevonden of al afgehandeld."}
         try:
             result = execute_approval(item, self._o365, self._llm, self._light_model,
-                                      asana=self._asana)
+                                      asana=self._asana, mcp=self._mcp)
         except Exception:
             self._inbox.release(int(item_id))
             raise

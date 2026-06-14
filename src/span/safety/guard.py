@@ -17,8 +17,13 @@ from span.safety.risk import risk_for
 _OUTBOUND = {"o365_mail_send", "o365_event_create"}
 # Tools die hun eigen goedkeuringspoort (queue) hebben en een 'approval'-besluit
 # zélf honoreren. Een high/crit-tool die hier NIET in staat en 'approval' krijgt,
-# wordt geblokkeerd — de guard dwingt af, hij adviseert niet alleen.
+# wordt geblokkeerd — de guard dwingt af, hij adviseert niet alleen. MCP-schrijf-
+# tools (mcp__…) hebben sinds de MCP-koppeling ook een queue-pad (zie dispatch).
 _HAS_QUEUE_PATH = {"o365_mail_send", "o365_event_create"}
+
+
+def _has_queue_path(name: str) -> bool:
+    return name in _HAS_QUEUE_PATH or name.startswith("mcp__")
 _INTERNAL_DOMAIN = "lomans.nl"
 
 
@@ -71,7 +76,7 @@ def assess_tool(name: str, args: dict[str, Any], *, autonomy_auto: bool,
     if tier in ("high", "crit"):
         if autonomy_auto and name in _HAS_QUEUE_PATH:
             return {"decision": "allow", "tier": tier, "reason": "autonomy=auto"}
-        if has_inbox and name in _HAS_QUEUE_PATH:
+        if has_inbox and _has_queue_path(name):
             return {"decision": "approval", "tier": tier,
                     "reason": "high-risk tool via de Agent Inbox"}
         # high/crit zonder eigen queue-pad: niet zomaar uitvoeren (bindend)

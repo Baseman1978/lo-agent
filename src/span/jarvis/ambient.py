@@ -117,10 +117,15 @@ Antwoord met uitsluitend de concepttekst."""
 
 
 def execute_approval(item: dict[str, Any], o365: Any, llm: Any = None,
-                     light_model: str | None = None, asana: Any = None) -> dict[str, Any]:
+                     light_model: str | None = None, asana: Any = None,
+                     mcp: Any = None) -> dict[str, Any]:
     """Voer een goedgekeurd Agent Inbox-item uit. Gedeeld door de HUD-API
     en de inbox_approve-tool (stembediening)."""
     payload = item["payload"]
+    if item["action"] == "mcp_call":
+        if mcp is None:
+            return {"error": "Geen MCP-registry beschikbaar."}
+        return mcp.call(payload["mcp_name"], payload.get("arguments") or {})
     if item["action"] == "asana_task" and asana is not None:
         return asana.create_task(
             name=payload["name"], notes=payload.get("notes", ""),

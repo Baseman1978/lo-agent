@@ -117,7 +117,8 @@ class TelegramBridge:
                     execute_approval(claimed, self._state.get("o365"),
                                      self._state.get("llm"),
                                      self._state["settings"].model_light,
-                                     self._state.get("asana"))
+                                     self._state.get("asana"),
+                                     self._state.get("mcp"))
                     inbox.resolve(int(iid), "done")
                     result = "✅ Uitgevoerd."
         except Exception as exc:

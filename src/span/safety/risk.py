@@ -53,11 +53,19 @@ def _default_tier(name: str) -> str:
     return "med"
 
 
+# MCP-toolnamen met deze werkwoorden doen iets onomkeerbaars / naar buiten en
+# horen via de goedkeuringspoort, ook al draaien ze op een vertrouwde server.
+_MCP_WRITE_VERBS = ("send", "forward", "reply", "delete", "remove", "move",
+                    "create", "update", "add", "post", "write", "flag",
+                    "complete", "share")
+
+
 def risk_for(name: str) -> str:
     # MCP-tools: de externe server doet zijn eigen autorisatie (bv. O365-scopes)
-    # en Bas heeft hem bewust gekoppeld + ingelogd; Span quarantained de output.
-    # 'med' = mag draaien, in de permissie-lijst uit te vinken. NIET high, anders
-    # zou elke MCP-tool zonder eigen queue-pad geblokkeerd worden.
+    # en Bas heeft hem bewust gekoppeld; Span quarantained de output. LEES-tools
+    # = 'med' (mogen draaien, uit te vinken). SCHRIJF-tools (mail sturen/wissen,
+    # bestanden wijzigen) = 'high' -> via de Agent Inbox-poort, nooit ongezien.
     if name.startswith("mcp__"):
-        return "med"
+        tail = name.split("__")[-1].lower()
+        return "high" if any(v in tail for v in _MCP_WRITE_VERBS) else "med"
     return TOOL_RISK.get(name) or _default_tier(name)
