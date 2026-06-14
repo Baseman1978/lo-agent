@@ -34,10 +34,10 @@ egress-check + byte-cap + id-correlatie (M6); MCP-host op allowlist bij koppelen
 (`mcp_connect` + `MCPRegistry`); Telegram-download begrensd (M11). 9 adversariële
 tests, 188 groen. Live geverifieerd: Lomans token_endpoint = zelfde host, refresh blijft werken.
 
-**NOOT C1 (open, bewust geparkeerd):** de SSRF-helft is dicht, maar of `web_read` naar
-een *willekeurige publieke* host mag (exfil via URL-query) is een beleidskeuze die Bas na
-het werkplan maakt (allowlist-met-poort vs open+URL-scan vs strikte allowlist). Tot dan
-leest `web_read` nog naar elke publieke host. **C1 pas volledig dicht na die keuze.**
+**C1 VOLLEDIG DICHT (2026-06-14):** Bas koos beleid "open lezen + URL-exfil-scan".
+`web_read` mag elke publieke host lezen, maar `scan.url_exfil_risk()` weigert een URL die
+data naar buiten smokkelt (lange query/fragment > 256 tekens, base64-blok, zero-width
+tekens). Plus de SSRF-hardening uit WP-1 (redirects, IP-check). +2 tests.
 
 **Taken**
 - `integrations/reader.py:45-83` — `fetch_readable()` via één geguarde HTTP-laag:
@@ -253,14 +253,13 @@ keer gelezen via `_decay_mode()`. +2 tests. 198 groen.
 - [x] Volledige suite groen + nieuwe adversariële tests (198 groen, +25 t.o.v. start).
 - [x] Leermoment per WP als `Insight` in het brein (WP-1 t/m WP-6).
 - [x] `MEMORY.md` verwijst naar deze pass.
-- [ ] **Open beleidskeuze:** C1 web_read-allowlist (allowlist-met-poort / open+URL-scan /
-  strikt) — Bas beslist; daarna C1 volledig dicht.
+- [x] C1 beleidskeuze gemaakt (open lezen + URL-exfil-scan) en geïmplementeerd — dicht.
 - [ ] Optioneel later: M22 (token-pairing), M24 (TreeWalker).
 - [ ] Aanbevolen: zet `SPAN_AUDIT_HMAC_KEY` (of bevestig dat `SPAN_AUTH_TOKEN` gezet is)
   zodat de audit-keten op HMAC draait.
 
-**Status: 1 critical (deels — SSRF dicht, exfil-beleid open), 7 important + 26 minor
-opgelost. Span is van "niet autonomie-klaar" naar "klaar op één beleidskeuze na".**
+**Status: 1 critical + 7 important + 24 minor opgelost (M22/M24 bewust geparkeerd).
+Span is van "niet autonomie-klaar" naar autonomie-klaar. 200 tests groen.**
 
 ## Aanbevolen volgorde
 WP-1 → WP-2 → WP-3 (de drie met echte impact), daarna WP-4/5/6 als hygiëne-passes.

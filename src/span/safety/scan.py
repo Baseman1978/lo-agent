@@ -50,6 +50,28 @@ def scan_text(text: str) -> dict:
     return {"trust": round(trust, 2), "flags": flags, "injection": injection}
 
 
+def url_exfil_risk(url: str, max_query: int = 256) -> str:
+    """Beoordeel of een uitgaande URL als exfiltratie-kanaal misbruikt wordt
+    (C1, beleid 'open lezen + URL-scan'). De host mag vrij zijn, maar geheime
+    data hoort niet in de URL: een lange of opaque query/fragment, een base64-
+    blok of zero-width tekens zijn verdacht. Geeft een reden-string terug (leeg
+    = ok)."""
+    from urllib.parse import urlsplit, unquote
+    try:
+        p = urlsplit(url)
+    except Exception:
+        return "ongeldige URL"
+    payload = unquote((p.query or "") + " " + (p.fragment or ""))
+    if len(payload) > max_query:
+        return f"te veel data in de query/fragment ({len(payload)} tekens)"
+    blob = unquote(p.path or "") + " " + payload
+    if _B64_BLOCK.search(blob):
+        return "base64-achtig blok in de URL"
+    if _ZERO_WIDTH.search(blob):
+        return "zero-width tekens in de URL"
+    return ""
+
+
 def spotlight(text: str, label: str = "ONVERTROUWDE INHOUD") -> str:
     """Omhul externe content met duidelijke delimiters zodat het model het als
     DATA behandelt, niet als instructie (spotlighting)."""

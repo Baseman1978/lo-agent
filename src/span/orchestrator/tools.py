@@ -418,6 +418,14 @@ class ToolBox:
     def _tool_web_read(self, url: str) -> Any:
         from span.integrations.reader import fetch_readable
         from span.safety.quarantine import quarantine_parse
+        from span.safety.scan import url_exfil_risk
+        # C1 (beleid: open lezen + URL-scan): host mag vrij zijn, maar geen
+        # geheime data in de URL smokkelen. Verdachte URL -> weigeren.
+        risk = url_exfil_risk(url)
+        if risk:
+            return {"ok": False, "url": url,
+                    "error": f"Geweigerd: de URL lijkt data naar buiten te smokkelen ({risk}). "
+                             "Web_read is voor het lézen van een pagina, niet om gegevens mee te sturen."}
         fetched = fetch_readable(url)
         if not fetched.get("ok"):
             return fetched
