@@ -20,6 +20,8 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 
+from span.safety.egress import assert_egress
+
 TIMEOUT = 20.0
 
 
@@ -29,11 +31,17 @@ def _origin(mcp_url: str) -> str:
 
 
 def discover(mcp_url: str) -> dict[str, Any]:
-    """Haal de authorization-server-metadata op (endpoints + capabilities)."""
+    """Haal de authorization-server-metadata op (endpoints + capabilities).
+
+    Egress-poort (I2): élke opgehaalde URL — ook de uit untrusted metadata
+    afgeleide authorization-server — moet https zijn, op de allowlist staan en
+    naar een publiek IP resolven. Voorkomt SSRF en het blind volgen van een
+    aanvaller-gekozen origin."""
     base = _origin(mcp_url)
     # protected-resource wijst naar de authorization server(s)
-    pr = requests.get(urljoin(base + "/", ".well-known/oauth-protected-resource"),
-                      timeout=TIMEOUT)
+    pr_url = urljoin(base + "/", ".well-known/oauth-protected-resource")
+    assert_egress(pr_url)
+    pr = requests.get(pr_url, timeout=TIMEOUT)
     as_url = base
     scopes = ["mcp:tools"]
     if pr.ok:
@@ -41,8 +49,9 @@ def discover(mcp_url: str) -> dict[str, Any]:
         servers = d.get("authorization_servers") or [base]
         as_url = servers[0]
         scopes = d.get("scopes_supported") or scopes
-    meta = requests.get(urljoin(as_url + "/", ".well-known/oauth-authorization-server"),
-                        timeout=TIMEOUT)
+    meta_url = urljoin(as_url + "/", ".well-known/oauth-authorization-server")
+    assert_egress(meta_url)   # as_url komt uit untrusted JSON -> hard valideren
+    meta = requests.get(meta_url, timeout=TIMEOUT)
     meta.raise_for_status()
     m = meta.json()
     m["_scopes"] = scopes
@@ -54,6 +63,7 @@ def register_client(meta: dict[str, Any], redirect_uri: str) -> dict[str, Any]:
     reg = meta.get("registration_endpoint")
     if not reg:
         raise RuntimeError("Server ondersteunt geen dynamische registratie.")
+    assert_egress(reg)   # endpoint uit untrusted metadata
     resp = requests.post(reg, json={
         "client_name": "Span",
         "redirect_uris": [redirect_uri],
@@ -91,6 +101,7 @@ def authorize_url(meta: dict[str, Any], client_id: str, redirect_uri: str,
 
 def exchange_code(meta: dict[str, Any], client_id: str, code: str,
                   verifier: str, redirect_uri: str) -> dict[str, Any]:
+    assert_egress(meta["token_endpoint"])   # auth-code nooit blind naar vreemde host
     resp = requests.post(meta["token_endpoint"], data={
         "grant_type": "authorization_code",
         "code": code,
@@ -103,6 +114,7 @@ def exchange_code(meta: dict[str, Any], client_id: str, code: str,
 
 
 def refresh_token(meta: dict[str, Any], client_id: str, refresh: str) -> dict[str, Any]:
+    assert_egress(meta["token_endpoint"])   # refresh-token nooit blind naar vreemde host
     resp = requests.post(meta["token_endpoint"], data={
         "grant_type": "refresh_token",
         "refresh_token": refresh,

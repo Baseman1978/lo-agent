@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from span.integrations.mcp_client import MCPRegistry, MCPClient, load_servers, save_servers
 from span.orchestrator.tools import ToolBox
 
@@ -92,14 +94,15 @@ def test_authorize_url_bevat_pkce_en_scope():
 def test_discover_leest_metadata():
     from span.integrations import mcp_oauth as ox
     pr = MagicMock(ok=True); pr.json.return_value = {
-        "authorization_servers": ["https://x"], "scopes_supported": ["mcp:tools"]}
+        "authorization_servers": ["https://mcp.voorbeeld.test"], "scopes_supported": ["mcp:tools"]}
     meta = MagicMock(); meta.raise_for_status.return_value = None
-    meta.json.return_value = {"authorization_endpoint": "https://x/oauth/authorize",
-                              "token_endpoint": "https://x/oauth/token",
-                              "registration_endpoint": "https://x/oauth/register",
+    meta.json.return_value = {"authorization_endpoint": "https://mcp.voorbeeld.test/oauth/authorize",
+                              "token_endpoint": "https://mcp.voorbeeld.test/oauth/token",
+                              "registration_endpoint": "https://mcp.voorbeeld.test/oauth/register",
                               "code_challenge_methods_supported": ["S256"]}
-    with patch("span.integrations.mcp_oauth.requests.get", side_effect=[pr, meta]):
-        m = ox.discover("https://x/mcp")
+    with patch("span.integrations.mcp_oauth.assert_egress", lambda u: None), \
+         patch("span.integrations.mcp_oauth.requests.get", side_effect=[pr, meta]):
+        m = ox.discover("https://mcp.voorbeeld.test/mcp")
     assert m["token_endpoint"].endswith("/oauth/token") and m["_scopes"] == ["mcp:tools"]
 
 
@@ -330,3 +333,63 @@ def test_archive_folder_zonder_mcp():
     from span.jarvis.mail_archive import archive_folder
     res = archive_folder(None, MagicMock(), MagicMock(), "s", "x")
     assert "error" in res
+
+
+# -- WP-1 I2/M6: egress-poort + RPC-hardening ------------------------------
+
+def test_oauth_refresh_weigert_vreemde_token_endpoint():
+    from span.integrations.mcp_oauth import refresh_token
+    from span.safety.egress import EgressBlocked
+    with pytest.raises(EgressBlocked):
+        refresh_token({"token_endpoint": "https://evil.example.com/token"}, "cid", "r")
+
+
+def test_oauth_discover_weigert_non_https_mcp():
+    from span.integrations.mcp_oauth import discover
+    from span.safety.egress import EgressBlocked
+    with pytest.raises(EgressBlocked):
+        discover("http://evil.example.com/mcp")
+
+
+def test_rpc_weigert_niet_allowlisted_url():
+    from span.integrations.mcp_client import MCPClient
+    from span.safety.egress import EgressBlocked
+    client = MCPClient("https://evil.example.com/mcp", token="t")
+    with pytest.raises(EgressBlocked):
+        client._rpc("tools/list", {})
+
+
+def test_parse_result_id_mismatch():
+    from span.integrations import mcp_client as M
+
+    class _Raw:
+        def __init__(self, b): self._b = b
+        def read(self, n, decode_content=True): return self._b
+
+    class _Resp:
+        headers = {"Content-Type": "application/json"}
+        encoding = "utf-8"
+        def __init__(self, b): self.raw = _Raw(b)
+        def close(self): pass
+
+    body = json.dumps({"jsonrpc": "2.0", "id": 99, "result": {"ok": True}}).encode()
+    with pytest.raises(M.MCPError):
+        M._parse_result(_Resp(body), expected_id=1)
+
+
+def test_parse_result_byte_cap():
+    from span.integrations import mcp_client as M
+
+    class _Raw:
+        def __init__(self, b): self._b = b
+        def read(self, n, decode_content=True): return self._b
+
+    class _Resp:
+        headers = {"Content-Type": "application/json"}
+        encoding = "utf-8"
+        def __init__(self, b): self.raw = _Raw(b)
+        def close(self): pass
+
+    big = b"x" * (M.MAX_RPC_BYTES + 10)
+    with pytest.raises(M.MCPError):
+        M._parse_result(_Resp(big), expected_id=1)

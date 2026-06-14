@@ -10,15 +10,16 @@ de andere optionele integraties.
 
 from __future__ import annotations
 
-import ipaddress
-import socket
 from html.parser import HTMLParser
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
 
+from span.safety.egress import is_public_host
+
 MAX_BYTES = 2_000_000
 MAX_TEXT = 8000
+MAX_REDIRECTS = 4
 
 
 class _Strip(HTMLParser):
@@ -51,36 +52,48 @@ def _is_public_url(url: str) -> bool:
         return False
     if p.scheme not in ("http", "https") or not p.hostname:
         return False
-    try:
-        infos = socket.getaddrinfo(p.hostname, None)
-    except Exception:
-        return False
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if (ip.is_private or ip.is_loopback or ip.is_link_local
-                or ip.is_reserved or ip.is_multicast):
-            return False
-    return True
+    return is_public_host(p.hostname)
 
 
 def fetch_readable(url: str) -> dict:
     """Haal een publieke pagina op en geef leesbare tekst terug.
-    Retourneert {ok, url, text|error}. De text is UNTRUSTED."""
+    Retourneert {ok, url, text|error}. De text is UNTRUSTED.
+
+    SSRF-hardening (I1): geen automatische redirects — elke hop wordt opnieuw
+    gevalideerd, zodat een toegestane publieke URL niet kan doorsturen naar een
+    intern/metadata-adres. (Resterend rebinding-venster is klein: alle A-records
+    worden gecontroleerd.)"""
     if not _is_public_url(url):
         return {"ok": False, "url": url,
                 "error": "Geweigerd: alleen publieke http(s)-URLs (geen interne adressen)."}
+    cur = url
     try:
-        resp = requests.get(url, timeout=15, stream=True,
-                            headers={"User-Agent": "Span/1.0 (persoonlijke assistent)"})
-        resp.raise_for_status()
-        raw = resp.raw.read(MAX_BYTES, decode_content=True)
-        html = raw.decode(resp.encoding or "utf-8", errors="replace")
+        for _ in range(MAX_REDIRECTS + 1):
+            resp = requests.get(cur, timeout=15, stream=True, allow_redirects=False,
+                                headers={"User-Agent": "Span/1.0 (persoonlijke assistent)"})
+            if resp.status_code in (301, 302, 303, 307, 308):
+                loc = resp.headers.get("Location")
+                resp.close()
+                if not loc:
+                    break
+                nxt = urljoin(cur, loc)
+                if not _is_public_url(nxt):
+                    return {"ok": False, "url": url,
+                            "error": "Geweigerd: redirect naar een niet-publiek/intern adres."}
+                cur = nxt
+                continue
+            resp.raise_for_status()
+            raw = resp.raw.read(MAX_BYTES, decode_content=True)
+            html = raw.decode(resp.encoding or "utf-8", errors="replace")
+            break
+        else:
+            return {"ok": False, "url": url, "error": "Geweigerd: te veel redirects."}
     except Exception as exc:
         return {"ok": False, "url": url, "error": f"Ophalen mislukt: {exc}"}
     parser = _Strip()
     parser.feed(html)
     text = " ".join(parser.parts)[:MAX_TEXT]
-    return {"ok": True, "url": url, "text": text}
+    return {"ok": True, "url": cur, "text": text}
 
 
 def web_search(query: str, max_results: int = 5) -> dict:

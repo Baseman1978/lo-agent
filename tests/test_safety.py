@@ -154,6 +154,48 @@ def test_guarded_get_weigert_onbekende_host():
         guarded_get("https://evil.example.com/steal")
 
 
+# -- WP-1 I2: sluitende egress-poort (https + allowlist + publiek IP) -------
+
+def test_assert_egress_weigert_non_https_en_vreemde_host():
+    from span.safety.egress import assert_egress, EgressBlocked
+    with pytest.raises(EgressBlocked):
+        assert_egress("http://app.asana.com/x")          # geen https
+    with pytest.raises(EgressBlocked):
+        assert_egress("https://evil.example.com/token")  # niet op allowlist
+
+
+def test_assert_egress_weigert_allowlisted_host_met_intern_ip(monkeypatch):
+    from span.safety import egress
+    # allowlisted host, maar DNS wijst naar een intern adres (rebinding/SSRF)
+    monkeypatch.setattr(egress.socket, "getaddrinfo",
+                        lambda *a, **k: [(2, 1, 6, "", ("169.254.169.254", 0))])
+    with pytest.raises(egress.EgressBlocked):
+        egress.assert_egress("https://api.orq.ai/leak")
+
+
+def test_allow_host_runtime_allowlist():
+    from span.safety.egress import allow_host, host_allowed
+    assert not host_allowed("mijn-mcp.voorbeeld.test")
+    allow_host("mijn-mcp.voorbeeld.test")
+    assert host_allowed("mijn-mcp.voorbeeld.test")
+
+
+def test_reader_weigert_redirect_naar_intern_adres(monkeypatch):
+    from span.integrations import reader
+
+    class _Resp:
+        status_code = 302
+        headers = {"Location": "http://169.254.169.254/latest/meta-data"}
+        def close(self): pass
+
+    # eerste host is publiek, de redirect-bestemming is intern -> moet weigeren
+    monkeypatch.setattr(reader, "_is_public_url",
+                        lambda u: "169.254" not in u and u.startswith(("http://", "https://")))
+    monkeypatch.setattr(reader.requests, "get", lambda *a, **k: _Resp())
+    out = reader.fetch_readable("https://example.com/start")
+    assert out["ok"] is False and "redirect" in out["error"].lower()
+
+
 # -- F1.6 run-budget -------------------------------------------------------
 
 def test_budget_kapt_iteraties_af():

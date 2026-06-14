@@ -384,6 +384,8 @@ async def speech_to_text(request: Request) -> dict[str, Any]:
         text = await asyncio.to_thread(stt.transcribe, audio)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Transcriptie mislukt: {exc}")
+    import logging
+    logging.getLogger("uvicorn.error").info("STT transcript: %r", text)
     return {"text": text}
 
 
@@ -664,6 +666,10 @@ async def mcp_connect(request: Request, name: str) -> dict[str, Any]:
     if server is None:
         raise HTTPException(status_code=404, detail="MCP-server niet gevonden.")
     redirect_uri = _callback_uri(request)
+    # bewust koppelen -> de MCP-host mag uitgaand verkeer ontvangen (egress-poort)
+    from urllib.parse import urlparse as _up
+    from span.safety.egress import allow_host
+    allow_host(_up(server["url"]).hostname or "")
 
     def prep() -> dict[str, Any]:
         meta = ox.discover(server["url"])

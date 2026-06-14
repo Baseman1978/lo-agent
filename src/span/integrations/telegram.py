@@ -262,8 +262,15 @@ class TelegramBridge:
         if not path:
             return ""
         token = self._base.rsplit("/bot", 1)[-1]
-        audio = requests.get(
-            f"https://api.telegram.org/file/bot{token}/{path}", timeout=60).content
+        # bounded download (M11): geen onbegrensde body in het geheugen
+        max_bytes = 20_000_000
+        r = requests.get(f"https://api.telegram.org/file/bot{token}/{path}",
+                         timeout=60, stream=True)
+        r.raise_for_status()
+        audio = r.raw.read(max_bytes + 1, decode_content=True) or b""
+        r.close()
+        if len(audio) > max_bytes:
+            return ""   # te groot -> overslaan i.p.v. geheugen opblazen
         return stt.transcribe(audio)
 
     # -- hoofd-loop ------------------------------------------------------------

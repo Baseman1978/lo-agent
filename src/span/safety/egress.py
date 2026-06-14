@@ -7,7 +7,9 @@ uitbreidbaar via SPAN_EGRESS_EXTRA (komma-gescheiden hostnamen).
 
 from __future__ import annotations
 
+import ipaddress
 import os
+import socket
 from urllib.parse import urlparse
 
 # Vaste, bekende bestemmingen van de integraties.
@@ -21,10 +23,23 @@ _ALLOWED = {
     "api.tavily.com",
 }
 
+# Hosts die Bas BEWUST koppelt (bv. een MCP-server) komen er tijdens runtime bij.
+# Een host die alleen uit untrusted metadata komt (een token_endpoint uit een
+# well-known-respons op een vreemde host) staat hier NIET in -> wordt geweigerd.
+_RUNTIME_ALLOWED: set[str] = set()
+
+
+def allow_host(host: str) -> None:
+    """Voeg een bewust-gekoppelde host toe aan de runtime-allowlist."""
+    h = (host or "").lower().strip()
+    if h:
+        _RUNTIME_ALLOWED.add(h)
+
 
 def _allowed_hosts() -> set[str]:
     extra = os.environ.get("SPAN_EGRESS_EXTRA", "")
-    return _ALLOWED | {h.strip().lower() for h in extra.split(",") if h.strip()}
+    return (_ALLOWED | _RUNTIME_ALLOWED
+            | {h.strip().lower() for h in extra.split(",") if h.strip()})
 
 
 def host_allowed(host: str) -> bool:
@@ -41,6 +56,48 @@ def url_allowed(url: str) -> bool:
         return host_allowed(urlparse(url).hostname or "")
     except Exception:
         return False
+
+
+def is_public_host(host: str) -> bool:
+    """True als elke DNS-resolutie van host een publiek IP geeft. Blokkeert
+    localhost, private ranges, link-local en cloud-metadata (169.254.x).
+    Onresolveerbaar of één privé-IP => False (fail-closed)."""
+    host = (host or "").strip()
+    if not host:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except Exception:
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            return False
+    return True
+
+
+def assert_egress(url: str) -> None:
+    """Bindende egress-poort voor gevoelige, naar-buiten-gaande calls (OAuth,
+    MCP-RPC). Eist https + een allowlisted host + uitsluitend publieke IP's.
+    Sluit SSRF (intern/metadata-adres) én blind token-lek (vreemde host uit
+    untrusted metadata) af. Raise EgressBlocked bij weigering."""
+    try:
+        p = urlparse(url)
+    except Exception:
+        raise EgressBlocked(f"ongeldige URL: {url!r}")
+    if p.scheme != "https":
+        raise EgressBlocked(f"alleen https toegestaan, niet {p.scheme!r}: {url}")
+    host = p.hostname or ""
+    if not host_allowed(host):
+        raise EgressBlocked(f"host niet op de allowlist: {host}")
+    if not is_public_host(host):
+        raise EgressBlocked(f"host resolved naar een niet-publiek/intern adres: {host}")
 
 
 class EgressBlocked(RuntimeError):

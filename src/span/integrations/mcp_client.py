@@ -13,10 +13,14 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
+from span.safety.egress import EgressBlocked, allow_host, host_allowed
+
 PROTOCOL_VERSION = "2025-06-18"
+MAX_RPC_BYTES = 5_000_000   # harde cap tegen een defecte/kwaadaardige server (M6)
 
 
 class MCPError(RuntimeError):
@@ -48,14 +52,20 @@ class MCPClient:
 
     def _rpc(self, method: str, params: dict[str, Any] | None = None,
              notify: bool = False) -> Any:
+        # egress-poort: de MCP-URL moet https zijn en op de allowlist staan
+        # (de host wordt bij bewust koppelen geregistreerd). Voorkomt dat een
+        # gemanipuleerde config Span naar een vreemde/interne host laat POST'en.
+        if urlparse(self._url).scheme != "https" or not host_allowed(urlparse(self._url).hostname or ""):
+            raise EgressBlocked(f"MCP-URL niet toegestaan: {self._url}")
         self._next_id += 1
+        req_id = self._next_id
         body: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
         if params is not None:
             body["params"] = params
         if not notify:
-            body["id"] = self._next_id
+            body["id"] = req_id
         resp = requests.post(self._url, headers=self._headers(),
-                             json=body, timeout=self._timeout)
+                             json=body, timeout=self._timeout, stream=True)
         if resp.status_code == 401:
             raise MCPError("unauthorized")  # token verlopen/ontbreekt -> opnieuw inloggen
         resp.raise_for_status()
@@ -63,8 +73,9 @@ class MCPClient:
         if sid:
             self._session_id = sid
         if notify:
+            resp.close()
             return None
-        return _parse_result(resp)
+        return _parse_result(resp, req_id)
 
     def initialize(self) -> dict[str, Any]:
         result = self._rpc("initialize", {
@@ -128,6 +139,11 @@ class MCPRegistry:
         self._specs: list[dict[str, Any]] = []
         self._servers = {s.get("name"): dict(s) for s in servers if s.get("name")}
         self._brain = brain          # om een ververst token te kunnen opslaan
+        # bewust-gekoppelde MCP-hosts op de runtime-allowlist zetten zodat hun
+        # eigen RPC/OAuth-calls de egress-poort passeren (vreemde hosts niet)
+        for s in servers:
+            if s.get("url"):
+                allow_host(urlparse(s["url"]).hostname or "")
         for s in servers:
             name, url, token = s.get("name"), s.get("url"), s.get("token", "")
             if not name or not url or not token:
@@ -217,13 +233,25 @@ class MCPRegistry:
             return {"error": f"MCP-fout: {exc}"}
 
 
-def _parse_result(resp: requests.Response) -> Any:
-    """Haal het JSON-RPC-resultaat uit een directe JSON- of SSE-respons."""
+def _parse_result(resp: requests.Response, expected_id: int | None = None) -> Any:
+    """Haal het JSON-RPC-resultaat uit een directe JSON- of SSE-respons.
+
+    Leest met een harde byte-cap (M6: geen geheugen-DoS bij een defecte/
+    kwaadaardige server) en correleert de response-id met de verzonden id."""
     ctype = resp.headers.get("Content-Type", "")
+    try:
+        raw = resp.raw.read(MAX_RPC_BYTES + 1, decode_content=True) or b""
+    except Exception:
+        raw = resp.content[:MAX_RPC_BYTES + 1]
+    finally:
+        resp.close()
+    if len(raw) > MAX_RPC_BYTES:
+        raise MCPError(f"MCP-respons te groot (> {MAX_RPC_BYTES} bytes)")
+    body = raw.decode(resp.encoding or "utf-8", errors="replace")
     if "text/event-stream" in ctype:
         # neem de laatste 'data:'-regel met een JSON-RPC response
         payload = None
-        for line in resp.text.splitlines():
+        for line in body.splitlines():
             line = line.strip()
             if line.startswith("data:"):
                 try:
@@ -234,7 +262,14 @@ def _parse_result(resp: requests.Response) -> Any:
                     continue
         data = payload or {}
     else:
-        data = resp.json()
+        try:
+            data = json.loads(body or "{}")
+        except json.JSONDecodeError:
+            raise MCPError("MCP-respons was geen geldige JSON")
     if isinstance(data, dict) and data.get("error"):
         raise MCPError(str(data["error"].get("message", data["error"])))
+    # id-correlatie: een mismatch duidt op een verkeerd-gekoppelde/verwarde respons
+    if (expected_id is not None and isinstance(data, dict)
+            and data.get("id") is not None and data.get("id") != expected_id):
+        raise MCPError(f"JSON-RPC id-mismatch (verwacht {expected_id}, kreeg {data.get('id')})")
     return data.get("result") if isinstance(data, dict) else None
