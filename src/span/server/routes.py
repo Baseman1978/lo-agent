@@ -9,7 +9,15 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
+import time
 from typing import Any
+
+# M14: gedeelde sub-dicts in _state (m.n. mcp_pending) worden vanuit executor-
+# threads gemuteerd -> serialiseer setdefault/pop. M9: pending OAuth-state heeft
+# een TTL zodat een achtergebleven code/state niet eindeloop geldig blijft.
+_PENDING_LOCK = threading.Lock()
+_PENDING_TTL = 600.0  # seconden
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
@@ -358,9 +366,10 @@ async def upload_document(request: Request, filename: str = Query(...),
     raw = await request.body()
     if not raw:
         raise HTTPException(status_code=422, detail="Leeg bestand.")
-    if len(raw) > 20_000_000:
-        raise HTTPException(status_code=413, detail="Bestand groter dan 20 MB.")
-    from span.jarvis.documents import ingest_document
+    from span.jarvis.documents import ingest_document, MAX_BYTES as DOC_MAX
+    if len(raw) > DOC_MAX:   # M13: één bron voor de grens (documents.MAX_BYTES)
+        raise HTTPException(status_code=413,
+                            detail=f"Bestand groter dan {DOC_MAX // 1_000_000} MB.")
     try:
         result = await asyncio.to_thread(ingest_document, _state, filename, raw, scope)
     except ValueError as exc:
@@ -382,6 +391,14 @@ async def speech_to_text(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="Audio te kort of leeg.")
     if len(audio) > 10_000_000:
         raise HTTPException(status_code=413, detail="Audio te groot (max 10 MB).")
+    # M12: ruwe bytes gaan naar de ffmpeg/Whisper-decoder -> alleen bekende
+    # audio-containers toelaten (magic bytes), 415 bij iets anders
+    head = audio[:4]
+    if not (head.startswith(b"\x1aE\xdf\xa3")      # EBML (webm/mkv)
+            or head == b"OggS"                       # ogg/opus
+            or head == b"RIFF"                       # wav
+            or head[:3] == b"ID3" or head[:2] == b"\xff\xfb"):  # mp3
+        raise HTTPException(status_code=415, detail="Onbekend audioformaat.")
     try:
         text = await asyncio.to_thread(stt.transcribe, audio)
     except Exception as exc:
@@ -680,10 +697,16 @@ async def mcp_connect(request: Request, name: str) -> dict[str, Any]:
         import secrets as _s
         state = _s.token_urlsafe(16)
         url = ox.authorize_url(meta, reg["client_id"], redirect_uri, challenge, state)
-        _state.setdefault("mcp_pending", {})[state] = {
-            "name": name, "meta": meta, "client_id": reg["client_id"],
-            "verifier": verifier, "redirect_uri": redirect_uri,
-        }
+        with _PENDING_LOCK:
+            pend = _state.setdefault("mcp_pending", {})
+            # verlopen pogingen opruimen (M9)
+            for st in [k for k, v in pend.items() if time.time() - v.get("ts", 0) > _PENDING_TTL]:
+                pend.pop(st, None)
+            pend[state] = {
+                "name": name, "meta": meta, "client_id": reg["client_id"],
+                "verifier": verifier, "redirect_uri": redirect_uri,
+                "ts": time.time(),
+            }
         return {"authorize_url": url}
 
     try:
@@ -697,9 +720,12 @@ async def mcp_oauth_callback(code: str = Query(""), state: str = Query("")) -> A
     """OAuth-redirect: wissel de code in voor tokens en sla ze op."""
     from span.integrations import mcp_oauth as ox
     from span.integrations.mcp_client import load_servers, save_servers
-    pending = (_state.get("mcp_pending") or {}).pop(state, None)
+    with _PENDING_LOCK:
+        pending = (_state.get("mcp_pending") or {}).pop(state, None)
     if not pending or not code:
         return PlainTextResponse("Ongeldige of verlopen login-poging.", status_code=400)
+    if time.time() - pending.get("ts", 0) > _PENDING_TTL:   # M9: verlopen state
+        return PlainTextResponse("Login-poging verlopen — start opnieuw.", status_code=400)
 
     def finish() -> str:
         tok = ox.exchange_code(pending["meta"], pending["client_id"], code,

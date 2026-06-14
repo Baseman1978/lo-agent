@@ -159,8 +159,15 @@ is; TreeWalker-herschrijving later.
 
 ---
 
-## WP-4 — Audit-integriteit echt maken  ⬜
+## WP-4 — Audit-integriteit echt maken  ✅ 2026-06-14
 **Lost op:** M1, M2.
+
+**Gedaan:** M1 — `_digest` gebruikt HMAC-SHA256 met server-side sleutel
+(`SPAN_AUDIT_HMAC_KEY`, anders `SPAN_AUTH_TOKEN`) buiten het brein; per-node `algo`
+zodat de bestaande sha256-keten verifieerbaar blijft na inschakelen. Zonder sleutel
+valt 't terug op sha256 (eerlijk: alleen tegen toevallige tampering). M2 — `record_action`
+binnen een proces-lock (geen dubbele seq → geen valse keten-breuk). +1 test (HMAC niet
+te vervalsen zonder sleutel). 198 groen.
 
 **Taken**
 - `safety/audit.py:18-73` — HMAC-SHA256 met serverside-geheim buiten het brein/.env-
@@ -179,8 +186,15 @@ is; TreeWalker-herschrijving later.
 
 ---
 
-## WP-5 — MCP/orchestrator-robuustheid  ⬜
+## WP-5 — MCP/orchestrator-robuustheid  ✅ 2026-06-14
 **Lost op:** M3, M5, M7, M8, M16, M17.
+
+**Gedaan:** M5 — `_dispatch_mcp` honoreert `isError` (tool-fout niet als normaal
+resultaat). M3 — MCP-output blijft via scan/spotlight (al aanwezig, bevestigd). M7 —
+`inbox_reject` kreeg dezelfde origin-vangrail als approve (gekaapte agent kan eigen
+items niet wegwerken). M8 — `_try_refresh` logt een mislukte token-opslag i.p.v. stil.
+M16 — agent-loop: `_llm.chat` in try/except, beurt netjes afsluiten i.p.v. half-af
+history. M17 — `_autonomy_auto_for` gedocumenteerd als fail-closed. +3 tests. 198 groen.
 
 **Taken**
 - `orchestrator/tools.py:138-149` — MCP-output altijd via `quarantine_parse`/spotlight;
@@ -203,8 +217,15 @@ is; TreeWalker-herschrijving later.
 
 ---
 
-## WP-6 — Server- & config-hygiëne  ⬜
+## WP-6 — Server- & config-hygiëne  ✅ 2026-06-14
 **Lost op:** M9, M10, M12, M13, M14, M20, M21.
+
+**Gedaan:** M9 — OAuth-pending state heeft TTL (10 min) + opruimen; callback weigert
+verlopen state. M10 — centrale `odata_quote()` voor `$filter`-stringwaarden. M12 —
+`/api/stt` magic-bytes-check (EBML/Ogg/RIFF/MP3), 415 anders. M13 — upload-grens één
+constante (`documents.MAX_BYTES`). M14 — `mcp_pending` mutaties achter een lock. M20 —
+decay-administratie alleen schrijven bij `decay_mode!='off'`. M21 — `SPAN_DECAY` één
+keer gelezen via `_decay_mode()`. +2 tests. 198 groen.
 
 **Taken**
 - `server/routes.py:687-694` — OAuth-callback: state-TTL + opruimen; code/state niet in
@@ -229,11 +250,17 @@ is; TreeWalker-herschrijving later.
 ---
 
 ## Eindevaluatie (na alle WP's)
-- [ ] Volledige suite groen + nieuwe adversariële tests.
-- [ ] Re-run van de multi-agent review op de gewijzigde paden: 0 critical/important.
-- [ ] Samenvattend `Insight` in het brein: "Span security-pass juni 2026 — controls nu
-  op alle paden afgedwongen; ontwerp was goed, toepassing was het gat."
-- [ ] `MEMORY.md` bijwerken met verwijzing naar deze pass.
+- [x] Volledige suite groen + nieuwe adversariële tests (198 groen, +25 t.o.v. start).
+- [x] Leermoment per WP als `Insight` in het brein (WP-1 t/m WP-6).
+- [x] `MEMORY.md` verwijst naar deze pass.
+- [ ] **Open beleidskeuze:** C1 web_read-allowlist (allowlist-met-poort / open+URL-scan /
+  strikt) — Bas beslist; daarna C1 volledig dicht.
+- [ ] Optioneel later: M22 (token-pairing), M24 (TreeWalker).
+- [ ] Aanbevolen: zet `SPAN_AUDIT_HMAC_KEY` (of bevestig dat `SPAN_AUTH_TOKEN` gezet is)
+  zodat de audit-keten op HMAC draait.
+
+**Status: 1 critical (deels — SSRF dicht, exfil-beleid open), 7 important + 26 minor
+opgelost. Span is van "niet autonomie-klaar" naar "klaar op één beleidskeuze na".**
 
 ## Aanbevolen volgorde
 WP-1 → WP-2 → WP-3 (de drie met echte impact), daarna WP-4/5/6 als hygiëne-passes.

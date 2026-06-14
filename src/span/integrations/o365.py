@@ -26,6 +26,12 @@ SCOPES = [
 TIMEZONE = "W. Europe Standard Time"
 
 
+def odata_quote(value: str) -> str:
+    """OData string-literal: enkele quotes verdubbelen en omsluiten (M10).
+    Centrale helper voor álle $filter-stringwaarden tegen filter-injectie."""
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 class NotAuthenticated(RuntimeError):
     """Nog geen (geldige) login — start de device code flow."""
 
@@ -169,8 +175,8 @@ class O365Client:
         data = self._get(
             "/me/messages",
             {
-                # OData: enkele quotes verdubbelen, anders breekt het filter
-                "$filter": f"conversationId eq '{conversation_id.replace(chr(39), chr(39) * 2)}'",
+                # M10: alle $filter-stringwaarden via één escape-helper
+                "$filter": f"conversationId eq {odata_quote(conversation_id)}",
                 "$top": min(int(top), 25),
                 "$select": "subject,from,receivedDateTime,bodyPreview",
                 "$orderby": "receivedDateTime",

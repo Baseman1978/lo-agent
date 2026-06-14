@@ -272,12 +272,21 @@ class SpanAgent:
                 answer_parts.append(f"(veiligheidslimiet: {exc} — beurt gestopt)")
                 self._messages.append({"role": "assistant", "content": answer_parts[-1]})
                 break
-            message = self._llm.chat(
-                self._messages + ([memo_msg] if memo_msg else []),
-                model=self._settings.model_main,
-                tools=self._toolbox.specs(),
-                on_text=on_text,
-            )
+            try:
+                message = self._llm.chat(
+                    self._messages + ([memo_msg] if memo_msg else []),
+                    model=self._settings.model_main,
+                    tools=self._toolbox.specs(),
+                    on_text=on_text,
+                )
+            except Exception as exc:
+                # M16: model-call faalde (bv. provider-fout) — sluit de beurt
+                # netjes af i.p.v. de history half-af te laten (sommige providers
+                # weigeren een volgende call met losse tool_calls zonder antwoord)
+                msg = f"(de modelaanroep mislukte: {type(exc).__name__}: {exc})"
+                answer_parts.append(msg)
+                self._messages.append({"role": "assistant", "content": msg})
+                break
             if message.content:
                 answer_parts.append(message.content)
             tool_calls = getattr(message, "tool_calls", None)

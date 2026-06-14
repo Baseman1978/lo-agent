@@ -250,7 +250,8 @@ def test_audit_hashchain_detecteert_tampering():
             if q.strip().startswith("CREATE (:Action"):
                 store.append({"seq": kw["seq"], "type": kw["type"],
                               "detail": kw["detail"], "at": kw["at"],
-                              "prev": kw["prev"], "hash": kw["hash"]})
+                              "prev": kw["prev"], "hash": kw["hash"],
+                              "algo": kw.get("algo")})
                 return []
             if "WHERE a.seq IS NOT NULL" in q:
                 return sorted(store, key=lambda r: r["seq"])
@@ -264,6 +265,44 @@ def test_audit_hashchain_detecteert_tampering():
     store[0]["detail"] = "naar dief@evil.com"
     res = audit.verify_chain(b)
     assert res["ok"] is False and res["broken_at"] == 1
+
+
+def _fake_audit_brain():
+    store, seq_counter = [], {"n": 0}
+
+    class FakeBrain:
+        def run(self, q, **kw):
+            if "RETURN toString(datetime())" in q:
+                seq_counter["n"] += 1
+                return [{"now": f"2026-06-14T00:00:{seq_counter['n']:02d}"}]
+            if "ORDER BY a.seq DESC LIMIT 1" in q:
+                return [store[-1]] if store else []
+            if q.strip().startswith("CREATE (:Action"):
+                store.append({"seq": kw["seq"], "type": kw["type"], "detail": kw["detail"],
+                              "at": kw["at"], "prev": kw["prev"], "hash": kw["hash"],
+                              "algo": kw.get("algo")})
+                return []
+            if "WHERE a.seq IS NOT NULL" in q:
+                return sorted(store, key=lambda r: r["seq"])
+            return []
+    return FakeBrain(), store
+
+
+def test_audit_hmac_niet_te_vervalsen_zonder_sleutel(monkeypatch):
+    from span.safety import audit
+    monkeypatch.setattr(audit, "_AUDIT_KEY", b"geheim-buiten-het-brein")
+    b, store = _fake_audit_brain()
+    audit.record_action(b, "mail_send", "naar jan")
+    assert store[0]["algo"] == "hmac"
+    assert audit.verify_chain(b)["ok"] is True
+    # aanvaller met brein-schrijftoegang herberekent met kale sha256 (geen sleutel)
+    import hashlib
+    r = store[0]
+    r["detail"] = "naar dief@evil.com"
+    raw = f"{r['prev']}|{r['seq']}|{r['type']}|{r['detail']}|{r['at']}".encode()
+    r["hash"] = hashlib.sha256(raw).hexdigest()
+    res = audit.verify_chain(b)
+    assert res["ok"] is False and res["broken_at"] == 1  # HMAC-mismatch gedetecteerd
 
 
 # -- F3.4 scope-tags -------------------------------------------------------

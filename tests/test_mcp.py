@@ -396,3 +396,32 @@ def test_parse_result_byte_cap():
     big = b"x" * (M.MAX_RPC_BYTES + 10)
     with pytest.raises(M.MCPError):
         M._parse_result(_Resp(big), expected_id=1)
+
+
+# -- WP-5: orchestrator-robuustheid ----------------------------------------
+
+def test_inbox_reject_origin_agent_geweigerd():
+    inbox = MagicMock()
+    inbox.get.return_value = {"id": 5, "origin": "agent"}
+    tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s", inbox=inbox)
+    out = json.loads(tb.dispatch("inbox_reject", {"item_id": 5}))
+    assert "error" in out
+    inbox.resolve.assert_not_called()
+
+
+def test_inbox_reject_bas_item_mag():
+    inbox = MagicMock()
+    inbox.get.return_value = {"id": 6, "origin": "user"}
+    inbox.resolve.return_value = {"id": 6}
+    tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s", inbox=inbox)
+    out = json.loads(tb.dispatch("inbox_reject", {"item_id": 6}))
+    assert out["rejected"] is True
+
+
+def test_dispatch_mcp_honoreert_iserror():
+    mcp = MagicMock()
+    mcp.tool_names.return_value = ["mcp__lomans__m365_mail_list"]
+    mcp.call.return_value = {"text": "kapot", "isError": True}
+    tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s", mcp=mcp)
+    out = json.loads(tb.dispatch("mcp__lomans__m365_mail_list", {}))
+    assert "error" in out and "fout" in out["error"].lower()

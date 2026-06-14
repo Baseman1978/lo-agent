@@ -85,6 +85,10 @@ class ToolBox:
         return specs
 
     def _autonomy_auto_for(self, name: str) -> bool:
+        """Mag deze tool zonder goedkeuring draaien bij autonomy=auto?
+        M17: alleen mail/event kennen een 'auto'-stand; elke andere tool valt
+        bewust terug op False (fail-closed -> ask/queue). Een onbekende
+        autonomy-sleutel kan dus nooit per ongeluk een tool vrijgeven."""
         if name == "o365_mail_send":
             return self._autonomy.get("mail", "ask") == "auto"
         if name == "o365_event_create":
@@ -148,6 +152,9 @@ class ToolBox:
         res = self._mcp.call(name, arguments)
         if res.get("error"):
             return json.dumps(res, ensure_ascii=False)
+        if res.get("isError"):   # M5: tool-fout van de server, niet als normaal resultaat tonen
+            return json.dumps({"error": "MCP-tool gaf een fout terug.",
+                               "detail": (res.get("text") or "")[:500]}, ensure_ascii=False)
         from span.safety.scan import scan_text
         text = res.get("text", "")
         sc = scan_text(text)
@@ -342,6 +349,12 @@ class ToolBox:
         return {"approved": True, "result": result}
 
     def _tool_inbox_reject(self, item_id: int) -> Any:
+        # M7: symmetrische origin-vangrail — een gekaapte agent mag z'n eigen
+        # (of Bas') review-items niet stilletjes wegwerken (censoring/denial).
+        peek = self._inbox.get(int(item_id))
+        if peek is not None and peek.get("origin") == "agent":
+            return {"error": "Dit item is door mijzelf klaargezet; afwijzen kan "
+                             "alleen via de knop in de HUD (of de terminal)."}
         item = self._inbox.resolve(int(item_id), "rejected")
         return {"rejected": item is not None}
 

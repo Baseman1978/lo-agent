@@ -208,8 +208,10 @@ class MCPRegistry:
         if self._brain is not None:
             try:
                 save_servers(self._brain, list(self._servers.values()))
-            except Exception:
-                pass
+            except Exception as exc:
+                # M8: niet stil — een mislukte opslag betekent dat we elke 401
+                # opnieuw moeten verversen; dat willen we zien in de logs
+                print(f"[mcp] token-opslag voor '{name}' mislukt: {exc}", flush=True)
         if name in self._clients:
             self._clients[name].set_token(s["token"])
         return True

@@ -213,7 +213,10 @@ class FragmentStore:
                           f"\n  decay : {decay_order}", flush=True)
             results = [_entry(r["node"], r["score"]) for r in ranked[:k]]
 
-        if results:  # decay-administratie: gebruik houdt herinneringen warm
+        # decay-administratie: alleen schrijven als verval aanstaat (M20). Bij
+        # decay_mode='off' telt last_accessed/access_count toch niet mee, dus
+        # de extra write per zoekopdracht is pure belasting.
+        if results and self._decay_mode != "off":
             try:
                 self._brain.run(
                     "UNWIND $ids AS mf_id MATCH (mf:MemoryFragment {id: mf_id}) "
@@ -221,8 +224,8 @@ class FragmentStore:
                     "    mf.access_count = coalesce(mf.access_count, 0) + 1",
                     ids=[r["id"] for r in results],
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"[decay] administratie-write mislukt: {exc}", flush=True)
         return results
 
     FORMAL_INDEXES = [

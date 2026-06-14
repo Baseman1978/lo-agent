@@ -153,3 +153,19 @@ def test_trusted_write_default():
     store, brain, llm = make_store()
     store.write(mf_type="decision", content="iets", session_id="s1")
     assert brain.run.call_args.kwargs["trust"] == "trusted"
+
+
+# -- WP-6: hygiëne ----------------------------------------------------------
+
+def test_decay_off_schrijft_geen_administratie():
+    store, brain, llm = make_store()
+    store._decay_mode = "off"
+    brain.vector_search.return_value = [_node("a", 0.9)]
+    store.search("q", k=1)
+    brain.run.assert_not_called()  # M20: geen write per zoekopdracht bij decay off
+
+
+def test_odata_quote_escapet_quotes():
+    from span.integrations.o365 import odata_quote
+    assert odata_quote("AA'BB") == "'AA''BB'"
+    assert odata_quote("x' or 1 eq 1 or '") == "'x'' or 1 eq 1 or '''"
