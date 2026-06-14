@@ -54,9 +54,9 @@
   }
   function linkColorFn(l) {
     const a = l.source.key || l.source, b = l.target.key || l.target;
-    if (hoverSet.size) return (hoverSet.has(a) && hoverSet.has(b)) ? "#38e1ff" : "#11222c";
-    if (highlighted.has(a) || highlighted.has(b)) return "#5fd8f0";
-    return "#1a3a4a";
+    if (hoverSet.size) return (hoverSet.has(a) && hoverSet.has(b)) ? "#7fe9ff" : "#1d3540";
+    if (highlighted.has(a) || highlighted.has(b)) return "#7fe9ff";
+    return "#3f7d99";   // duidelijk zichtbare relatie-lijn op de donkere achtergrond
   }
 
   function makeGraph(el) {
@@ -69,10 +69,10 @@
       .nodeOpacity(0.92)
       .nodeLabel((n) => `<div class="holo-tip"><b>${esc(n.type)}</b><br>${esc(n.label || "")}</div>`)
       .linkColor(linkColorFn)
-      .linkOpacity(0.5)
+      .linkOpacity(0.7)
       .linkWidth((l) => {
         const a = l.source.key || l.source, b = l.target.key || l.target;
-        return (hoverSet.has(a) && hoverSet.has(b)) ? 1.2 : 0.6;
+        return (hoverSet.has(a) && hoverSet.has(b)) ? 1.6 : 1.0;
       })
       .enableNodeDrag(false)
       .warmupTicks(40)
@@ -259,13 +259,25 @@
     load();
   };
 
-  /* fullscreen toggle: scene + infopaneel verhuizen mee */
+  /* fullscreen toggle: scene + infopaneel + bediening (zoek/filters) mee */
   function toggleFull() {
     const goingFull = !overlay.classList.contains("open");
     overlay.classList.toggle("open", goingFull);
-    const host = goingFull ? full : panel;
-    host.appendChild(scene);
-    if (infoCard) host.appendChild(infoCard);
+    const section = panel.parentElement;                 // #panel-brein
+    const count = document.getElementById("holo-count");
+    const sWrap = document.getElementById("holo-search-wrap");
+    const fBox = document.getElementById("holo-filters");
+    if (goingFull) {
+      full.appendChild(scene);
+      if (sWrap) full.appendChild(sWrap);
+      if (fBox) full.appendChild(fBox);
+      if (infoCard) full.appendChild(infoCard);
+    } else {
+      panel.appendChild(scene);                          // panel = #holo-canvas
+      if (sWrap) section.insertBefore(sWrap, count);      // oorspronkelijke volgorde
+      if (fBox) section.insertBefore(fBox, count);
+      if (infoCard) panel.appendChild(infoCard);
+    }
     size();
     if (graph) graph.zoomToFit(600, 60);
   }

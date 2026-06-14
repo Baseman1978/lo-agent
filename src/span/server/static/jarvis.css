@@ -252,6 +252,14 @@ body.glitching main, body.glitching header {
 }
 .holo-sug:hover { background: rgba(20,40,60,.96); color: var(--cyan); }
 .holo-chip.win { letter-spacing: .04em; border-color: var(--cyan-dim); }
+
+/* bediening in fullscreen: zoek + filters als overlay boven de scene */
+#holo-full > #holo-search-wrap {
+  position: absolute; top: 16px; left: 20px; width: 260px; z-index: 42;
+}
+#holo-full > #holo-filters {
+  position: absolute; top: 52px; left: 20px; max-width: 60%; z-index: 42;
+}
 #holo-count { font-size: 10px; color: var(--dim); margin-bottom: 6px; letter-spacing: .08em; }
 #holo-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
 .holo-chip {
