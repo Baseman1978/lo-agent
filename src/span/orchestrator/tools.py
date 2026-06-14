@@ -38,7 +38,9 @@ class ToolBox:
         disabled: set[str] | None = None,
         user_location: dict[str, float] | None = None,
         fireflies: Any = None,
+        security: dict[str, Any] | None = None,
     ):
+        self._security = security or {}
         self._brain = brain
         self._fragments = fragments
         self._session_id = session_id
@@ -88,6 +90,7 @@ class ToolBox:
             name, arguments,
             autonomy_auto=self._autonomy_auto_for(name),
             has_inbox=self._inbox is not None,
+            exfil_guard=self._security.get("exfil_guard", True),
         )
         self._forced_approval = assessment["decision"] == "approval"
         if assessment["decision"] == "block":

@@ -235,3 +235,47 @@ def test_remember_scope_wordt_opgeslagen():
                                  {"type": "decision", "content": "x", "scope": "werk"}))
     assert out["scope"] == "werk"
     assert fragments.write.call_args.kwargs["scope"] == "werk"
+
+
+# -- instelbare beveiliging ------------------------------------------------
+
+def test_security_defaults_alles_aan():
+    from span.safety.settings import load_security
+    brain = MagicMock()
+    brain.run.return_value = []  # geen Config-node
+    sec = load_security(brain)
+    assert sec["injection_scan"] is True and sec["exfil_guard"] is True
+    assert sec["decay_mode"] == "off" and sec["budget_iterations"] == 12
+
+
+def test_security_load_uit_config():
+    from span.safety.settings import load_security
+    brain = MagicMock()
+    brain.run.return_value = [{"inj": False, "exf": True, "decay": "soft", "budget": 20}]
+    sec = load_security(brain)
+    assert sec["injection_scan"] is False and sec["decay_mode"] == "soft"
+    assert sec["budget_iterations"] == 20
+
+
+def test_security_save_valideert():
+    from span.safety.settings import save_security
+    brain = MagicMock()
+    brain.run.return_value = [{"inj": True, "exf": False, "decay": "off", "budget": 12}]
+    save_security(brain, {"exfil_guard": False, "budget_iterations": 999, "decay_mode": "x"})
+    # de MERGE-SET-query mag exfil bevatten maar geen ongeldig budget(999)/decay(x)
+    setq = [c for c in brain.run.call_args_list if "MERGE (c:Config" in str(c)]
+    assert setq and "sec_exfil_guard" in str(setq[0])
+    assert "sec_budget_iterations" not in str(setq[0])  # 999 buiten 3..40 -> niet opgeslagen
+
+
+def test_exfil_guard_uit_laat_externe_mail_door_op_auto():
+    from span.safety.guard import assess_tool
+    a = assess_tool("o365_mail_send",
+                    {"to": ["x@extern.com"], "subject": "s", "body": "b"},
+                    autonomy_auto=True, has_inbox=True, exfil_guard=False)
+    assert a["decision"] == "allow"  # vangnet uit -> autonomy beslist
+    # maar zonder auto blijft de high-poort staan, ook met exfil_guard uit
+    b = assess_tool("o365_mail_send",
+                    {"to": ["x@extern.com"], "subject": "s", "body": "b"},
+                    autonomy_auto=False, has_inbox=True, exfil_guard=False)
+    assert b["decision"] == "approval"

@@ -100,6 +100,7 @@ async def get_settings(request: Request) -> dict[str, Any]:
         ),
         "system_prompt_default": __import__(
             "span.orchestrator.agent", fromlist=["BASE_PROMPT"]).BASE_PROMPT,
+        "security": _state.get("security") or {},
     }
 
 
@@ -111,6 +112,12 @@ async def save_settings(request: Request) -> dict[str, Any]:
     _require_rest_auth(request)
     body = await request.json()
     result: dict[str, Any] = {"saved": True}
+
+    if "security" in body:
+        from span.safety.settings import save_security
+        sec = await asyncio.to_thread(save_security, _state["brain"], body["security"] or {})
+        _state["security"] = sec  # geldt voor nieuwe sessies + de watcher
+        result["security"] = sec
 
     if "autonomy" in body:
         new = body["autonomy"] or {}

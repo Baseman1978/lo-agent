@@ -147,14 +147,15 @@ def execute_approval(item: dict[str, Any], o365: Any, llm: Any = None,
 
 
 def triage_message(llm: Any, light_model: str | None, mail: dict[str, Any],
-                   rules: str = "") -> dict[str, Any]:
+                   rules: str = "", injection_scan: bool = True) -> dict[str, Any]:
     """Eén mail classificeren; faalt zacht naar notify."""
     # F1.4 — deterministische injectie-scan vóór het LLM erover oordeelt. Dit is
     # niet afhankelijk van het model: detecteert een mail die zich tot de AI
-    # richt nog vóór die het brein/handelen raakt.
+    # richt nog vóór die het brein/handelen raakt. Uitschakelbaar in instellingen
+    # (dan blijft alleen de LLM-injection-flag over).
     from span.safety.scan import scan_text
     blob = f"{mail.get('subject') or ''}\n{mail.get('preview') or ''}"
-    sc = scan_text(blob)
+    sc = scan_text(blob) if injection_scan else {"injection": False, "trust": 1.0}
     if sc["injection"] or sc["trust"] < 0.5:
         return {
             "action": "notify",
@@ -303,6 +304,7 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
                         triage_message, state["llm"],
                         state["settings"].model_light, mail,
                         state.get("triage_rules", ""),
+                        (state.get("security") or {}).get("injection_scan", True),
                     )
                     if triage["action"] == "ignore":
                         continue

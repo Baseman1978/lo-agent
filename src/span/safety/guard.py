@@ -50,15 +50,18 @@ def _has_external_recipient(name: str, args: dict[str, Any]) -> bool:
 
 
 def assess_tool(name: str, args: dict[str, Any], *, autonomy_auto: bool,
-                has_inbox: bool) -> dict[str, Any]:
+                has_inbox: bool, exfil_guard: bool = True) -> dict[str, Any]:
     """Beslis of een tool-call mag, moet wachten op goedkeuring, of geweigerd
-    wordt. Retourneert {decision, tier, reason}. De guard is BINDEND."""
+    wordt. Retourneert {decision, tier, reason}. De guard is BINDEND.
+
+    exfil_guard kan in de instellingen uit (dan vertrouwt Span volledig op de
+    autonomy-stand); de high/crit-poort blijft ALTIJD staan."""
     tier = risk_for(name)
 
     # exfiltratie-vangnet (HOOG-3): ELK uitgaand bericht naar een extern adres
     # gaat altijd via de poort — ook bij autonomy=auto, ongeacht grootte. Een
     # gericht lek (wachtwoord, klantnummer) is klein; grootte is geen drempel.
-    if name in _OUTBOUND and _has_external_recipient(name, args):
+    if exfil_guard and name in _OUTBOUND and _has_external_recipient(name, args):
         if not has_inbox:
             return {"decision": "block", "tier": tier,
                     "reason": "uitgaand naar extern adres zonder goedkeuringspoort"}

@@ -65,6 +65,13 @@
         $("set-auto-mail").value = s.autonomy.mail || "ask";
         $("set-auto-event").value = s.autonomy.event || "ask";
       }
+      if (s.security) {
+        $("sec-injection").checked = s.security.injection_scan !== false;
+        $("sec-exfil").checked = s.security.exfil_guard !== false;
+        $("sec-decay").value = s.security.decay_mode || "off";
+        const bg = s.security.budget_iterations || 12;
+        $("sec-budget").value = bg; $("sec-budget-label").textContent = bg;
+      }
 
       if (!$("set-lan-ip").value) {
         const saved = localStorage.getItem("span_lan_ip");
@@ -212,6 +219,31 @@
       SPAN.sys("Autonomie-instellingen opgeslagen.");
       SPAN.chime(740, .1);
     } catch (e) { SPAN.sys("Autonomie opslaan mislukt.", "warn"); }
+  };
+
+  /* -- beveiliging ---------------------------------------------------------- */
+  $("sec-budget").addEventListener("input", () => {
+    $("sec-budget-label").textContent = $("sec-budget").value;
+  });
+  $("sec-save").onclick = async () => {
+    const inj = $("sec-injection").checked, exf = $("sec-exfil").checked;
+    if ((!inj || !exf) && !confirm(
+        "Je zet een bescherming UIT. Span is dan kwetsbaarder voor misleiding " +
+        "via mail of een datalek. Zeker weten?")) return;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { ...SPAN.authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ security: {
+          injection_scan: inj, exfil_guard: exf,
+          decay_mode: $("sec-decay").value,
+          budget_iterations: parseInt($("sec-budget").value),
+        }}),
+      });
+      if (!res.ok) { SPAN.sys("Beveiliging opslaan mislukt", "warn"); return; }
+      SPAN.sys("Beveiligingsinstellingen opgeslagen (geldt voor nieuwe sessies).");
+      SPAN.chime(740, .1);
+    } catch (e) { SPAN.sys("Beveiliging opslaan mislukt.", "warn"); }
   };
 
   /* -- systeemprompt -------------------------------------------------------- */

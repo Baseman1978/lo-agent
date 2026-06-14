@@ -78,6 +78,8 @@ async def lifespan(app: FastAPI):
         triage_rules=cfg.get("triage_rules") or "",
         disabled_tools=set(cfg.get("disabled_tools") or []),
     )
+    from span.safety.settings import load_security
+    _state["security"] = load_security(brain)
     if fireflies is not None:
         _state["fireflies"] = fireflies
     if not _auth_token():

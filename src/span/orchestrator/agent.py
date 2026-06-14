@@ -126,7 +126,16 @@ class SpanAgent:
         self.user_location = user_location  # browser-GPS; mag later gezet worden
         self._fireflies = fireflies
         self.last_touched: list[str] = []
-        self._fragments = FragmentStore(brain, llm, decay_mode=settings.decay_mode)
+        # instelbare beveiliging uit de Config-node (veilige defaults)
+        from span.safety.settings import load_security
+        try:
+            self._security = load_security(brain)
+        except Exception:
+            from span.safety.settings import DEFAULTS
+            self._security = dict(DEFAULTS)
+        # decay-modus uit de instellingen wint van de .env-default
+        decay = self._security.get("decay_mode") or settings.decay_mode
+        self._fragments = FragmentStore(brain, llm, decay_mode=decay)
         self._session_id: str | None = None
         self._toolbox: ToolBox | None = None
         self._messages: list[dict[str, Any]] = []
@@ -160,6 +169,7 @@ class SpanAgent:
             disabled=self._disabled_tools,
             user_location=self.user_location,
             fireflies=self._fireflies,
+            security=self._security,
         )
         self._bootstrap = load_bootstrap(self._brain, self._fragments, first_message)
         ident = self._bootstrap.identity
@@ -239,7 +249,9 @@ class SpanAgent:
         # F1.6 RunBudget: begrenst de tool-loop in iteraties én wandklok, zodat
         # een doorgeslagen of gekaapte loop zichzelf niet eindeloos voedt.
         from span.safety.budget import BudgetExceeded, RunBudget
-        budget = RunBudget(max_iterations=MAX_TOOL_ITERATIONS, max_seconds=180.0)
+        max_iter = min(self._security.get("budget_iterations", MAX_TOOL_ITERATIONS),
+                       MAX_TOOL_ITERATIONS)
+        budget = RunBudget(max_iterations=max_iter, max_seconds=180.0)
         for _ in range(MAX_TOOL_ITERATIONS):
             try:
                 budget.tick()
