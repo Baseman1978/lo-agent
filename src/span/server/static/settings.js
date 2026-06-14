@@ -265,7 +265,8 @@
       { method: "DELETE", headers: SPAN.authHeaders() });
     loadMcp();
   }
-  $("mcp-add").onclick = async () => {
+  const _bind = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  _bind("mcp-add", async () => {
     const name = $("mcp-name").value.trim(), url = $("mcp-url").value.trim();
     if (!name || !url) { SPAN.sys("Naam en URL invullen.", "warn"); return; }
     const res = await fetch("/api/mcp", {
@@ -277,13 +278,12 @@
     $("mcp-name").value = ""; $("mcp-url").value = "";
     SPAN.sys(`MCP-server '${name}' toegevoegd — klik 'inloggen' om te koppelen.`);
     loadMcp();
-  };
+  });
 
   /* -- beveiliging ---------------------------------------------------------- */
-  $("sec-budget").addEventListener("input", () => {
-    $("sec-budget-label").textContent = $("sec-budget").value;
-  });
-  $("sec-save").onclick = async () => {
+  { const bg = $("sec-budget"); if (bg) bg.addEventListener("input", () => {
+    $("sec-budget-label").textContent = bg.value; }); }
+  _bind("sec-save", async () => {
     const inj = $("sec-injection").checked, exf = $("sec-exfil").checked;
     if ((!inj || !exf) && !confirm(
         "Je zet een bescherming UIT. Span is dan kwetsbaarder voor misleiding " +
@@ -302,11 +302,11 @@
       SPAN.sys("Beveiligingsinstellingen opgeslagen (geldt voor nieuwe sessies).");
       SPAN.chime(740, .1);
     } catch (e) { SPAN.sys("Beveiliging opslaan mislukt.", "warn"); }
-  };
+  });
 
   /* -- systeemprompt -------------------------------------------------------- */
   const spArea = $("set-sysprompt");
-  spArea.addEventListener("input", () => { spArea.dataset.touched = "1"; });
+  if (spArea) spArea.addEventListener("input", () => { spArea.dataset.touched = "1"; });
   async function saveSysPrompt(value) {
     try {
       const res = await fetch("/api/settings", {
