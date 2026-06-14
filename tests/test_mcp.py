@@ -248,3 +248,54 @@ def test_geen_refresh_zonder_refresh_token():
     reg = MCPRegistry([], brain=MagicMock())
     reg._servers["x"] = {"name": "x", "token": "t"}  # geen refresh/client_id
     assert reg._try_refresh("x") is False
+
+
+# -- mail-archief (mailmap -> geheugen via MCP) ----------------------------
+
+def test_find_folder_match_op_naam():
+    from span.jarvis.mail_archive import find_folder
+    reg = MagicMock()
+    reg.tool_names.return_value = ["mcp__lomans__m365_mail_folders"]
+    reg.call.return_value = {"text": json.dumps({"value": [
+        {"displayName": "Inbox", "id": "i"},
+        {"displayName": "10: Verwerkt", "id": "v", "totalItemCount": 3047}]})}
+    f = find_folder(reg, "verwerkt")
+    assert f and f["id"] == "v"
+
+
+def test_archive_folder_schrijft_en_is_idempotent():
+    from span.jarvis.mail_archive import archive_folder
+    reg = MagicMock()
+    reg.tool_names.return_value = ["mcp__lomans__m365_mail_folders",
+                                   "mcp__lomans__m365_mail_folder_messages"]
+    mails = {"value": [
+        {"id": "m1", "subject": "Een", "receivedDateTime": "2026-01-01T10:00:00Z",
+         "bodyPreview": "tekst", "from": {"emailAddress": {"name": "Jan"}}},
+        {"id": "m2", "subject": "Twee", "receivedDateTime": "2026-01-02T10:00:00Z",
+         "bodyPreview": "tekst", "from": {"emailAddress": {"name": "Piet"}}}]}
+    folders = {"value": [{"displayName": "10: Verwerkt", "id": "v", "totalItemCount": 2}]}
+    def call(name, args):
+        if name.endswith("m365_mail_folders"):
+            return {"text": json.dumps(folders)}
+        # tweede pagina leeg -> einde
+        return {"text": json.dumps(mails if args.get("skip", 0) == 0 else {"value": []})}
+    reg.call.side_effect = call
+    brain = MagicMock()
+    brain.run.return_value = [{"n": 0}]  # nog niet gearchiveerd
+    fragments = MagicMock(); fragments.write.return_value = "mf-x"
+    res = archive_folder(reg, brain, fragments, "s", "10: Verwerkt", limit=10, batch=2)
+    assert res["archived"] == 2
+    assert fragments.write.call_args.kwargs["scope"] == "werk"
+
+    # idempotent: alles al bekend -> 0 nieuw
+    brain.run.return_value = [{"n": 1}]
+    fragments.write.reset_mock()
+    res2 = archive_folder(reg, brain, fragments, "s", "10: Verwerkt", limit=10, batch=2)
+    assert res2["archived"] == 0 and res2["skipped_already_known"] >= 1
+    fragments.write.assert_not_called()
+
+
+def test_archive_folder_zonder_mcp():
+    from span.jarvis.mail_archive import archive_folder
+    res = archive_folder(None, MagicMock(), MagicMock(), "s", "x")
+    assert "error" in res

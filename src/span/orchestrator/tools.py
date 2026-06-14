@@ -349,6 +349,13 @@ class ToolBox:
         from span.jarvis.crons import delete_cron
         return {"deleted": delete_cron(self._brain, cron_id)}
 
+    def _tool_mail_archive_folder(self, folder: str, limit: int = 200) -> Any:
+        from span.jarvis.mail_archive import archive_folder
+        if self._mcp is None:
+            return {"error": "Geen M365 MCP-server gekoppeld; kan de map niet lezen."}
+        return archive_folder(self._mcp, self._brain, self._fragments,
+                              self._session_id, folder, limit=min(int(limit), 500))
+
     def _tool_mcp_propose_server(self, name: str, url: str, reason: str) -> Any:
         if self._inbox is None:
             return {"error": "Geen Agent Inbox; kan geen voorstel klaarzetten."}

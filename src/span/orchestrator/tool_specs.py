@@ -484,6 +484,24 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "mail_archive_folder",
+            "description": "Archiveer mails uit een Outlook-MAP naar het geheugen via "
+            "de gekoppelde M365 MCP-server (bv. de map '10: Verwerkt'). Idempotent: "
+            "herhaald aanroepen vult de map verder. Per aanroep tot 'limit' mails. "
+            "Gebruik dit i.p.v. losse MCP-mailtools voor bulk-archivering.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "folder": {"type": "string", "description": "(deel van de) mapnaam"},
+                    "limit": {"type": "integer", "description": "max mails deze keer (default 200)"},
+                },
+                "required": ["folder"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "mcp_propose_server",
             "description": "Stel een MCP-server voor om te koppelen (bv. een publieke "
             "server die nuttige tools biedt). Dit VOEGT NIETS DIRECT TOE — het komt "
@@ -590,6 +608,7 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "cron_list": ("Planning", "read"),
     "cron_delete": ("Planning", "write"),
     "plan_goal": ("Planning", "write"),
+    "mail_archive_folder": ("O365 Mail", "read"),
     "mcp_propose_server": ("MCP", "write"),
     "web_search": ("Web", "read"),
     "web_read": ("Web", "read"),

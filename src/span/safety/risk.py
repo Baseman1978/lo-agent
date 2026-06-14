@@ -22,6 +22,7 @@ TOOL_RISK: dict[str, str] = {
     "remember": "low", "quest_upsert": "low", "triage_rules_set": "low",
     "plan_goal": "med",             # maakt een plan (Quest); voert niets uit
     "mcp_propose_server": "med",    # queue't zelf in de inbox; voegt niets direct toe
+    "mail_archive_folder": "med",   # leest mail -> eigen brein (omkeerbaar)
     # eigen taken / concepten — midden
     "o365_draft_reply": "med", "o365_todo_create": "med", "o365_todo_complete": "med",
     "asana_task_create": "med", "asana_task_complete": "med",
