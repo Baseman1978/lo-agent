@@ -255,8 +255,16 @@
         { method: "POST", headers: SPAN.authHeaders() });
       const d = await res.json();
       if (!res.ok) { SPAN.sys(d.detail || "OAuth starten mislukt", "warn"); return; }
+      // I6: authorize_url komt deels uit untrusted MCP-metadata — alleen https
+      // openen (weiger javascript:/data: -> geen XSS in de Span-origin)
+      let u;
+      try { u = new URL(d.authorize_url); } catch (e) { u = null; }
+      if (!u || u.protocol !== "https:") {
+        SPAN.sys("Login-URL geweigerd (geen geldige https-URL).", "warn");
+        return;
+      }
       SPAN.sys(`Open de login voor '${name}' in je browser…`);
-      window.open(d.authorize_url, "_blank");
+      window.open(u.href, "_blank", "noopener,noreferrer");
     } catch (e) { SPAN.sys("OAuth starten mislukt.", "warn"); }
   }
   async function mcpDelete(name) {

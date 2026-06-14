@@ -24,6 +24,10 @@
     setTimeout(() => div.remove(), 9600);
   }
   const esc = SPAN.esc;  // gedeelde escape-helper uit jarvis.js
+  // M23: alleen http(s)-links renderen (weiger javascript:/data:-schema)
+  const _safeHttp = (u) => {
+    try { return /^https?:$/.test(new URL(u).protocol); } catch (e) { return false; }
+  };
 
   /* -- inbox poll + badge ------------------------------------------------ */
   async function poll() {
@@ -72,8 +76,8 @@
       `<div class="k">${KIND_LABEL[item.kind] || item.kind} · ${esc(item.created.slice(11, 16))}` +
       `${item.status !== "open" ? " · " + esc(item.status) : ""}</div>` +
       `<b>${esc(item.title)}</b><p>${esc(item.detail)}</p>` +
-      (item.payload && item.payload.link
-        ? `<a href="${encodeURI(item.payload.link)}" target="_blank">open in Outlook</a> ` : "");
+      (item.payload && _safeHttp(item.payload.link)
+        ? `<a href="${esc(item.payload.link)}" target="_blank" rel="noopener noreferrer">open in Outlook</a> ` : "");
     if (open) {
       const ok = document.createElement("button");
       ok.className = "ghost"; ok.textContent = approveLabel;

@@ -114,8 +114,22 @@ omzeilen dat. (I4 = gat in de mail-archief-tool die ik eerder bouwde.)
 
 ---
 
-## WP-3 — Frontend XSS & headers  ⬜
-**Lost op:** I5, I6, M15, M22, M23, M24, M25, M26.
+## WP-3 — Frontend XSS & headers  ✅ 2026-06-14
+**Lost op:** I5, I6, M15, M23, M25, M26. (M22, M24 geparkeerd — zie noot.)
+
+**Gedaan:** I5 — `t.due`/`q.status`/`c.at`/`c.repeat` nu via `esc()` in de meta-
+innerHTML. I6 — `window.open(authorize_url)` valideert https-schema (weigert
+`javascript:`/`data:`) + `noopener,noreferrer`. M23 — inbox-anchor alleen http(s) via
+`_safeHttp()` + rel=noopener. M25 — `ws.onmessage` try/catch rond `JSON.parse` én
+`handle`. M26 — lege token alleen op localhost opslaan. M15 — security-header-
+middleware in app.py: CSP (`default-src 'self'`, geen externe scriptbron), nosniff,
+no-referrer, frame-ancestors none. Live geverifieerd: CSP-header aanwezig, alle HUD-
+resources lokaal (geen breuk). 192 groen.
+
+**GEPARKEERD (minor):** M22 (token in QR-URL → one-time pairing-code) is een grotere
+UX-herbouw; huidige mitigatie (replaceState + Authorization-header + LAN-only) blijft.
+M24 (`highlightFacts` herparse't innerHTML) is veilig zolang de bron ge-escapete `md()`
+is; TreeWalker-herschrijving later.
 
 **Taken**
 - `static/jarvis.js:276,312,315,344` — alle meta-interpolaties (`t.due`, `q.status`)

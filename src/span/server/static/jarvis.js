@@ -24,7 +24,10 @@ function token() {
   let t = localStorage.getItem("span_token");
   if (t === null) {
     t = prompt("Toegangstoken (leeg laten op localhost):") || "";
-    localStorage.setItem("span_token", t);
+    // M26: een lege token alleen accepteren op localhost; elders niet opslaan
+    // zodat de prompt terugkomt i.p.v. een kapotte sessie stil te bewaren
+    const local = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+    if (t || local) localStorage.setItem("span_token", t);
   }
   return t;
 }
@@ -140,7 +143,13 @@ function connect() {
       }, () => {}, { maximumAge: 600000, timeout: 8000 });
     }
   };
-  ws.onmessage = (event) => handle(JSON.parse(event.data));
+  ws.onmessage = (event) => {
+    let msg;
+    try { msg = JSON.parse(event.data); }
+    catch (e) { SPAN.sys("Onleesbaar bericht van de server genegeerd.", "warn"); return; }
+    try { handle(msg); }
+    catch (e) { SPAN.busy = false; SPAN.setState("idle"); SPAN.sys("Fout bij verwerken bericht.", "warn"); }
+  };
   ws.onclose = () => {
     SPAN.busy = false; SPAN.setState("idle");
     if (!wsWanted) return;  // bewust gesloten (na evaluatie)
@@ -309,10 +318,10 @@ async function loadPanels() {
 
     const taken = [
       ...(d.asana || []).map((t) => item(t.name,
-        (t.due ? `<span class="due">${t.due}</span> · ` : "") + "Asana" +
+        (t.due ? `<span class="due">${esc(t.due)}</span> · ` : "") + "Asana" +
         (t.projects && t.projects.length ? " · " + esc(t.projects[0]) : ""))),
       ...(d.todo || []).map((t) => item(t.title,
-        (t.due ? `<span class="due">${t.due}</span> · ` : "") + "To Do")),
+        (t.due ? `<span class="due">${esc(t.due)}</span> · ` : "") + "To Do")),
     ];
     fill("taken", taken, "geen open taken");
 
@@ -341,10 +350,10 @@ async function loadPanels() {
       weekdays: "werkdagen", weekly: "wekelijks" };
     const questItems = [
       ...(d.quests || []).map((q) =>
-        item(q.title, q.status, q.status === "active" ? "now" : "")),
+        item(q.title, esc(q.status), q.status === "active" ? "now" : "")),
       ...(d.crons || []).map((c) =>
         item("⏰ " + c.text,
-          `${c.at} · ${REPEAT_LABEL[c.repeat] || c.repeat}` +
+          `${esc(c.at)} · ${esc(REPEAT_LABEL[c.repeat] || c.repeat)}` +
           (c.mode === "execute" ? " · voert zelf uit" : ""))),
     ];
     fill("quests", questItems, "geen open quests of geplande taken");

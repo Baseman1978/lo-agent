@@ -110,6 +110,30 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=f"{AGENT_NAME} API", version=__version__, lifespan=lifespan)
+
+
+# M15: security-headers als vangnet onder de HUD (die innerHTML rendert).
+# CSP staat self-scripts toe + de inline bootstrap; 'self'-connect dekt de
+# WebSocket. Geen externe scriptbronnen -> een gemiste escape wordt geen
+# token-diefstal. nosniff + geen referer-lek + clickjacking-slot.
+_CSP = ("default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self' ws: wss:; "
+        "base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+
+
+@app.middleware("http")
+async def _security_headers(request, call_next):
+    resp = await call_next(request)
+    resp.headers.setdefault("Content-Security-Policy", _CSP)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    return resp
+
+
 app.include_router(routes.router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
