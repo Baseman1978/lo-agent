@@ -113,7 +113,9 @@ class SpanAgent:
         disabled_tools: set[str] | None = None,
         user_location: dict[str, float] | None = None,
         fireflies: Any = None,
+        mcp: Any = None,
     ):
+        self._mcp = mcp
         self._settings = settings
         self._brain = brain
         self._llm = llm
@@ -170,6 +172,7 @@ class SpanAgent:
             user_location=self.user_location,
             fireflies=self._fireflies,
             security=self._security,
+            mcp=self._mcp,
         )
         self._bootstrap = load_bootstrap(self._brain, self._fragments, first_message)
         ident = self._bootstrap.identity

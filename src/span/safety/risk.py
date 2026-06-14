@@ -54,4 +54,10 @@ def _default_tier(name: str) -> str:
 
 
 def risk_for(name: str) -> str:
+    # MCP-tools: de externe server doet zijn eigen autorisatie (bv. O365-scopes)
+    # en Bas heeft hem bewust gekoppeld + ingelogd; Span quarantained de output.
+    # 'med' = mag draaien, in de permissie-lijst uit te vinken. NIET high, anders
+    # zou elke MCP-tool zonder eigen queue-pad geblokkeerd worden.
+    if name.startswith("mcp__"):
+        return "med"
     return TOOL_RISK.get(name) or _default_tier(name)

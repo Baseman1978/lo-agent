@@ -80,6 +80,13 @@ async def lifespan(app: FastAPI):
     )
     from span.safety.settings import load_security
     _state["security"] = load_security(brain)
+    # MCP-registry: verbonden externe MCP-servers leveren extra tools
+    from span.integrations.mcp_client import MCPRegistry, load_servers
+    try:
+        _state["mcp"] = MCPRegistry(load_servers(brain))
+    except Exception as exc:
+        print(f"[mcp] registry-init mislukt: {exc}", flush=True)
+        _state["mcp"] = None
     if fireflies is not None:
         _state["fireflies"] = fireflies
     if not _auth_token():
@@ -133,6 +140,7 @@ async def ws_chat(ws: WebSocket) -> None:
         inbox=_state["inbox"], autonomy=_state["autonomy"],
         disabled_tools=_state.get("disabled_tools"),
         fireflies=_state.get("fireflies"),
+        mcp=_state.get("mcp"),
     )
     session_id: str | None = None
     loop = asyncio.get_running_loop()
