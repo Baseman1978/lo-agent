@@ -31,6 +31,9 @@ class MCPClient:
         self._session_id = ""
         self._next_id = 0
 
+    def set_token(self, token: str) -> None:
+        self._token = token
+
     def _headers(self) -> dict[str, str]:
         h = {
             "Content-Type": "application/json",
@@ -120,9 +123,11 @@ class MCPRegistry:
     blokkeert Span niet. Output van tool-calls is untrusted (de aanroeper
     quarantained het)."""
 
-    def __init__(self, servers: list[dict[str, Any]]):
+    def __init__(self, servers: list[dict[str, Any]], brain: Any = None):
         self._clients: dict[str, MCPClient] = {}
         self._specs: list[dict[str, Any]] = []
+        self._servers = {s.get("name"): dict(s) for s in servers if s.get("name")}
+        self._brain = brain          # om een ververst token te kunnen opslaan
         for s in servers:
             name, url, token = s.get("name"), s.get("url"), s.get("token", "")
             if not name or not url or not token:
@@ -131,6 +136,20 @@ class MCPRegistry:
                 client = MCPClient(url, token)
                 client.initialize()
                 tools = client.list_tools()
+            except MCPError as exc:
+                if str(exc) == "unauthorized" and self._try_refresh(name):
+                    client = self._clients.get(name) or MCPClient(url, self._servers[name]["token"])
+                    self._clients[name] = client
+                    try:
+                        client.set_token(self._servers[name]["token"])
+                        client.initialize()
+                        tools = client.list_tools()
+                    except Exception as exc2:
+                        print(f"[mcp] '{name}' na refresh nog niet bereikbaar: {exc2}", flush=True)
+                        continue
+                else:
+                    print(f"[mcp] server '{name}' niet ingelogd/bereikbaar: {exc}", flush=True)
+                    continue
             except Exception as exc:
                 print(f"[mcp] server '{name}' niet bereikbaar: {exc}", flush=True)
                 continue
@@ -152,6 +171,33 @@ class MCPRegistry:
     def tool_names(self) -> list[str]:
         return [s["function"]["name"] for s in self._specs]
 
+    def _try_refresh(self, name: str) -> bool:
+        """Ververs het access_token van een server via zijn refresh_token.
+        Slaat het nieuwe token op in de Config-node. True bij succes."""
+        s = self._servers.get(name) or {}
+        refresh, client_id = s.get("refresh"), s.get("client_id")
+        token_ep = s.get("token_endpoint")
+        if not (refresh and client_id and token_ep):
+            return False
+        try:
+            from span.integrations.mcp_oauth import refresh_token
+            tok = refresh_token({"token_endpoint": token_ep}, client_id, refresh)
+        except Exception as exc:
+            print(f"[mcp] refresh '{name}' mislukt: {exc}", flush=True)
+            return False
+        s["token"] = tok.get("access_token", s.get("token"))
+        if tok.get("refresh_token"):
+            s["refresh"] = tok["refresh_token"]
+        # persisteren zodat een herstart niet opnieuw hoeft te verversen
+        if self._brain is not None:
+            try:
+                save_servers(self._brain, list(self._servers.values()))
+            except Exception:
+                pass
+        if name in self._clients:
+            self._clients[name].set_token(s["token"])
+        return True
+
     def call(self, full_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         # mcp__<server>__<tool>
         rest = full_name[len("mcp__"):]
@@ -162,6 +208,12 @@ class MCPRegistry:
         try:
             return client.call_tool(tool, arguments)
         except MCPError as exc:
+            # token verlopen? ververs één keer en probeer opnieuw
+            if str(exc) == "unauthorized" and self._try_refresh(server):
+                try:
+                    return client.call_tool(tool, arguments)
+                except MCPError as exc2:
+                    return {"error": f"MCP-fout (na refresh): {exc2}"}
             return {"error": f"MCP-fout: {exc}"}
 
 

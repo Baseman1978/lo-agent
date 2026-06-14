@@ -216,3 +216,35 @@ def test_build_briefing_valt_terug_op_mcp():
     b = build_briefing(brain, o365=o365, mcp=reg)
     assert b.get("source") == "mcp"
     assert b["mail"] and b["mail"][0]["subject"] == "ViaMCP"
+
+
+# -- automatisch token-vernieuwen (refresh-on-401) -------------------------
+
+def test_call_ververst_token_bij_401_en_retryt():
+    from span.integrations.mcp_client import MCPRegistry, MCPClient, MCPError
+    servers = [{"name": "lomans", "url": "https://x/mcp", "token": "oud",
+                "refresh": "r1", "client_id": "cid", "token_endpoint": "https://x/oauth/token"}]
+    with patch.object(MCPClient, "initialize", return_value={}), \
+         patch.object(MCPClient, "list_tools", return_value=[]):
+        reg = MCPRegistry(servers, brain=MagicMock())
+    client = reg._clients["lomans"]
+    calls = {"n": 0}
+    def flaky(tool, args):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise MCPError("unauthorized")
+        return {"text": "ok na refresh"}
+    with patch.object(client, "call_tool", side_effect=flaky), \
+         patch("span.integrations.mcp_oauth.refresh_token",
+               return_value={"access_token": "nieuw", "refresh_token": "r2"}):
+        out = reg.call("mcp__lomans__m365_mail_list", {})
+    assert out.get("text") == "ok na refresh"
+    assert reg._servers["lomans"]["token"] == "nieuw"
+    assert reg._servers["lomans"]["refresh"] == "r2"
+
+
+def test_geen_refresh_zonder_refresh_token():
+    from span.integrations.mcp_client import MCPRegistry
+    reg = MCPRegistry([], brain=MagicMock())
+    reg._servers["x"] = {"name": "x", "token": "t"}  # geen refresh/client_id
+    assert reg._try_refresh("x") is False

@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
     # MCP-registry: verbonden externe MCP-servers leveren extra tools
     from span.integrations.mcp_client import MCPRegistry, load_servers
     try:
-        _state["mcp"] = MCPRegistry(load_servers(brain))
+        _state["mcp"] = MCPRegistry(load_servers(brain), brain)
     except Exception as exc:
         print(f"[mcp] registry-init mislukt: {exc}", flush=True)
         _state["mcp"] = None

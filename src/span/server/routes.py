@@ -598,7 +598,7 @@ async def graph_webhook(request: Request) -> Any:
 def _rebuild_mcp() -> None:
     from span.integrations.mcp_client import MCPRegistry, load_servers
     try:
-        _state["mcp"] = MCPRegistry(load_servers(_state["brain"]))
+        _state["mcp"] = MCPRegistry(load_servers(_state["brain"]), _state["brain"])
     except Exception as exc:
         print(f"[mcp] herbouw mislukt: {exc}", flush=True)
 
