@@ -200,13 +200,18 @@ class SpanAgent:
         }]
         return self._bootstrap
 
-    def turn(self, user_message: str, on_text: Callable[[str], None] | None = None) -> str:
+    def turn(self, user_message: str, on_text: Callable[[str], None] | None = None,
+             on_memory: Callable[..., None] | None = None) -> str:
         """Eén gespreksbeurt: RAG-injectie, tool-loop, continuous recording.
 
         on_text streamt tekst-deltas direct naar de UI; recording draait op
-        de achtergrond zodat het antwoord nooit op het geheugen wacht."""
+        de achtergrond zodat het antwoord nooit op het geheugen wacht.
+        on_memory(ids, reason, query) meldt LIVE welke geheugen-nodes Span
+        raadpleegt (bootstrap-RAG + elke brain_search) -> hologram-leescascade."""
         if self._toolbox is None:
             raise RuntimeError("Roep eerst begin() aan.")
+        # de tool-laag meldt brain_search-hits via dezelfde callback
+        self._toolbox._on_memory = on_memory
 
         # RAG-memo is efemeer: alleen voor déze beurt meegegeven, niet in de
         # historie bewaard — voorkomt token-groei en verouderde hints.
@@ -241,6 +246,16 @@ class SpanAgent:
             memo = "Geheugen dient zich aan (mogelijk relevant):\n" + "\n".join(lines)
             memo = memo[:1800]  # tekencap tegen context-bloat
             memo_msg = {"role": "system", "content": memo}
+        # live leescascade: de bootstrap-RAG-hits lichten meteen op in het
+        # hologram, en tellen voortaan mee in de :TOUCHED-trace
+        bootstrap_ids = [r["id"] for r in relevant if r["score"] > 0.55]
+        if bootstrap_ids:
+            self._toolbox.touched.extend(bootstrap_ids)
+            if on_memory:
+                try:
+                    on_memory(bootstrap_ids, "geheugen-RAG", user_message[:60])
+                except Exception:
+                    pass
 
         # F0.3 tool-result clearing: tool-resultaten van eerdere beurten zijn
         # zelden nog nodig en vervuilen de context. Kort ze in vóór deze beurt

@@ -253,6 +253,13 @@ body.glitching main, body.glitching header {
 .holo-sug:hover { background: rgba(20,40,60,.96); color: var(--cyan); }
 .holo-chip.win { letter-spacing: .04em; border-color: var(--cyan-dim); }
 
+/* live leescascade-readout ("Span leest: …") */
+#holo-reason {
+  margin-top: 4px; font-size: 10px; letter-spacing: .06em; color: var(--cyan);
+  opacity: 0; transition: opacity .3s; min-height: 13px; pointer-events: none;
+}
+#holo-reason::before { content: "◈ Span "; color: var(--dim); }
+
 /* bediening in fullscreen: zoek + filters als overlay boven de scene */
 #holo-full > #holo-search-wrap {
   position: absolute; top: 16px; left: 20px; width: 260px; z-index: 42;

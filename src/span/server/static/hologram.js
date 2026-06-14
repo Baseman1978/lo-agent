@@ -26,6 +26,20 @@
   const pinned = new Set();      // vastgezette node-keys
   let hoverSet = new Set();      // node + buren onder de muis
   let controls = null;
+  // live leescascade: nodes die Span TIJDENS de beurt raadpleegt lichten op en
+  // doven per stuk op eigen klok -> je ziet het brein de denkroute aflopen
+  let reading = new Map();       // key -> { t0, reason }
+  let decayTimer = null, firstFlyDone = false, reasonEl = null;
+  const DECAY_MS = 5000, READING_CAP = 25;
+
+  function lerpColor(a, b, t) {
+    const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+    const ar = (pa >> 16) & 255, ag = (pa >> 8) & 255, ab = pa & 255;
+    const r = Math.round(ar + (((pb >> 16) & 255) - ar) * t);
+    const g = Math.round(ag + (((pb >> 8) & 255) - ag) * t);
+    const bl = Math.round(ab + ((pb & 255) - ab) * t);
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1);
+  }
 
   const panel = document.getElementById("holo-canvas");
   const overlay = document.getElementById("holo-overlay");
@@ -35,8 +49,14 @@
 
   function degree(key) { return adjacency.get(key) ? adjacency.get(key).size : 0; }
 
+  // prioriteit: pinned > reading (live lees) > highlighted > hover-dim > basis
   function nodeColorFn(n) {
     if (pinned.has(n.key)) return "#ffffff";
+    const rd = reading.get(n.key);
+    if (rd) {
+      const f = Math.max(0, 1 - (Date.now() - rd.t0) / DECAY_MS);  // 1=vers .. 0=oud
+      return lerpColor(COLORS[n.type] || "#5f7a8e", "#ffffff", f);  // dooft terug naar eigen kleur
+    }
     const lvl = highlighted.get(n.key);
     if (lvl === 0) return "#ffffff";
     if (lvl === 1) return "#aef2ff";
@@ -46,6 +66,12 @@
   }
   function nodeValFn(n) {
     if (pinned.has(n.key)) return 16;
+    const rd = reading.get(n.key);
+    if (rd) {
+      const age = Date.now() - rd.t0, f = Math.max(0, 1 - age / DECAY_MS);
+      const puls = age < 600 ? 2 * Math.abs(Math.sin(age / 90)) : 0;  // verse node ademt
+      return (SIZES[n.type] || 3) + f * 8 + puls;
+    }
     const lvl = highlighted.get(n.key);
     if (lvl === 0) return 12;
     if (lvl === 1) return 7;
@@ -54,6 +80,7 @@
   }
   function linkColorFn(l) {
     const a = l.source.key || l.source, b = l.target.key || l.target;
+    if (reading.has(a) || reading.has(b)) return "#bfefff";   // cascade verbindt de lees-route
     if (hoverSet.size) return (hoverSet.has(a) && hoverSet.has(b)) ? "#7fe9ff" : "#1d3540";
     if (highlighted.has(a) || highlighted.has(b)) return "#7fe9ff";
     return "#3f7d99";   // duidelijk zichtbare relatie-lijn op de donkere achtergrond
@@ -222,6 +249,50 @@
          .linkColor(linkColorFn);
   }
 
+  /* -- live leescascade: Span 'denkt zichtbaar' ------------------------- */
+  function flyTo(key) {
+    const node = graph && graph.graphData().nodes.find((n) => n.key === key);
+    if (node && node.x !== undefined) {
+      const d = 200, len = Math.hypot(node.x, node.y, node.z) || 1, r = 1 + d / len;
+      graph.cameraPosition({ x: node.x * r, y: node.y * r, z: node.z * r }, node, 800);
+    }
+  }
+  function setReason(reason) {
+    if (!reasonEl) return;
+    reasonEl.textContent = reason ? "leest: " + reason : "";
+    reasonEl.style.opacity = reason ? "1" : "0";
+  }
+  function decayTick() {
+    const now = Date.now();
+    let alive = false;
+    for (const [k, s] of reading) {
+      if (now - s.t0 > DECAY_MS) reading.delete(k); else alive = true;
+    }
+    repaint();
+    if (!alive) {
+      setReason("");
+      if (controls) controls.autoRotateSpeed = 0.5;   // terug uit 'denk-modus'
+      clearInterval(decayTimer); decayTimer = null;
+    }
+  }
+  // door de WS-laag aangeroepen zodra Span een herinnering raadpleegt
+  SPAN.markReading = (ids, reason) => {
+    if (!graph || !ids || !ids.length) return;
+    const now = Date.now();
+    for (const k of ids) reading.set(k, { t0: now, reason });
+    if (reading.size > READING_CAP) {  // oudste sporen eruit -> framerate-vangnet
+      [...reading.entries()].sort((a, b) => a[1].t0 - b[1].t0)
+        .slice(0, reading.size - READING_CAP).forEach(([k]) => reading.delete(k));
+    }
+    setReason(reason);
+    if (controls) controls.autoRotateSpeed = 0.2;       // rustiger draaien tijdens 't denken
+    if (!firstFlyDone) { firstFlyDone = true; flyTo(ids[0]); }
+    if (!decayTimer) decayTimer = setInterval(decayTick, 120);
+    repaint();
+  };
+  // per beurt resetten zodat de camera maar één keer naar de eerste lees vliegt
+  SPAN.beginTurn = () => { firstFlyDone = false; };
+
   /* volgmodus + pulse-propagatie: touched licht wit op, de puls reist 2 hops */
   let highlightTimer = null;
   SPAN.highlightNodes = (ids) => {
@@ -290,7 +361,8 @@
     const input = document.createElement("input");
     input.id = "holo-search"; input.placeholder = "zoek node…"; input.autocomplete = "off";
     const sug = document.createElement("div"); sug.id = "holo-suggest";
-    searchWrap.append(input, sug);
+    reasonEl = document.createElement("div"); reasonEl.id = "holo-reason";
+    searchWrap.append(input, sug, reasonEl);
     const pick = (n) => { sug.innerHTML = ""; input.value = ""; SPAN.highlightNodes([n.key]); };
     input.oninput = () => {
       const q = input.value.trim().toLowerCase();

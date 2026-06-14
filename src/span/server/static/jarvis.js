@@ -200,6 +200,10 @@ function handle(msg) {
   else if (msg.type === "touched") {
     if (SPAN.highlightNodes) SPAN.highlightNodes(msg.ids || []);
   }
+  else if (msg.type === "memory_read") {
+    // live: Span raadpleegt geheugen tijdens de beurt -> hologram-leescascade
+    if (SPAN.markReading) SPAN.markReading(msg.ids || [], msg.reason || "");
+  }
   else if (msg.type === "done") {
     if (!current) {
       current = el("span", "SPAN");
@@ -243,6 +247,7 @@ SPAN.send = (textOverride) => {
   const text = (textOverride ?? input.value).trim();
   if (!text || SPAN.busy || !ws || ws.readyState !== 1) return;
   turnStart = Date.now();
+  if (SPAN.beginTurn) SPAN.beginTurn();  // hologram: camera vliegt 1x naar de eerste lees
   const sg = $("suggested"); if (sg) sg.innerHTML = "";  // suggesties weg zodra je begint
   el("user", "JIJ").appendChild(document.createTextNode(text));
   ws.send(JSON.stringify({ type: "user", text }));

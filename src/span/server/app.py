@@ -207,21 +207,38 @@ async def ws_chat(ws: WebSocket) -> None:
                         }
                     )
 
-                queue: asyncio.Queue[str | None] = asyncio.Queue()
+                # heterogene queue: zowel tekst-delta's als live 'memory_read'-
+                # events (welk geheugen Span tijdens de beurt raadpleegt)
+                queue: asyncio.Queue[dict | None] = asyncio.Queue()
 
                 def on_text(chunk: str) -> None:
-                    loop.call_soon_threadsafe(queue.put_nowait, chunk)
+                    loop.call_soon_threadsafe(
+                        queue.put_nowait, {"type": "delta", "text": chunk})
 
-                future = loop.run_in_executor(None, lambda: agent.turn(text, on_text))
+                def on_memory(ids, reason: str, query: str | None = None) -> None:
+                    # vanuit de worker-thread veilig naar de loop; alleen opaque
+                    # node-keys + kort label (geen gevoelige inhoud over de socket)
+                    if not ids:
+                        return
+                    try:
+                        loop.call_soon_threadsafe(queue.put_nowait, {
+                            "type": "memory_read", "ids": list(ids),
+                            "reason": reason, "query": query,
+                        })
+                    except Exception:
+                        pass  # een WS-hapering mag de beurt nooit breken
+
+                future = loop.run_in_executor(
+                    None, lambda: agent.turn(text, on_text, on_memory))
                 future.add_done_callback(
                     lambda _f: loop.call_soon_threadsafe(queue.put_nowait, None)
                 )
                 try:
                     while True:
-                        chunk = await queue.get()
-                        if chunk is None:
+                        item = await queue.get()
+                        if item is None:
                             break
-                        await ws.send_json({"type": "delta", "text": chunk})
+                        await ws.send_json(item)
                     answer = await future
                 except Exception as exc:
                     # beurt netjes laten aflopen (recorder schrijft nog), dan melden
@@ -233,8 +250,8 @@ async def ws_chat(ws: WebSocket) -> None:
                         "message": f"Er ging iets mis in deze beurt: {exc}",
                     })
                     continue
-                if agent.last_touched:
-                    await ws.send_json({"type": "touched", "ids": agent.last_touched})
+                # geen losse eind-'touched' meer: de live leescascade dekt dit al
+                # (de :TOUCHED-DB-edges blijven via agent._write_trace)
                 await ws.send_json({"type": "done", "answer": answer})
 
             elif msg.get("type") == "end":

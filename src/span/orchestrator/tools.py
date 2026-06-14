@@ -61,6 +61,7 @@ class ToolBox:
         self._user_location = user_location  # {lat, lon} uit de browser
         self._fireflies = fireflies
         self.touched: list[str] = []   # mf-ids geraadpleegd deze beurt (hologram)
+        self._on_memory = None         # live leescascade-callback (per beurt gezet)
 
     def specs(self) -> list[dict[str, Any]]:
         hidden: set[str] = set()
@@ -170,7 +171,14 @@ class ToolBox:
     def _tool_brain_search(self, query: str, k: int = 5) -> Any:
         embedding = self._fragments.embed(query)
         results = self._fragments.search(query, k=min(int(k), 20), embedding=embedding)
-        self.touched.extend(r["id"] for r in results if r.get("score", 0) > 0.5)
+        hit_ids = [r["id"] for r in results if r.get("score", 0) > 0.5]
+        self.touched.extend(hit_ids)
+        # live leescascade: meld welke herinneringen Span nu raadpleegt
+        if self._on_memory and hit_ids:
+            try:
+                self._on_memory(hit_ids, f"brain_search · {query[:40]}", query[:60])
+            except Exception:
+                pass
         formal = self._fragments.search_formal(query, k=3, embedding=embedding)
         if formal:
             return {"fragments": results, "formal_knowledge": formal}
