@@ -119,6 +119,13 @@
       if (THREE && THREE.FogExp2) g.scene().fog = new THREE.FogExp2(0x04070e, 0.0016);
     } catch (e) { /* geen THREE -> geen fog, geen probleem */ }
 
+    // force-tuning: verbonden nodes dichter bij elkaar -> duidelijke clusters
+    // (fragmenten rond hun Document/Session) i.p.v. een gelijkmatige wolk
+    try {
+      const lf = g.d3Force("link"); if (lf) lf.distance(22).strength(0.4);
+      const ch = g.d3Force("charge"); if (ch) ch.strength(-26);
+    } catch (e) { /* force-API afwezig -> default layout */ }
+
     controls = g.controls();
     controls.autoRotate = true;
     controls.autoRotateSpeed = 0.5;

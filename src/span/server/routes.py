@@ -227,31 +227,48 @@ async def graph(request: Request, limit: int = Query(250, le=600),
     # labels die altijd zichtbaar blijven, ook buiten het tijdvenster
     always = ["Identity", "Quest", "QuestStep", "Protocol", "Skill", "Insight"]
 
+    _NODE_RETURN = ("elementId(n) AS id, labels(n)[0] AS type, coalesce(n.id, '') AS key, "
+                    "left(coalesce(n.title, n.name, n.content, n.summary, n.body, n.id, ''), 70) AS label")
+
     def fetch() -> dict[str, Any]:
-        nodes = brain.run(
-            """
+        # 1) seed-nodes: de nieuwste binnen het tijdvenster
+        seeds = brain.run(
+            f"""
             MATCH (n) WHERE any(l IN labels(n) WHERE l IN $labels)
               AND ($since = 0
                    OR any(l IN labels(n) WHERE l IN $always)
                    OR coalesce(n.created, n.started, datetime('2000-01-01'))
-                      >= datetime() - duration({days: $since}))
+                      >= datetime() - duration({{days: $since}}))
             WITH n ORDER BY coalesce(n.created, n.started, datetime('2000-01-01')) DESC
             LIMIT $limit
-            RETURN elementId(n) AS id, labels(n)[0] AS type, coalesce(n.id, '') AS key,
-                   left(coalesce(n.title, n.name, n.content, n.summary, n.body, n.id, ''), 70) AS label
+            RETURN {_NODE_RETURN}
             """,
-            labels=GRAPH_LABELS,
-            always=always,
-            since=since,
-            limit=limit,
+            labels=GRAPH_LABELS, always=always, since=since, limit=limit,
         )
+        seed_ids = [n["id"] for n in seeds]
+        # 2) anker-nodes erbij: de buren van de seeds (Session/Document/Entity/…)
+        #    zodat fragmenten rond hun bron clusteren en er lijnen zichtbaar zijn
+        extra = brain.run(
+            f"""
+            MATCH (a)-[]-(n) WHERE elementId(a) IN $ids
+              AND any(l IN labels(n) WHERE l IN $labels)
+            WITH DISTINCT n LIMIT $extra
+            RETURN {_NODE_RETURN}
+            """,
+            ids=seed_ids, labels=GRAPH_LABELS, extra=min(limit, 250),
+        )
+        seen = set(seed_ids)
+        nodes = list(seeds)
+        for n in extra:
+            if n["id"] not in seen:
+                seen.add(n["id"]); nodes.append(n)
         ids = [n["id"] for n in nodes]
         links = brain.run(
             """
             MATCH (a)-[r]->(b)
             WHERE elementId(a) IN $ids AND elementId(b) IN $ids
             RETURN elementId(a) AS source, elementId(b) AS target, type(r) AS rel
-            LIMIT 1500
+            LIMIT 2500
             """,
             ids=ids,
         )
