@@ -10,9 +10,19 @@ import json
 from types import SimpleNamespace
 from typing import Any, Callable
 
-from openai import OpenAI
+from openai import BadRequestError, OpenAI
 
 from span.config import Settings
+
+# Sommige nieuwere modellen (o.a. claude-opus-4-8) weigeren de temperature-
+# parameter ("temperature is deprecated for this model") en geven dan een 400.
+# We onthouden zulke modellen zodat we 'temperature' voortaan weglaten i.p.v.
+# elke beurt te laten falen. Vult zich vanzelf bij de eerste 400.
+_NO_TEMPERATURE: set[str] = set()
+
+
+def _rejects_temperature(model: str) -> bool:
+    return model in _NO_TEMPERATURE or "opus-4-8" in (model or "")
 
 
 class LLMClient:
@@ -49,16 +59,31 @@ class LLMClient:
         if tools:
             kwargs["tools"] = tools
         if on_text is None:
-            response = self._client.chat.completions.create(**kwargs)
+            response = self._create(kwargs)
             return response.choices[0].message
         return self._chat_stream(kwargs, on_text)
+
+    def _create(self, kwargs: dict[str, Any], *, stream: bool = False) -> Any:
+        """Roep de gateway aan; laat 'temperature' weg voor modellen die 'm
+        weigeren en leer dat onthouden bij een eerste 400."""
+        k = dict(kwargs)
+        if _rejects_temperature(k.get("model", "")):
+            k.pop("temperature", None)
+        try:
+            return self._client.chat.completions.create(stream=stream, **k)
+        except BadRequestError as exc:
+            if "temperature" in str(exc).lower() and "temperature" in k:
+                _NO_TEMPERATURE.add(k["model"])
+                k.pop("temperature", None)
+                return self._client.chat.completions.create(stream=stream, **k)
+            raise
 
     def _chat_stream(self, kwargs: dict[str, Any], on_text: Callable[[str], None]) -> Any:
         """Streamt deltas naar on_text en bouwt het message-object zelf op
         (zelfde vorm als het niet-gestreamde object: .content, .tool_calls)."""
         content_parts: list[str] = []
         tool_calls: dict[int, dict[str, str]] = {}
-        stream = self._client.chat.completions.create(stream=True, **kwargs)
+        stream = self._create(kwargs, stream=True)
         for chunk in stream:
             if not chunk.choices:
                 continue

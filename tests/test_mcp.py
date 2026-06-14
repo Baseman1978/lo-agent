@@ -201,8 +201,39 @@ def test_mcp_mail_parse():
         {"id": "1", "subject": "Hoi", "isRead": False, "bodyPreview": "p",
          "from": {"emailAddress": {"name": "Jan", "address": "jan@x.nl"}},
          "webLink": "u"}]})}
-    out = mcp_mail(reg)
+    out, err = mcp_mail(reg)
+    assert err == ""
     assert out[0]["subject"] == "Hoi" and out[0]["unread"] is True and out[0]["from"] == "Jan"
+
+
+def test_mcp_mail_rate_limit_geeft_fout():
+    from span.integrations.mcp_o365 import mcp_mail
+    reg = MagicMock()
+    reg.tool_names.return_value = ["mcp__lomans__m365_mail_list"]
+    reg.call.return_value = {"error": "MCP-fout: Rate limit overschreden"}
+    out, err = mcp_mail(reg)
+    assert out == [] and "rate limit" in err.lower()
+
+
+def test_briefing_rate_limit_toont_laatste_stand_en_status():
+    from span.jarvis import briefing as B
+    from span.jarvis.briefing import build_briefing
+    B._LAST_GOOD.clear()
+    brain = MagicMock(); brain.run.return_value = []
+    reg = MagicMock()
+    reg.tool_names.return_value = ["mcp__lomans__m365_mail_list",
+                                   "mcp__lomans__m365_calendar_view"]
+    good = {"text": json.dumps({"value": [
+        {"id": "1", "subject": "Belangrijk", "isRead": False,
+         "from": {"emailAddress": {"name": "Jan"}}}]})}
+    reg.call.return_value = good
+    b1 = build_briefing(brain, o365=None, mcp=reg)
+    assert b1["mail"] and "mcp_status" not in b1
+    # nu rate-limit -> laatste stand blijft, status meegegeven
+    reg.call.return_value = {"error": "Rate limit overschreden"}
+    b2 = build_briefing(brain, o365=None, mcp=reg)
+    assert b2["mail"][0]["subject"] == "Belangrijk"
+    assert b2["mcp_status"]["kind"] == "rate_limited"
 
 
 def test_build_briefing_valt_terug_op_mcp():

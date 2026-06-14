@@ -33,6 +33,37 @@ def _safe(fn, fallback: Any = None) -> tuple[Any, str | None]:
         return fallback, f"{type(exc).__name__}: {exc}"
 
 
+# laatst-bekende-goede MCP-data, zodat een tijdelijke hapering (rate limit,
+# netwerk) het paneel niet leegklapt — we blijven het vorige tonen
+_LAST_GOOD: dict[str, list[Any]] = {}
+
+
+def _cache_or_fresh(key: str, items: list[Any], err: str) -> list[Any]:
+    """Bij een fout: val terug op het laatst bekende resultaat. Bij succes met
+    inhoud: ververs de cache. Een echt-lege succesvolle ophaal wist niets, maar
+    overschrijft ook niet (zodat 'leeg door fout' niet als 'leeg' blijft hangen
+    zodra de server weer praat — een lege succes-ophaal laat de cache staan)."""
+    if err:
+        return _LAST_GOOD.get(key, items)
+    if items:
+        _LAST_GOOD[key] = items
+    return items
+
+
+def _panel_status(err: str | None) -> dict[str, str] | None:
+    """Vertaal een MCP-fout naar een korte status voor de HUD."""
+    if not err:
+        return None
+    low = err.lower()
+    if "rate limit" in low or "429" in low or "too many" in low:
+        return {"kind": "rate_limited",
+                "message": "MCP-server beperkt het verkeer even — laatste stand getoond, ververst zo vanzelf."}
+    if "401" in low or "token" in low or "unauthorized" in low:
+        return {"kind": "auth",
+                "message": "MCP-aanmelding verlopen — verbind de server opnieuw in instellingen."}
+    return {"kind": "error", "message": "MCP-bron tijdelijk niet bereikbaar — laatste stand getoond."}
+
+
 def build_briefing(
     brain: BrainDB,
     o365: O365Client | None = None,
@@ -67,15 +98,22 @@ def build_briefing(
         if err:
             briefing["errors"]["todo"] = err
     elif mcp is not None:
-        # directe O365 niet ingelogd -> agenda + mail via de MCP-server
+        # directe O365 niet ingelogd -> agenda + mail via de MCP-server.
+        # De MCP-server kan tijdelijk rate-limiten; dan tonen we het laatst
+        # bekende resultaat + een statusvlag i.p.v. een misleidend lege inbox.
         from span.integrations.mcp_o365 import mcp_calendar, mcp_mail
-        agenda = _safe(lambda: mcp_calendar(mcp, now), [])[0]
+        (agenda, cal_err) = _safe(lambda: mcp_calendar(mcp, now), ([], ""))[0]
+        (mail, mail_err) = _safe(lambda: mcp_mail(mcp, 8), ([], ""))[0]
+        agenda = _cache_or_fresh("calendar", agenda, cal_err)
+        mail = _cache_or_fresh("mail", mail, mail_err)
         briefing["calendar"] = agenda
         briefing["conflicts"] = _overlaps(agenda or [])
-        mail = _safe(lambda: mcp_mail(mcp, 8), [])[0]
         briefing["mail"] = mail
         briefing["unread_mail"] = [m for m in mail if m.get("unread")]
         briefing["source"] = "mcp"
+        status = _panel_status(mail_err) or _panel_status(cal_err)
+        if status:
+            briefing["mcp_status"] = status
 
     if asana is not None:
         tasks, err = _safe(lambda: asana.my_tasks(top=10), [])

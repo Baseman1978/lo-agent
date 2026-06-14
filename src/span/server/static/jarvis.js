@@ -322,8 +322,17 @@ async function loadPanels() {
       if (!m.unread) it.classList.add("read");
       return it;
     });
-    fill("mail", mailItems,
-      d.integrations && d.integrations.o365 ? "inbox leeg ✦" : "O365 niet verbonden");
+    // bron tijdelijk beperkt? toon dat i.p.v. een misleidend 'inbox leeg'
+    const limited = d.mcp_status && d.mcp_status.kind !== "auth";
+    const mailEmpty = limited ? esc(d.mcp_status.message)
+      : (d.integrations && d.integrations.o365 ? "inbox leeg ✦" : "O365 niet verbonden");
+    fill("mail", mailItems, mailEmpty);
+    if (d.mcp_status) {
+      SPAN.sys(d.mcp_status.message, d.mcp_status.kind === "auth" ? "warn" : undefined);
+      if (d.mcp_status.kind === "rate_limited") backoffPanels();
+    } else if (SPAN._panelsOk) {
+      SPAN._panelsOk();  // schone ophaal -> ververssnelheid terug naar normaal
+    }
     const unreadCount = (d.unread_mail || []).length;
     const mailTitle = document.querySelector("#panel-mail h2 span");
     if (mailTitle) mailTitle.textContent = "⟢ Mail" + (unreadCount ? ` · ${unreadCount} nieuw` : "");
@@ -362,7 +371,17 @@ async function loadPanels() {
     $("brein").appendChild(lat);
   } catch (e) { /* stil */ }
 }
-setInterval(loadPanels, 90000);
+/* panelen verversen met back-off: normaal elke 90s, maar als de MCP-server
+   rate-limit teruggeeft wachten we langer (tot 5 min) zodat we 'm niet verder
+   overbelasten; bij een schone ophaal zakt het interval terug naar normaal. */
+let panelEvery = 90000, panelTimer = 0;
+function schedulePanels() {
+  clearTimeout(panelTimer);
+  panelTimer = setTimeout(() => { loadPanels(); schedulePanels(); }, panelEvery);
+}
+function backoffPanels() { panelEvery = Math.min(300000, panelEvery * 2); }
+SPAN._panelsOk = () => { panelEvery = 90000; };  // door loadPanels bij succes
+schedulePanels();
 
 /* -- O365 device login ----------------------------------------------------- */
 let o365Poll = 0;
