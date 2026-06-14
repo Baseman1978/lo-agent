@@ -38,6 +38,7 @@ def build_briefing(
     o365: O365Client | None = None,
     asana: AsanaClient | None = None,
     owner: str = "Bas",
+    mcp: Any = None,
 ) -> dict[str, Any]:
     """Alles voor 'JARVIS, geef me mijn briefing' — en voor de HUD-panelen."""
     now = datetime.now(TZ)
@@ -47,7 +48,10 @@ def build_briefing(
         "errors": {},
     }
 
+    o365_ok = False
     if o365 is not None:
+        o365_ok = _safe(lambda: o365.is_authenticated(), False)[0]
+    if o365 is not None and o365_ok:
         agenda, err = _safe(lambda: o365.calendar(days=1), [])
         briefing["calendar"] = agenda
         if err:
@@ -62,6 +66,16 @@ def build_briefing(
         briefing["todo"] = todo
         if err:
             briefing["errors"]["todo"] = err
+    elif mcp is not None:
+        # directe O365 niet ingelogd -> agenda + mail via de MCP-server
+        from span.integrations.mcp_o365 import mcp_calendar, mcp_mail
+        agenda = _safe(lambda: mcp_calendar(mcp, now), [])[0]
+        briefing["calendar"] = agenda
+        briefing["conflicts"] = _overlaps(agenda or [])
+        mail = _safe(lambda: mcp_mail(mcp, 8), [])[0]
+        briefing["mail"] = mail
+        briefing["unread_mail"] = [m for m in mail if m.get("unread")]
+        briefing["source"] = "mcp"
 
     if asana is not None:
         tasks, err = _safe(lambda: asana.my_tasks(top=10), [])

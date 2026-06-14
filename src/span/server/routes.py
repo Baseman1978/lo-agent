@@ -262,8 +262,10 @@ async def inbox_approve(request: Request, item_id: int) -> dict[str, Any]:
         result = await asyncio.to_thread(
             execute_approval, item, _state.get("o365"),
             _state["llm"], _effective_settings().model_light, _state.get("asana"),
-            _state.get("mcp"),
+            _state.get("mcp"), _state["brain"],
         )
+        if item.get("action") == "mcp_add":
+            await asyncio.to_thread(_rebuild_mcp)
     except Exception:
         inbox.release(item_id)  # mislukt: item blijft open voor een nieuwe poging
         raise
@@ -461,12 +463,17 @@ async def netinfo(request: Request) -> dict[str, Any]:
 async def jarvis_briefing(request: Request) -> dict[str, Any]:
     """Briefing + paneel-data voor de HUD: agenda, mail, taken, quests."""
     _require_rest_auth(request)
+    mcp = _state.get("mcp")
     data = await asyncio.to_thread(
-        build_briefing, _state["brain"], _state.get("o365"), _state.get("asana")
+        build_briefing, _state["brain"], _state.get("o365"), _state.get("asana"), "Bas", mcp
     )
     o365 = _state.get("o365")
+    o365_auth = bool(o365) and await asyncio.to_thread(o365.is_authenticated) if o365 else False
+    # M365 telt als "verbonden" als de directe O365 ingelogd is OF een MCP-server
+    # de m365-tools levert (dan vullen de panelen via MCP)
+    mcp_m365 = bool(mcp) and any("m365_mail_list" in n for n in mcp.tool_names())
     data["integrations"] = {
-        "o365": bool(o365) and await asyncio.to_thread(o365.is_authenticated) if o365 else False,
+        "o365": o365_auth or mcp_m365,
         "asana": _state.get("asana") is not None,
     }
     return data

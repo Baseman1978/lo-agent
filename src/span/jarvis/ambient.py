@@ -118,7 +118,7 @@ Antwoord met uitsluitend de concepttekst."""
 
 def execute_approval(item: dict[str, Any], o365: Any, llm: Any = None,
                      light_model: str | None = None, asana: Any = None,
-                     mcp: Any = None) -> dict[str, Any]:
+                     mcp: Any = None, brain: Any = None) -> dict[str, Any]:
     """Voer een goedgekeurd Agent Inbox-item uit. Gedeeld door de HUD-API
     en de inbox_approve-tool (stembediening)."""
     payload = item["payload"]
@@ -126,6 +126,17 @@ def execute_approval(item: dict[str, Any], o365: Any, llm: Any = None,
         if mcp is None:
             return {"error": "Geen MCP-registry beschikbaar."}
         return mcp.call(payload["mcp_name"], payload.get("arguments") or {})
+    if item["action"] == "mcp_add":
+        # door de agent voorgestelde server toevoegen aan de lijst (zonder token;
+        # Bas logt daarna zelf in via de instellingen)
+        if brain is None:
+            return {"error": "Geen brein beschikbaar om de server op te slaan."}
+        from span.integrations.mcp_client import load_servers, save_servers
+        servers = [s for s in load_servers(brain) if s["name"] != payload["name"]]
+        servers.append({"name": payload["name"], "url": payload["url"]})
+        save_servers(brain, servers)
+        return {"added": payload["name"],
+                "note": "Toegevoegd — log in via Instellingen → MCP-servers."}
     if item["action"] == "asana_task" and asana is not None:
         return asana.create_task(
             name=payload["name"], notes=payload.get("notes", ""),

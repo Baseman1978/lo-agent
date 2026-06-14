@@ -118,7 +118,8 @@ class TelegramBridge:
                                      self._state.get("llm"),
                                      self._state["settings"].model_light,
                                      self._state.get("asana"),
-                                     self._state.get("mcp"))
+                                     self._state.get("mcp"),
+                                     self._state.get("brain"))
                     inbox.resolve(int(iid), "done")
                     result = "✅ Uitgevoerd."
         except Exception as exc:

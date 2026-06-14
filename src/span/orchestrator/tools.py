@@ -223,7 +223,7 @@ class ToolBox:
     # -- JARVIS: briefing, O365, Asana ------------------------------------
 
     def _tool_jarvis_briefing(self) -> Any:
-        return build_briefing(self._brain, self._o365, self._asana)
+        return build_briefing(self._brain, self._o365, self._asana, mcp=self._mcp)
 
     def _tool_o365_mail_inbox(self, top: int = 10, unread_only: bool = False) -> Any:
         return self._require_o365().inbox(top=top, unread_only=unread_only)
@@ -324,7 +324,7 @@ class ToolBox:
             return {"error": "Item niet gevonden of al afgehandeld."}
         try:
             result = execute_approval(item, self._o365, self._llm, self._light_model,
-                                      asana=self._asana, mcp=self._mcp)
+                                      asana=self._asana, mcp=self._mcp, brain=self._brain)
         except Exception:
             self._inbox.release(int(item_id))
             raise
@@ -348,6 +348,21 @@ class ToolBox:
     def _tool_cron_delete(self, cron_id: str) -> Any:
         from span.jarvis.crons import delete_cron
         return {"deleted": delete_cron(self._brain, cron_id)}
+
+    def _tool_mcp_propose_server(self, name: str, url: str, reason: str) -> Any:
+        if self._inbox is None:
+            return {"error": "Geen Agent Inbox; kan geen voorstel klaarzetten."}
+        if not str(url).startswith("http"):
+            return {"error": "Geef een geldige https-URL."}
+        item_id = self._inbox.add(
+            kind="action", action="mcp_add",
+            title=f"MCP-server voorstellen: {name}",
+            detail=f"{url} — {reason}"[:240],
+            payload={"name": name, "url": url, "reason": reason},
+            origin="agent",  # Bas keurt goed in de HUD; daarna logt hij zelf in
+        )
+        return {"proposed": item_id,
+                "status": "Voorstel staat in de Agent Inbox; Bas beslist + logt in."}
 
     def _tool_plan_goal(self, goal: str) -> Any:
         from span.orchestrator.planner import make_plan, store_plan

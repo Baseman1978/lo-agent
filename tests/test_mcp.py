@@ -162,3 +162,57 @@ def test_execute_approval_mcp_call():
     out = execute_approval(item, None, mcp=reg)
     assert out["text"] == "verzonden"
     reg.call.assert_called_once()
+
+
+# -- agent stelt MCP-server voor (via de poort) ----------------------------
+
+def test_propose_server_queue_t_in_inbox():
+    from span.jarvis.ambient import AgentInbox
+    inbox = AgentInbox()
+    tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s", inbox=inbox)
+    out = json.loads(tb.dispatch("mcp_propose_server",
+                                 {"name": "weer", "url": "https://weer/mcp", "reason": "weerdata"}))
+    assert "proposed" in out
+    item = inbox.snapshot()[0]
+    assert item["action"] == "mcp_add" and item["origin"] == "agent"
+    assert item["payload"]["url"] == "https://weer/mcp"
+
+
+def test_execute_approval_mcp_add_slaat_server_op():
+    from span.jarvis.ambient import execute_approval
+    brain = MagicMock()
+    store = {"s": "[]"}
+    brain.run.side_effect = lambda q, **kw: (
+        store.update(s=kw.get("s")) or [] if "SET c.mcp_servers" in q
+        else [{"s": store["s"]}] if "RETURN c.mcp_servers" in q else [])
+    item = {"action": "mcp_add", "kind": "action",
+            "payload": {"name": "weer", "url": "https://weer/mcp", "reason": "x"}}
+    out = execute_approval(item, None, brain=brain)
+    assert out["added"] == "weer"
+
+
+# -- MCP-briefing-adapter (panelen vullen via MCP) -------------------------
+
+def test_mcp_mail_parse():
+    from span.integrations.mcp_o365 import mcp_mail
+    reg = MagicMock()
+    reg.tool_names.return_value = ["mcp__lomans__m365_mail_list"]
+    reg.call.return_value = {"text": json.dumps({"value": [
+        {"id": "1", "subject": "Hoi", "isRead": False, "bodyPreview": "p",
+         "from": {"emailAddress": {"name": "Jan", "address": "jan@x.nl"}},
+         "webLink": "u"}]})}
+    out = mcp_mail(reg)
+    assert out[0]["subject"] == "Hoi" and out[0]["unread"] is True and out[0]["from"] == "Jan"
+
+
+def test_build_briefing_valt_terug_op_mcp():
+    from span.jarvis.briefing import build_briefing
+    brain = MagicMock(); brain.run.return_value = []
+    o365 = MagicMock(); o365.is_authenticated.return_value = False  # niet ingelogd
+    reg = MagicMock()
+    reg.tool_names.return_value = ["mcp__lomans__m365_mail_list"]
+    reg.call.return_value = {"text": json.dumps({"value": [
+        {"id": "1", "subject": "ViaMCP", "isRead": True, "from": {"emailAddress": {"name": "X"}}}]})}
+    b = build_briefing(brain, o365=o365, mcp=reg)
+    assert b.get("source") == "mcp"
+    assert b["mail"] and b["mail"][0]["subject"] == "ViaMCP"

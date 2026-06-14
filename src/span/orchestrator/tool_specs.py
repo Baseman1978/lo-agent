@@ -484,6 +484,25 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "mcp_propose_server",
+            "description": "Stel een MCP-server voor om te koppelen (bv. een publieke "
+            "server die nuttige tools biedt). Dit VOEGT NIETS DIRECT TOE — het komt "
+            "als voorstel in de Agent Inbox; Bas keurt goed en logt zelf in. Gebruik "
+            "alleen voor servers die je echt nuttig acht; noem in 'reason' waarom.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "korte naam"},
+                    "url": {"type": "string", "description": "https://…/mcp-URL"},
+                    "reason": {"type": "string", "description": "waarom nuttig voor Bas"},
+                },
+                "required": ["name", "url", "reason"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "plan_goal",
             "description": "Decomponeer een groter doel of meerstaps-opdracht in een "
             "bevroren stappenplan (Quest). Gebruik dit bij 'maak een plan voor…' of "
@@ -571,6 +590,7 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "cron_list": ("Planning", "read"),
     "cron_delete": ("Planning", "write"),
     "plan_goal": ("Planning", "write"),
+    "mcp_propose_server": ("MCP", "write"),
     "web_search": ("Web", "read"),
     "web_read": ("Web", "read"),
 }
