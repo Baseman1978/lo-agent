@@ -230,21 +230,50 @@ async def graph(request: Request, limit: int = Query(250, le=600),
     _NODE_RETURN = ("elementId(n) AS id, labels(n)[0] AS type, coalesce(n.id, '') AS key, "
                     "left(coalesce(n.title, n.name, n.content, n.summary, n.body, n.id, ''), 70) AS label")
 
+    # de 'structurele kern' = de betekenisvolle groepjes (entiteiten, inzichten,
+    # quests, skills, protocollen). Die horen altijd zichtbaar te zijn, niet
+    # weggedrukt te worden door een bulk-import van losse fragmenten.
+    core_labels = ["Identity", "Protocol", "Quest", "QuestStep", "Skill",
+                   "Insight", "Mistake", "Idea", "Entity", "Meeting"]
+
+    # max ~60% van het budget voor de kern, de rest voor recente fragmenten;
+    # de hubs (hoogste relatie-graad) eerst zodat de betekenisvolle groepjes
+    # bovenaan staan en niet door losse entiteiten worden volgemaakt
+    core_limit = max(1, int(limit * 0.6))
+
     def fetch() -> dict[str, Any]:
-        # 1) seed-nodes: de nieuwste binnen het tijdvenster
-        seeds = brain.run(
+        # 1a) structurele kern eerst (op relatie-rijkdom: hubs bovenaan)
+        core = brain.run(
             f"""
-            MATCH (n) WHERE any(l IN labels(n) WHERE l IN $labels)
-              AND ($since = 0
-                   OR any(l IN labels(n) WHERE l IN $always)
-                   OR coalesce(n.created, n.started, datetime('2000-01-01'))
-                      >= datetime() - duration({{days: $since}}))
-            WITH n ORDER BY coalesce(n.created, n.started, datetime('2000-01-01')) DESC
-            LIMIT $limit
+            MATCH (n) WHERE any(l IN labels(n) WHERE l IN $core)
+            OPTIONAL MATCH (n)-[r]-()
+            WITH n, count(r) AS deg
+            WHERE deg > 0
+            ORDER BY deg DESC, coalesce(n.created, n.started, datetime('2000-01-01')) DESC
+            LIMIT $core_limit
             RETURN {_NODE_RETURN}
             """,
-            labels=GRAPH_LABELS, always=always, since=since, limit=limit,
+            core=core_labels, core_limit=core_limit,
         )
+        seen = {n["id"] for n in core}
+        # 1b) recente fragmenten vullen de rest aan (binnen het tijdvenster)
+        room = max(0, limit - len(core))
+        recent = brain.run(
+            f"""
+            MATCH (n:MemoryFragment)
+              WHERE ($since = 0
+                     OR coalesce(n.created, datetime('2000-01-01'))
+                        >= datetime() - duration({{days: $since}}))
+            WITH n ORDER BY coalesce(n.created, datetime('2000-01-01')) DESC
+            LIMIT $room
+            RETURN {_NODE_RETURN}
+            """,
+            since=since, room=room,
+        ) if room else []
+        seeds = list(core)
+        for n in recent:
+            if n["id"] not in seen:
+                seen.add(n["id"]); seeds.append(n)
         seed_ids = [n["id"] for n in seeds]
         # 2) anker-nodes erbij: de buren van de seeds (Session/Document/Entity/…)
         #    zodat fragmenten rond hun bron clusteren en er lijnen zichtbaar zijn
@@ -255,13 +284,15 @@ async def graph(request: Request, limit: int = Query(250, le=600),
             WITH DISTINCT n LIMIT $extra
             RETURN {_NODE_RETURN}
             """,
-            ids=seed_ids, labels=GRAPH_LABELS, extra=min(limit, 250),
+            ids=seed_ids, labels=GRAPH_LABELS, extra=min(limit, 150),
         )
         seen = set(seed_ids)
         nodes = list(seeds)
         for n in extra:
             if n["id"] not in seen:
                 seen.add(n["id"]); nodes.append(n)
+        # totaal begrenzen (ARM64-software-WebGL blijft licht)
+        nodes = nodes[:min(limit + 150, 450)]
         ids = [n["id"] for n in nodes]
         links = brain.run(
             """
