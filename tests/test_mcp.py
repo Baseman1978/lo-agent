@@ -316,17 +316,20 @@ def test_archive_folder_schrijft_en_is_idempotent():
     reg.call.side_effect = call
     brain = MagicMock()
     brain.run.return_value = [{"n": 0}]  # nog niet gearchiveerd
-    fragments = MagicMock(); fragments.write.return_value = "mf-x"
+    fragments = MagicMock(); fragments.write_external.return_value = {"id": "mf-x"}
     res = archive_folder(reg, brain, fragments, "s", "10: Verwerkt", limit=10, batch=2)
     assert res["archived"] == 2
-    assert fragments.write.call_args.kwargs["scope"] == "werk"
+    # mail = untrusted ingest met scope werk + source mail + mail_graph_id (M19)
+    kw = fragments.write_external.call_args.kwargs
+    assert kw["scope"] == "werk" and kw["source"] == "mail"
+    assert kw["extra_props"]["mail_graph_id"] in ("m1", "m2")
 
     # idempotent: alles al bekend -> 0 nieuw
     brain.run.return_value = [{"n": 1}]
-    fragments.write.reset_mock()
+    fragments.write_external.reset_mock()
     res2 = archive_folder(reg, brain, fragments, "s", "10: Verwerkt", limit=10, batch=2)
     assert res2["archived"] == 0 and res2["skipped_already_known"] >= 1
-    fragments.write.assert_not_called()
+    fragments.write_external.assert_not_called()
 
 
 def test_archive_folder_zonder_mcp():

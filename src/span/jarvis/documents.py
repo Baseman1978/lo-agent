@@ -107,7 +107,8 @@ def chunk_text(text: str) -> list[str]:
     return [c for c in chunks if len(c) > 40]
 
 
-def ingest_document(state: dict[str, Any], filename: str, raw: bytes) -> dict[str, Any]:
+def ingest_document(state: dict[str, Any], filename: str, raw: bytes,
+                    scope: str = "algemeen") -> dict[str, Any]:
     if len(raw) > MAX_BYTES:
         raise ValueError("Bestand te groot (max 25 MB).")
     text = extract_text(filename, raw)
@@ -127,13 +128,17 @@ def ingest_document(state: dict[str, Any], filename: str, raw: bytes) -> dict[st
     except Exception:
         stored_path = ""
 
-    # samenvatting + entiteiten met het lichte model (zacht falend)
+    # samenvatting + entiteiten met het lichte model (zacht falend).
+    # De documenttekst is untrusted -> spotlighten zodat het lichte model 'm
+    # als DATA leest, niet als instructie (I3: injectie in geüpload bestand).
+    from span.safety.scan import spotlight
     summary, entities = "", []
     try:
         parsed = llm.chat_json(
             [
                 {"role": "system", "content": META_PROMPT},
-                {"role": "user", "content": f"Bestand: {filename}\n\n{text[:6000]}"},
+                {"role": "user", "content": f"Bestand: {filename}\n\n"
+                 + spotlight(text[:6000], "DOCUMENT-INHOUD")},
             ],
             model=state["settings"].model_light,
         )
@@ -180,23 +185,27 @@ def ingest_document(state: dict[str, Any], filename: str, raw: bytes) -> dict[st
     state["doc_session"] = session_id
 
     if summary:
+        # samenvatting is Spans eigen tekst (trusted), met scope-tag (M18)
         fragments.write(
             mf_type="observation",
             content=f"Document '{filename}': {summary}",
             context=f"document {doc_id}",
             session_id=session_id,
             source="document",
+            scope=scope,
         )
     stored = 0
     for i, chunk in enumerate(chunks):
         try:
-            mf_id = fragments.write(
+            # ruwe documenttekst = untrusted ingest (scan + spotlight in RAG)
+            mf_id = fragments.write_external(
                 mf_type="observation",
                 content=chunk,
                 context=f"{filename} · deel {i + 1}/{len(chunks)}",
                 session_id=session_id,
                 source="document",
-            )
+                scope=scope,
+            )["id"]
             brain.run(
                 "MATCH (d:Document {id: $doc}), (mf:MemoryFragment {id: $mf}) "
                 "CREATE (d)-[:HAS_CHUNK]->(mf)",

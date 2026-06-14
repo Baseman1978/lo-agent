@@ -100,12 +100,18 @@ def archive_folder(mcp: Any, brain: Any, fragments: Any, session_id: str,
             date = (m.get("receivedDateTime") or "")[:10]
             preview = (m.get("bodyPreview") or "").strip().replace("\r", " ").replace("\n", " ")[:300]
             content = f"Mail van {sender} ({date}): {subject}. {preview}"
-            mf_id = fragments.write(
-                mf_type="observation", content=content, session_id=session_id,
-                context=f"mailarchief/{folder_name}", event_date=date, scope="werk")
-            brain.run("MATCH (mf:MemoryFragment {id:$id}) SET mf.mail_graph_id=$g",
-                      id=mf_id, g=gid)
-            archived += 1
+            # mail-inhoud is door-derden-bestuurbaar -> untrusted ingest met
+            # injectie-scan; mail_graph_id atomair in dezelfde transactie (M19).
+            # De UNIQUE-constraint op mail_graph_id vangt een race af: bij een
+            # gelijktijdige dubbele schrijf telt het als al-bekend, niet als fout.
+            try:
+                fragments.write_external(
+                    mf_type="observation", content=content, session_id=session_id,
+                    source="mail", context=f"mailarchief/{folder_name}", scope="werk",
+                    extra_props={"mail_graph_id": gid, "event_date": date})
+                archived += 1
+            except Exception:
+                skipped += 1
         if len(mails) < batch:
             break  # einde van de map
     return {"folder": folder.get("displayName"), "total_in_folder": total_in_folder,

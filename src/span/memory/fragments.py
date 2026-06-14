@@ -92,7 +92,17 @@ class FragmentStore:
         source: str = "span",
         event_date: str = "",
         scope: str = "algemeen",
+        trust: str = "trusted",
+        extra_props: dict[str, Any] | None = None,
     ) -> str:
+        """Schrijf één MemoryFragment.
+
+        trust: 'trusted' (Spans eigen kennis) of 'untrusted' (door-derden-
+        bestuurbare ingest: mail, document, web). Untrusted fragmenten blijven
+        vindbaar (recall houdt z'n waarde) maar worden bij injectie in de prompt
+        als DATA omkaderd, nooit als instructie (zie agent-RAG + spotlight).
+        extra_props: extra node-properties, in DEZELFDE transactie gezet zodat
+        bv. mail_graph_id atomair meegaat (idempotentie zonder race)."""
         if mf_type not in MF_TYPES:
             raise ValueError(f"Onbekend MF-type '{mf_type}'. Kies uit: {sorted(MF_TYPES)}")
         content = content.strip()
@@ -100,6 +110,7 @@ class FragmentStore:
             raise ValueError("Leeg MemoryFragment wordt niet opgeslagen.")
         # F3.4 scope-tag: scheidt privé van Lomans-werk in het brein
         scope = scope if scope in {"algemeen", "werk", "prive"} else "algemeen"
+        trust = trust if trust in {"trusted", "untrusted"} else "trusted"
 
         mf_id = new_mf_id(mf_type)
         embedding = self._llm.embed_one(f"{mf_type}: {content}\n{context}".strip())
@@ -108,10 +119,11 @@ class FragmentStore:
             MATCH (s:Session {id: $session_id})
             CREATE (mf:MemoryFragment {
               id: $id, type: $type, content: $content, context: $context,
-              source: $source, created: datetime(), embedding: $embedding,
-              event_date: $event_date, scope: $scope
+              source: $source, trust: $trust, created: datetime(),
+              embedding: $embedding, event_date: $event_date, scope: $scope
             })
             CREATE (mf)-[:FROM_SESSION]->(s)
+            SET mf += $extra
             """,
             session_id=session_id,
             id=mf_id,
@@ -119,11 +131,39 @@ class FragmentStore:
             content=content,
             context=context,
             source=source,
+            trust=trust,
             embedding=embedding,
             event_date=event_date or None,  # bi-temporeel: wanneer gebeurde het
             scope=scope,
+            extra=extra_props or {},
         )
         return mf_id
+
+    def write_external(
+        self,
+        *,
+        mf_type: str,
+        content: str,
+        session_id: str,
+        source: str,
+        context: str = "",
+        scope: str = "algemeen",
+        extra_props: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Gedeelde ingest-poort voor door-derden-bestuurbare tekst (mail,
+        document, web). Scant op injectie (F1.4) en markeert de herkomst als
+        untrusted. Geeft {id, trust, scan} terug. Eén plek zodat nieuwe
+        ingest-bronnen de scan automatisch erven (review I3/I4/M4)."""
+        from span.safety.scan import scan_text
+        scan = scan_text(content)
+        mf_id = self.write(
+            mf_type=mf_type, content=content, session_id=session_id,
+            context=context, source=source, scope=scope, trust="untrusted",
+            extra_props={**(extra_props or {}),
+                         "scan_injection": bool(scan["injection"]),
+                         "scan_trust": float(scan["trust"])},
+        )
+        return {"id": mf_id, "trust": "untrusted", "scan": scan}
 
     def search(self, query: str, k: int = 5,
                embedding: list[float] | None = None) -> list[dict[str, Any]]:
@@ -140,6 +180,8 @@ class FragmentStore:
                 "content": node.get("content"), "context": node.get("context", ""),
                 "created": str(node.get("created", "")),
                 "event_date": node.get("event_date") or "",
+                "source": node.get("source") or "span",
+                "trust": node.get("trust") or "trusted",
                 "score": round(score, 4),
             }
 

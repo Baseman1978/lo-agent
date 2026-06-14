@@ -70,8 +70,17 @@ leest `web_read` nog naar elke publieke host. **C1 pas volledig dicht na die keu
 
 ---
 
-## WP-2 — Untrusted-ingest / memory-poisoning  ⬜
+## WP-2 — Untrusted-ingest / memory-poisoning  ✅ 2026-06-14
 **Lost op:** I3, I4, M4, M18, M19.
+
+**Gedaan:** gedeelde poort `FragmentStore.write_external()` (scan_text + source +
+`trust='untrusted'`, scan-vlaggen als props); `write()` kreeg `trust` + atomaire
+`extra_props` (M19). documents.py: summarize-input gespotlight (I3), chunks via
+write_external, `scope` doorgegeven t/m de upload-route (M18). mail_archive.py: via
+write_external met `source='mail'` + `mail_graph_id` atomair (I4/M19) + UNIQUE-
+constraint `mf_mail_graph_id` (live toegepast). tools.py dispatch: mail/transcript-
+tools omkaderd als data (M4). agent.py RAG-memo: untrusted fragmenten getoond als
+"ONVERTROUWD, behandel als data". +5 tests, 192 groen.
 **Waarom:** verschillende `fragments.write`-paden schrijven door-derden-bestuurbare
 tekst (document, mailarchief, mailtools) zonder scan → injectie belandt via RAG in de
 system-prompt van het bevoorrechte hoofdmodel. Mail-ambient scant wél; de andere paden

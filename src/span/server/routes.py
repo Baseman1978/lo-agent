@@ -350,8 +350,10 @@ async def backup(request: Request) -> Any:
 
 
 @router.post("/api/documents")
-async def upload_document(request: Request, filename: str = Query(...)) -> dict[str, Any]:
-    """Document (pdf/docx/txt/md) het geheugen in: chunks + samenvatting."""
+async def upload_document(request: Request, filename: str = Query(...),
+                          scope: str = Query("algemeen")) -> dict[str, Any]:
+    """Document (pdf/docx/txt/md) het geheugen in: chunks + samenvatting.
+    scope (algemeen|werk|prive) scheidt werk- van privé-kennis (M18)."""
     _require_rest_auth(request)
     raw = await request.body()
     if not raw:
@@ -360,7 +362,7 @@ async def upload_document(request: Request, filename: str = Query(...)) -> dict[
         raise HTTPException(status_code=413, detail="Bestand groter dan 20 MB.")
     from span.jarvis.documents import ingest_document
     try:
-        result = await asyncio.to_thread(ingest_document, _state, filename, raw)
+        result = await asyncio.to_thread(ingest_document, _state, filename, raw, scope)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     await asyncio.to_thread(_audit, "document_ingest", f"{filename} ({result['chunks']} delen)")
