@@ -270,6 +270,8 @@
   SPAN.reactorOk = () => { stateTint = STATE_HUE.ok; tintT = 1; };
 
   function reactorDraw(ts) {
+    // de nieuwe WebGL-orb (orb.js) heeft 't overgenomen -> klassieke reactor stil
+    if (SPAN._orbActive) { rc.clearRect(0, 0, 300, 300); requestAnimationFrame(reactorDraw); return; }
     const t = (ts - t0) / 1000;
     const W = 300, c = W / 2;
     const st = SPAN.state;

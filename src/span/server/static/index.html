@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SPAN · J.A.R.V.I.S.</title>
-<link rel="stylesheet" href="/static/jarvis.css?v=9">
-<link rel="stylesheet" href="/static/effects.css?v=9">
+<link rel="stylesheet" href="/static/jarvis.css?v=10">
+<link rel="stylesheet" href="/static/effects.css?v=10">
 </head>
 <body>
 
@@ -170,6 +170,45 @@
     <div id="tool-perms"></div>
     <div class="setrow"><button id="set-tools-save" class="ghost">permissies opslaan</button></div>
 
+    <h3>Orb (centrale visual)</h3>
+    <div class="m" style="margin-bottom:6px">De ronde visual die reageert als Span praat/luistert/nadenkt.
+      Wijzigingen zijn meteen zichtbaar en worden lokaal bewaard.</div>
+    <div class="setrow">
+      <label>Stijl</label>
+      <select id="orb-style">
+        <option value="orb">bol (kubussen, modern)</option>
+        <option value="classic">klassieke arc-reactor</option>
+      </select>
+    </div>
+    <div class="setrow">
+      <label>Kleurpalet</label>
+      <select id="orb-palette">
+        <option value="span">Span (cyaan→warm)</option>
+        <option value="cyaan">cyaan</option>
+        <option value="ijs">ijs</option>
+        <option value="vuur">vuur</option>
+        <option value="paars">paars</option>
+        <option value="regenboog">regenboog</option>
+      </select>
+    </div>
+    <div class="setrow">
+      <label>Aantal kubussen: <span id="orb-cubes-label">600</span></label>
+      <input type="range" id="orb-cubes" min="150" max="1000" step="50" value="600">
+    </div>
+    <div class="setrow">
+      <label>Pulskracht: <span id="orb-pulse-label">1.0</span></label>
+      <input type="range" id="orb-pulse" min="0" max="3" step="0.1" value="1">
+    </div>
+    <div class="setrow">
+      <label>Rotatiesnelheid: <span id="orb-rot-label">1.0</span></label>
+      <input type="range" id="orb-rot" min="0" max="3" step="0.1" value="1">
+    </div>
+    <div class="setrow">
+      <label>Kubusgrootte: <span id="orb-size-label">0.05</span></label>
+      <input type="range" id="orb-size" min="0.02" max="0.12" step="0.005" value="0.05">
+    </div>
+    <div class="setrow"><button id="orb-reset" class="ghost">standaard herstellen</button></div>
+
     <h3>Effecten</h3>
     <div class="setrow">
       <label>Ambient-intensiteit</label>
@@ -264,13 +303,15 @@
 
 <!-- ?v ophogen bij elke UI-wijziging: dwingt verse bestanden af (geen stale cache) -->
 <script src="/static/vendor/3d-force-graph.min.js"></script>
+<script src="/static/vendor/three.min.js"></script>
 <script src="/static/vendor/qrcode.js"></script>
-<script src="/static/jarvis.js?v=9"></script>
-<script src="/static/fx.js?v=9"></script>
-<script src="/static/effects.js?v=9"></script>
-<script src="/static/voice.js?v=9"></script>
-<script src="/static/hologram.js?v=9"></script>
-<script src="/static/settings.js?v=9"></script>
-<script src="/static/ambient.js?v=9"></script>
+<script src="/static/jarvis.js?v=10"></script>
+<script src="/static/fx.js?v=10"></script>
+<script src="/static/effects.js?v=10"></script>
+<script src="/static/orb.js?v=10"></script>
+<script src="/static/voice.js?v=10"></script>
+<script src="/static/hologram.js?v=10"></script>
+<script src="/static/settings.js?v=10"></script>
+<script src="/static/ambient.js?v=10"></script>
 </body>
 </html>

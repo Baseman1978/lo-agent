@@ -471,6 +471,32 @@
     if (pal.classList.contains("open")) { palIdx = 0; palRender(); palQ.focus(); }
   };
 
+  /* -- Orb (centrale visual): live tweaken, lokaal bewaard ----------------- */
+  function orbInit() {
+    if (!SPAN.orbConfig) return;       // orb.js niet geladen (geen three.js)
+    const cfg = SPAN.orbConfig();
+    const set = (id, v) => { const el = $(id); if (el) el.value = v; };
+    const lbl = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+    set("orb-style", cfg.style); set("orb-palette", cfg.palette);
+    set("orb-cubes", cfg.cubes); lbl("orb-cubes-label", cfg.cubes);
+    set("orb-pulse", cfg.pulse); lbl("orb-pulse-label", cfg.pulse.toFixed(1));
+    set("orb-rot", cfg.rotation); lbl("orb-rot-label", cfg.rotation.toFixed(1));
+    set("orb-size", cfg.cubeSize); lbl("orb-size-label", cfg.cubeSize);
+    const on = (id, fn) => { const el = $(id); if (el) el.addEventListener("input", fn); };
+    on("orb-style", (e) => SPAN.applyOrbConfig({ style: e.target.value }));
+    on("orb-palette", (e) => SPAN.applyOrbConfig({ palette: e.target.value }));
+    on("orb-cubes", (e) => { lbl("orb-cubes-label", e.target.value); SPAN.applyOrbConfig({ cubes: parseInt(e.target.value) }); });
+    on("orb-pulse", (e) => { lbl("orb-pulse-label", (+e.target.value).toFixed(1)); SPAN.applyOrbConfig({ pulse: +e.target.value }); });
+    on("orb-rot", (e) => { lbl("orb-rot-label", (+e.target.value).toFixed(1)); SPAN.applyOrbConfig({ rotation: +e.target.value }); });
+    on("orb-size", (e) => { lbl("orb-size-label", e.target.value); SPAN.applyOrbConfig({ cubeSize: +e.target.value }); });
+    const rst = $("orb-reset");
+    if (rst) rst.onclick = () => {
+      SPAN.applyOrbConfig({ style:"orb", cubes:600, pulse:1.0, rotation:1.0, cubeSize:0.05, radius:2.0, palette:"span" });
+      orbInit();
+    };
+  }
+  orbInit();
+
   /* statusje in settings live houden wanneer o365 net (ont)koppeld is */
   window.addEventListener("focus", () => {
     if (overlay.classList.contains("open")) load();
