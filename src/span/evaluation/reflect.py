@@ -54,6 +54,20 @@ def reflect_session(
         end_session(brain, session_id, "Lege sessie — niets te evalueren.")
         return {"summary": "Lege sessie", "written": {}}
 
+    # Reflectie gaat over het REDENEREN van de sessie, niet over bulk-ingest.
+    # Archival fragmenten (mail-archief, documenten) eruit: anders blaast een
+    # import van honderden mails de prompt op ("Input is too long").
+    convo = [m for m in mfs if (m.get("source") or "span") not in ("mail", "document")]
+    if not convo:
+        end_session(brain, session_id,
+                    "Alleen archief-fragmenten — geen redenering om te evalueren.")
+        return {"summary": "Archief-sessie, niets te destilleren", "written": {}}
+    # harde backstop tegen context-overschrijding: meest recente N + truncatie
+    MAX_FRAGS, MAX_CONTENT = 120, 600
+    trimmed = len(convo) > MAX_FRAGS
+    mfs = [{**m, "content": (m.get("content") or "")[:MAX_CONTENT]}
+           for m in convo[-MAX_FRAGS:]]
+
     existing_skills = brain.run(
         "MATCH (sk:Skill) RETURN sk.name AS name, sk.description AS description"
     )

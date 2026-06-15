@@ -280,7 +280,8 @@ class FragmentStore:
             """
             MATCH (mf:MemoryFragment)-[:FROM_SESSION]->(:Session {id: $session_id})
             RETURN mf.id AS id, mf.type AS type, mf.content AS content,
-                   mf.context AS context, toString(mf.created) AS created
+                   mf.context AS context, coalesce(mf.source, 'span') AS source,
+                   toString(mf.created) AS created
             ORDER BY mf.created
             """,
             session_id=session_id,
