@@ -483,6 +483,7 @@
     set("orb-rot", cfg.rotation); lbl("orb-rot-label", cfg.rotation.toFixed(1));
     set("orb-size", cfg.cubeSize); lbl("orb-size-label", cfg.cubeSize);
     set("orb-smooth", cfg.smooth); lbl("orb-smooth-label", (cfg.smooth || 0.25).toFixed(2));
+    set("orb-bloom", cfg.bloom); lbl("orb-bloom-label", (cfg.bloom == null ? 1.6 : cfg.bloom).toFixed(1));
     const on = (id, fn) => { const el = $(id); if (el) el.addEventListener("input", fn); };
     on("orb-style", (e) => SPAN.applyOrbConfig({ style: e.target.value }));
     on("orb-shape", (e) => SPAN.applyOrbConfig({ shape: e.target.value }));
@@ -492,9 +493,10 @@
     on("orb-rot", (e) => { lbl("orb-rot-label", (+e.target.value).toFixed(1)); SPAN.applyOrbConfig({ rotation: +e.target.value }); });
     on("orb-size", (e) => { lbl("orb-size-label", e.target.value); SPAN.applyOrbConfig({ cubeSize: +e.target.value }); });
     on("orb-smooth", (e) => { lbl("orb-smooth-label", (+e.target.value).toFixed(2)); SPAN.applyOrbConfig({ smooth: +e.target.value }); });
+    on("orb-bloom", (e) => { lbl("orb-bloom-label", (+e.target.value).toFixed(1)); SPAN.applyOrbConfig({ bloom: +e.target.value }); });
     const rst = $("orb-reset");
     if (rst) rst.onclick = () => {
-      SPAN.applyOrbConfig({ style:"orb", shape:"bol", cubes:600, pulse:1.0, rotation:1.0, cubeSize:0.05, radius:2.0, palette:"span", smooth:0.25 });
+      SPAN.applyOrbConfig({ style:"orb", shape:"bol", cubes:1200, pulse:1.0, rotation:1.0, cubeSize:0.05, radius:2.0, palette:"span", smooth:0.25, bloom:1.6 });
       orbInit();
     };
   }
