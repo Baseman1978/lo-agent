@@ -98,9 +98,18 @@ credit te sparen.
   houdt `embed*`/`chat_json`/`list_models`; temperature-logica meeverhuisd + re-export voor compat.
   *Checkpoint gehaald:* 203 tests groen, live chat via de naad = "OK", backend=orq. Spike-script
   `scripts/spike_sdk.py` klaar voor WP-1 (door Bas te draaien met token).
-- **WP-3 — Auth-router subscription→API-backup (`src/span/llm/auth.py`):** abonnement default,
-  API-key alleen bij failover, nooit beide in proces-env. *Checkpoint:* geforceerde failover
-  schakelt; normaalbedrijf raakt API-key niet.
+- **WP-3 — Auth-router subscription→API-backup (`src/span/llm/auth.py`) + FIRST-RUN SETUP-WIZARD
+  (Bas' keuze 2):** abonnement default, API-key alleen bij failover, nooit beide in proces-env.
+  **Onboarding:** bij eerste opstart zonder geconfigureerde LLM-auth boot Span in "setup-modus"
+  (niet hard-failen) → HUD-setupscherm met keuze **(1) Log in met Claude-abonnement** (leidt naar
+  `claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN`) **of (2) API-sleutel (ORQ)** + model + optionele
+  integratie-sleutels. Opslag in `~/.span/secrets.json` (0600, BUITEN het brein, overleeft rebuilds),
+  `.env` als fallback. `config.py`: `ORQ_API_KEY` niet meer hard-`_require` → optioneel + setup-modus.
+  **Infra blijft in `.env`/compose:** `NEO4J_PASSWORD` (gedeeld met DB-container, nodig bij boot) +
+  `SPAN_AUTH_TOKEN`; minimale `.env.example` documenteert alleen die laag.
+  *Checkpoint:* (a) geforceerde failover schakelt; normaalbedrijf raakt API-key niet. (b) kale install
+  met alleen infra-`.env` boot in setup-modus; na keuze via het scherm werkt Span zonder handmatige
+  `.env`-LLM-regel. *Leermoment:* secrets nooit in het brein; welke auth de SDK in Docker oppikt.
 - **WP-4 — Span-tools als SDK-MCP + bindende gate:** `@tool`-wrappers; `can_use_tool`/`PreToolUse`
   → `assess_tool`; `PostToolUse` → audit + quarantaine. *Checkpoint:* rode-team-set (externe mail,
   high MCP, agent-keurt-eigen-item) net zo geblokkeerd als nu.
