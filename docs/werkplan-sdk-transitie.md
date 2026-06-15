@@ -92,9 +92,12 @@ credit te sparen.
 - **WP-1 — Spike (wegwerp, breekt niets):** `scripts/spike_sdk.py` — meet (1) per-token
   streaming ja/nee, (2) `deny` blokkeert aantoonbaar, (3) exacte fout-vorm bij "credit op".
   *Leermoment:* de failover-detectieregel (staat in geen doc).
-- **WP-2 — `ChatBackend`-interface + `OrqChatBackend` (refactor, gedrag identiek):**
-  `src/span/llm/backend.py`; `LLMClient` delegeert chat, houdt `embed*`/`chat_json`.
-  *Checkpoint:* bestaande tests + `turn()` identiek.
+- **WP-2 ✅ (2026-06-15) — `ChatBackend`-interface + `OrqChatBackend` (refactor, gedrag identiek):**
+  `src/span/llm/backend.py` gebouwd (ChatBackend-protocol + OrqChatBackend + `select_backend`
+  op `SPAN_CHAT_BACKEND`, default orq, 'sdk' valt veilig terug). `LLMClient` delegeert chat,
+  houdt `embed*`/`chat_json`/`list_models`; temperature-logica meeverhuisd + re-export voor compat.
+  *Checkpoint gehaald:* 203 tests groen, live chat via de naad = "OK", backend=orq. Spike-script
+  `scripts/spike_sdk.py` klaar voor WP-1 (door Bas te draaien met token).
 - **WP-3 — Auth-router subscription→API-backup (`src/span/llm/auth.py`):** abonnement default,
   API-key alleen bij failover, nooit beide in proces-env. *Checkpoint:* geforceerde failover
   schakelt; normaalbedrijf raakt API-key niet.

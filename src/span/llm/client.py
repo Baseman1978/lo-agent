@@ -7,22 +7,16 @@ zodat modelkeuze, kosten en logging op één plek zitten.
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 from typing import Any, Callable
 
-from openai import BadRequestError, OpenAI
+from openai import OpenAI
 
 from span.config import Settings
-
-# Sommige nieuwere modellen (o.a. claude-opus-4-8) weigeren de temperature-
-# parameter ("temperature is deprecated for this model") en geven dan een 400.
-# We onthouden zulke modellen zodat we 'temperature' voortaan weglaten i.p.v.
-# elke beurt te laten falen. Vult zich vanzelf bij de eerste 400.
-_NO_TEMPERATURE: set[str] = set()
-
-
-def _rejects_temperature(model: str) -> bool:
-    return model in _NO_TEMPERATURE or "opus-4-8" in (model or "")
+# de chat-laag zit nu achter een verwisselbare backend (ORQ nu, SDK straks).
+# _NO_TEMPERATURE/_rejects_temperature hier re-exporteren voor backwards-compat.
+from span.llm.backend import (  # noqa: F401
+    ChatBackend, OrqChatBackend, select_backend, _NO_TEMPERATURE, _rejects_temperature,
+)
 
 
 class LLMClient:
@@ -32,6 +26,8 @@ class LLMClient:
             api_key=settings.orq_api_key,
             base_url=settings.orq_base_url,
         )
+        # chat -> verwisselbare backend; embeddings blijven op deze OpenAI-client
+        self._chat_backend: ChatBackend = select_backend(settings, self._client)
 
     # -- chat -----------------------------------------------------------
 
@@ -45,75 +41,12 @@ class LLMClient:
         max_tokens: int = 4096,
         on_text: Callable[[str], None] | None = None,
     ) -> Any:
-        """Eén chat-completion call. Geeft het message-object terug
-        (inclusief eventuele tool_calls).
-
-        Met on_text wordt gestreamd: elke tekst-delta gaat direct naar de
-        callback, het volledige message-object komt daarna terug."""
-        kwargs: dict[str, Any] = {
-            "model": model or self._settings.model_main,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        if tools:
-            kwargs["tools"] = tools
-        if on_text is None:
-            response = self._create(kwargs)
-            return response.choices[0].message
-        return self._chat_stream(kwargs, on_text)
-
-    def _create(self, kwargs: dict[str, Any], *, stream: bool = False) -> Any:
-        """Roep de gateway aan; laat 'temperature' weg voor modellen die 'm
-        weigeren en leer dat onthouden bij een eerste 400."""
-        k = dict(kwargs)
-        if _rejects_temperature(k.get("model", "")):
-            k.pop("temperature", None)
-        try:
-            return self._client.chat.completions.create(stream=stream, **k)
-        except BadRequestError as exc:
-            if "temperature" in str(exc).lower() and "temperature" in k:
-                _NO_TEMPERATURE.add(k["model"])
-                k.pop("temperature", None)
-                return self._client.chat.completions.create(stream=stream, **k)
-            raise
-
-    def _chat_stream(self, kwargs: dict[str, Any], on_text: Callable[[str], None]) -> Any:
-        """Streamt deltas naar on_text en bouwt het message-object zelf op
-        (zelfde vorm als het niet-gestreamde object: .content, .tool_calls)."""
-        content_parts: list[str] = []
-        tool_calls: dict[int, dict[str, str]] = {}
-        stream = self._create(kwargs, stream=True)
-        for chunk in stream:
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta
-            if delta is None:
-                continue
-            if delta.content:
-                content_parts.append(delta.content)
-                on_text(delta.content)
-            for tc in delta.tool_calls or []:
-                slot = tool_calls.setdefault(
-                    tc.index, {"id": "", "name": "", "arguments": ""}
-                )
-                if tc.id:
-                    slot["id"] = tc.id
-                if tc.function and tc.function.name:
-                    slot["name"] = tc.function.name
-                if tc.function and tc.function.arguments:
-                    slot["arguments"] += tc.function.arguments
-        assembled = [
-            SimpleNamespace(
-                id=slot["id"],
-                type="function",
-                function=SimpleNamespace(name=slot["name"], arguments=slot["arguments"]),
-            )
-            for _, slot in sorted(tool_calls.items())
-        ]
-        return SimpleNamespace(
-            content="".join(content_parts) or None,
-            tool_calls=assembled or None,
+        """Eén chat-completion call via de actieve backend. Geeft het message-
+        object terug (.content + eventuele .tool_calls). Met on_text wordt
+        gestreamd: elke tekst-delta gaat direct naar de callback."""
+        return self._chat_backend.chat(
+            messages, model=model or self._settings.model_main,
+            tools=tools, temperature=temperature, max_tokens=max_tokens, on_text=on_text,
         )
 
     def chat_json(
