@@ -16,9 +16,13 @@
     paars:  ["#1a0936","#5a1e9a","#a06bff","#e08aff","#ffd6ff","#ffffff"],
     regenboog: ["#ff004c","#ff9d00","#fff200","#22e36b","#19b6ff","#7a4bff","#ff2bd6"],
     cyaan:  ["#031b27","#0a4f6b","#38e1ff","#cffaff","#ffffff"],
+    cooltowarm: ["#3b4cc0","#7b9ff9","#c0d4f5","#f2cbb7","#ee8468","#b40426"],
+    zonsondergang: ["#0d1b3e","#3b2f63","#9a3b8f","#ff6b6b","#ffb347","#ffe9a8"],
+    natuur: ["#04231a","#0a5a3c","#33b06a","#a7e8b0","#f0ffe0"],
+    goud:   ["#1a1200","#5a3b00","#c8920f","#ffd27d","#fff2c8","#ffffff"],
   };
-  const DEFAULTS = { style:"orb", cubes:600, pulse:1.0, rotation:1.0,
-                     cubeSize:0.05, radius:2.0, palette:"span" };
+  const DEFAULTS = { style:"orb", shape:"bol", cubes:600, pulse:1.0, rotation:1.0,
+                     cubeSize:0.05, radius:2.0, palette:"span", smooth:0.25 };
 
   function load() {
     try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem("span_orb") || "{}")); }
@@ -67,11 +71,24 @@
     const GA = Math.PI * (1 + Math.sqrt(5));
     const stops = PALETTES[cfg.palette] || PALETTES.span;
     pts = [];
-    for (let i = 0; i < N; i++) {
-      const k = i + 0.5, phi = Math.acos(1 - 2*k/N), theta = (GA*k) % (Math.PI*2);
-      pts.push({ x: Math.cos(theta)*Math.sin(phi), y: Math.sin(theta)*Math.sin(phi),
-                 z: Math.cos(phi), phi, theta });
-      mesh.setColorAt(i, paletteColor(stops, i / N));
+    if (cfg.shape === "ring") {
+      // 2D-ring van kubussen (dcyoung 'diffusedRing'-idee, ARM64-licht):
+      // diffuus randeffect via een vaste per-punt radiale spreiding
+      for (let i = 0; i < N; i++) {
+        const theta = i / N * Math.PI * 2;
+        const seed = 0.6 + 0.4 * Math.abs(Math.sin(i * 12.9898) * 43758.5453 % 1);
+        pts.push({ x: Math.cos(theta), y: Math.sin(theta), z: 0,
+                   phi: theta % Math.PI, theta, seed });
+        mesh.setColorAt(i, paletteColor(stops, i / N));
+      }
+    } else {
+      // Fibonacci-bol
+      for (let i = 0; i < N; i++) {
+        const k = i + 0.5, phi = Math.acos(1 - 2*k/N), theta = (GA*k) % (Math.PI*2);
+        pts.push({ x: Math.cos(theta)*Math.sin(phi), y: Math.sin(theta)*Math.sin(phi),
+                   z: Math.cos(phi), phi, theta, seed: 1 });
+        mesh.setColorAt(i, paletteColor(stops, i / N));
+      }
     }
     mesh.instanceColor.needsUpdate = true;
     bars = new Float32Array(NB);
@@ -85,7 +102,7 @@
       else if (st === "listening") target = lvl*0.85*(0.5+0.5*Math.sin(t*3+b*0.5));
       else if (st === "busy") target = 0.20*(0.5+0.5*Math.sin(t*5+b*1.1));
       else target = 0.05*(0.5+0.5*Math.sin(t*0.8+b*0.4));
-      bars[b] += (Math.max(0, target) - bars[b]) * 0.25;
+      bars[b] += (Math.max(0, target) - bars[b]) * (cfg.smooth || 0.25);
     }
   }
 
@@ -100,7 +117,7 @@
     for (let i = 0; i < N; i++) {
       const p = pts[i];
       const band = Math.min(NB-1, (p.phi/Math.PI*NB) | 0);
-      const disp = bars[band] * (0.7 + 0.3*Math.sin(p.theta*3 + t));
+      const disp = bars[band] * (0.7 + 0.3*Math.sin(p.theta*3 + t)) * (p.seed || 1);
       const r = cfg.radius * (1 + pulse * disp);
       m4.makeTranslation(p.x*r, p.y*r, p.z*r);
       mesh.setMatrixAt(i, m4);
@@ -130,7 +147,7 @@
     if (!hasTHREE) return;
     if (!renderer) buildCanvas();
     const rebuild = !mesh || partial && (partial.cubes !== undefined || partial.palette !== undefined
-      || partial.cubeSize !== undefined || partial.radius !== undefined);
+      || partial.cubeSize !== undefined || partial.radius !== undefined || partial.shape !== undefined);
     if (rebuild) buildMesh();
     activate(cfg.style === "orb");
   };

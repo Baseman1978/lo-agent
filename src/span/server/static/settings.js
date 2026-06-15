@@ -477,21 +477,24 @@
     const cfg = SPAN.orbConfig();
     const set = (id, v) => { const el = $(id); if (el) el.value = v; };
     const lbl = (id, v) => { const el = $(id); if (el) el.textContent = v; };
-    set("orb-style", cfg.style); set("orb-palette", cfg.palette);
+    set("orb-style", cfg.style); set("orb-palette", cfg.palette); set("orb-shape", cfg.shape);
     set("orb-cubes", cfg.cubes); lbl("orb-cubes-label", cfg.cubes);
     set("orb-pulse", cfg.pulse); lbl("orb-pulse-label", cfg.pulse.toFixed(1));
     set("orb-rot", cfg.rotation); lbl("orb-rot-label", cfg.rotation.toFixed(1));
     set("orb-size", cfg.cubeSize); lbl("orb-size-label", cfg.cubeSize);
+    set("orb-smooth", cfg.smooth); lbl("orb-smooth-label", (cfg.smooth || 0.25).toFixed(2));
     const on = (id, fn) => { const el = $(id); if (el) el.addEventListener("input", fn); };
     on("orb-style", (e) => SPAN.applyOrbConfig({ style: e.target.value }));
+    on("orb-shape", (e) => SPAN.applyOrbConfig({ shape: e.target.value }));
     on("orb-palette", (e) => SPAN.applyOrbConfig({ palette: e.target.value }));
     on("orb-cubes", (e) => { lbl("orb-cubes-label", e.target.value); SPAN.applyOrbConfig({ cubes: parseInt(e.target.value) }); });
     on("orb-pulse", (e) => { lbl("orb-pulse-label", (+e.target.value).toFixed(1)); SPAN.applyOrbConfig({ pulse: +e.target.value }); });
     on("orb-rot", (e) => { lbl("orb-rot-label", (+e.target.value).toFixed(1)); SPAN.applyOrbConfig({ rotation: +e.target.value }); });
     on("orb-size", (e) => { lbl("orb-size-label", e.target.value); SPAN.applyOrbConfig({ cubeSize: +e.target.value }); });
+    on("orb-smooth", (e) => { lbl("orb-smooth-label", (+e.target.value).toFixed(2)); SPAN.applyOrbConfig({ smooth: +e.target.value }); });
     const rst = $("orb-reset");
     if (rst) rst.onclick = () => {
-      SPAN.applyOrbConfig({ style:"orb", cubes:600, pulse:1.0, rotation:1.0, cubeSize:0.05, radius:2.0, palette:"span" });
+      SPAN.applyOrbConfig({ style:"orb", shape:"bol", cubes:600, pulse:1.0, rotation:1.0, cubeSize:0.05, radius:2.0, palette:"span", smooth:0.25 });
       orbInit();
     };
   }
