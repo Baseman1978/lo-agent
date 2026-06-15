@@ -6,6 +6,8 @@
 # Persoonlijke data — blijft lokaal
 backups/
 documents/
+# viz-galerij: standalone demo's met geëxporteerde brein-data (labels/namen) — lokaal
+viz-demos/
 00. funcitonele omschreiving/
 # eval-set bevat echte brein-content (namen, projectinfo) — lokaal houden
 tests/eval_retrieval_set.json
