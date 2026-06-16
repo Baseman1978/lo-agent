@@ -63,3 +63,34 @@ def test_failover_naar_orq_bij_sdk_fout():
     out = r.chat([{"role": "user", "content": "vertel iets"}], model="m")
     assert out.content == "orq-backup"     # transparant teruggevallen
     orq.chat.assert_called_once()
+
+
+# -- WP-5c keystone: SDK-permissie-gate = guard.assess_tool (fail-closed) ----
+
+def test_sdk_gate_laag_risico_allow():
+    from span.llm.sdk_backend import sdk_permission_decision
+    d, _ = sdk_permission_decision("brain_search", {"query": "x"},
+                                   autonomy_auto=False, has_inbox=True)
+    assert d == "allow"
+
+
+def test_sdk_gate_externe_mail_deny():
+    from span.llm.sdk_backend import sdk_permission_decision
+    d, reden = sdk_permission_decision(
+        "o365_mail_send", {"to": ["vreemde@extern.com"], "subject": "s", "body": "b"},
+        autonomy_auto=True, has_inbox=True)
+    assert d == "deny"   # exfil-vangnet: extern -> nooit ongekeurd op de SDK
+
+
+def test_sdk_gate_high_zonder_poort_deny():
+    from span.llm.sdk_backend import sdk_permission_decision
+    d, _ = sdk_permission_decision("o365_mail_send", {"to": ["x@y.nl"], "subject": "s", "body": "b"},
+                                   autonomy_auto=False, has_inbox=False)
+    assert d == "deny"   # fail-closed
+
+
+def test_sdk_gate_mcp_write_deny_zonder_inbox():
+    from span.llm.sdk_backend import sdk_permission_decision
+    d, _ = sdk_permission_decision("mcp__lomans__m365_mail_send", {"to": "x"},
+                                   autonomy_auto=False, has_inbox=False)
+    assert d == "deny"

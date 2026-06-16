@@ -130,6 +130,26 @@ def _split_messages(messages: list[dict[str, Any]]) -> tuple[str, str]:
     return "\n\n".join(system_parts).strip(), "\n\n".join(convo).strip()
 
 
+def sdk_permission_decision(name: str, tool_input: dict, *, autonomy_auto: bool,
+                            has_inbox: bool, exfil_guard: bool = True) -> tuple[str, str]:
+    """WP-5c-keystone: vertaal Span's bindende gate (guard.assess_tool) naar een
+    SDK-permissiebesluit voor de can_use_tool/PreToolUse-hook.
+
+    Span kent drie uitkomsten (allow/approval/block); de SDK kent allow/deny.
+    Conservatief: alleen 'allow' -> allow; 'approval' (poort) én 'block' -> DENY
+    (fail-closed). Een gevoelige actie draait op de SDK dus nooit ongekeurd; de
+    goedkeuringsweg blijft de AgentInbox (later: deny-met-queue). Geeft
+    (besluit, reden) terug."""
+    from span.safety.guard import assess_tool
+    a = assess_tool(name, tool_input or {}, autonomy_auto=autonomy_auto,
+                    has_inbox=has_inbox, exfil_guard=exfil_guard)
+    if a["decision"] == "allow":
+        return "allow", a["reason"]
+    if a["decision"] == "approval":
+        return "deny", f"vereist goedkeuring via de Agent Inbox ({a['reason']})"
+    return "deny", f"geweigerd door de veiligheidslaag ({a['reason']})"
+
+
 def _map_model(model: str) -> str:
     """ORQ/Bedrock-prefixed id -> kale Anthropic-alias voor de SDK."""
     m = (model or "").lower()
