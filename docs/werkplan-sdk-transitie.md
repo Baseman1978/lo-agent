@@ -128,8 +128,17 @@ credit te sparen.
 - **WP-4 — Span-tools als SDK-MCP + bindende gate:** `@tool`-wrappers; `can_use_tool`/`PreToolUse`
   → `assess_tool`; `PostToolUse` → audit + quarantaine. *Checkpoint:* rode-team-set (externe mail,
   high MCP, agent-keurt-eigen-item) net zo geblokkeerd als nu.
-- **WP-5 — `SdkChatBackend` + HUD-adapter achter `turn()`** (env-flag `SPAN_CHAT_BACKEND=sdk|orq`,
-  default orq). *Checkpoint:* volledige beurt via SDK; HUD-streaming gelijkwaardig; TOUCHED+audit kloppen.
+- **WP-5a ✅ — image SDK-capabel:** Node 20 + Claude CLI 2.1.178 + claude-agent-sdk in de Dockerfile.
+- **WP-5b ✅ (2026-06-16) — `SdkChatBackend` + `RoutedChatBackend` (subscription-first, ORQ-backup):**
+  `src/span/llm/sdk_backend.py`. Tekst via de SDK op het abonnement; tool-beurten (nog) naar ORQ;
+  bij auth/credit-fout transparante failover naar ORQ (detectie op `ResultMessage.is_error` +
+  auth/credit-melding). `SPAN_CHAT_BACKEND=sdk` → routed-backend (valt terug op ORQ als SDK ontbreekt).
+  +6 tests, 209 groen. **Live geverifieerd:** flag=sdk + ongeldig token → SDK-poging → failover naar
+  ORQ → antwoord OK. Streaming = blok (HUD-afweging blijft).
+- **WP-5c — turn-level SDK-loop met tools (rest):** Span-tools als in-process MCP + bindende gate via
+  `can_use_tool`/`PreToolUse` (WP-4) + audit/quarantaine via `PostToolUse`, zodat ook tool-beurten op
+  het abonnement kunnen. Vereist live-verificatie met een GELDIG token. *Checkpoint:* rode-team-set
+  net zo geblokkeerd; volledige beurt (RAG, tools, antwoord) via de SDK.
 - **WP-6 — Credit-bewust routeren:** ambient/cron/recording op ORQ, interactief op credit +
   credit-monitor. *Checkpoint:* 24u-soak — ambient raakt credit niet; bij credit-op valt
   interactief netjes terug op API.

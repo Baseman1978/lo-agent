@@ -101,10 +101,16 @@ class OrqChatBackend:
 
 def select_backend(settings: Any, client: Any) -> ChatBackend:
     """Kies de chat-backend op basis van SPAN_CHAT_BACKEND (default 'orq').
-    'sdk' bestaat pas vanaf WP-5; tot dan val je veilig terug op ORQ zodat de
-    vlag alvast bestaat zonder iets te breken."""
+    'sdk' = subscription-first (tekst via de Claude Agent SDK, tool-beurten via
+    ORQ, failover naar ORQ bij auth/credit-fout). Valt veilig terug op pure ORQ
+    als de SDK niet geïnstalleerd is."""
+    orq = OrqChatBackend(client)
     choice = os.environ.get("SPAN_CHAT_BACKEND", "orq").strip().lower()
     if choice == "sdk":
-        print("[llm] SPAN_CHAT_BACKEND=sdk nog niet beschikbaar (WP-5) — val terug op orq",
+        from span.llm.sdk_backend import SdkChatBackend, RoutedChatBackend, sdk_installed
+        if sdk_installed():
+            print("[llm] chat-backend: sdk+orq (subscription-first, ORQ-backup)", flush=True)
+            return RoutedChatBackend(SdkChatBackend(settings), orq)
+        print("[llm] SPAN_CHAT_BACKEND=sdk maar claude-agent-sdk ontbreekt — val terug op orq",
               flush=True)
-    return OrqChatBackend(client)
+    return orq
