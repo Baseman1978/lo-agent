@@ -89,9 +89,24 @@ credit te sparen.
 - **WP-0 — Voorwaarden/beslissingen (geen code):** Bas neemt §6; `claude setup-token` →
   `CLAUDE_CODE_OAUTH_TOKEN` (buiten repo bewaren); EU-residency-route bevestigen; credit-opt-in.
   *Checkpoint:* `claude -p "hallo"` op abonnement (geen `ANTHROPIC_API_KEY` in env).
-- **WP-1 — Spike (wegwerp, breekt niets):** `scripts/spike_sdk.py` — meet (1) per-token
-  streaming ja/nee, (2) `deny` blokkeert aantoonbaar, (3) exacte fout-vorm bij "credit op".
-  *Leermoment:* de failover-detectieregel (staat in geen doc).
+- **WP-1 ✅ (2026-06-16) — Spike uitgevoerd in de container (Node 20 + claude-code CLI 2.1.178
+  + claude-agent-sdk, runtime-geïnstalleerd, NIET in de image).** Bevindingen met Bas' (tijdelijke)
+  OAuth-token:
+  - **Auth: WERKT.** Eerste run gaf een echt antwoord op het abonnement via `CLAUDE_CODE_OAUTH_TOKEN`,
+    zonder API-key. (Latere run: `401 Invalid bearer token` — token intussen geroteerd/verlopen.)
+  - **Auth-fout-signatuur (voor WP-3 failover):** de SDK gooit GEEN exception; hij doet eerst
+    `SystemMessage(subtype='api_retry')` (tot 10x), dan een **synthetische
+    `AssistantMessage(error='authentication_error', text='Failed to authenticate. API Error: 401
+    Invalid bearer token')`** + **`ResultMessage(is_error=True)`**. → de router detecteert op
+    `ResultMessage.is_error` + de auth-/credit-foutmelding, niet op een raised error.
+  - **Streaming: GROF (blok).** `receive_response()`/`receive_messages()` leveren het antwoord als
+    één `AssistantMessage` met een `TextBlock`; géén per-token `text_delta`-partials (ook met
+    `include_partial_messages=True`). → **de HUD-woord-voor-woord-stream regressie-risico**; vóór
+    cutover een fijnmazige streaming-weg vinden of het blok-gedrag accepteren.
+  - **Deny:** niet bevestigd (het model riep de testtool niet aan); opnieuw testen met een tool
+    die zeker aangeroepen wordt.
+  *Leermoment:* failover = `ResultMessage.is_error` + auth/credit-melding; Node+CLI+SDK MOET in
+  de Dockerfile (nu runtime); streaming is blok → HUD-afweging.
 - **WP-2 ✅ (2026-06-15) — `ChatBackend`-interface + `OrqChatBackend` (refactor, gedrag identiek):**
   `src/span/llm/backend.py` gebouwd (ChatBackend-protocol + OrqChatBackend + `select_backend`
   op `SPAN_CHAT_BACKEND`, default orq, 'sdk' valt veilig terug). `LLMClient` delegeert chat,
