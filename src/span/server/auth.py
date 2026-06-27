@@ -79,6 +79,12 @@ async def auth_callback(request: Request) -> Any:
         return PlainTextResponse(f"Login mislukt: {exc}", status_code=400)
     if not claims.get("oid") and not claims.get("sub"):
         return PlainTextResponse("Geen geldige identiteit ontvangen.", status_code=400)
+    from span.server.state import _user_allowed
+    upn = (claims.get("preferred_username") or claims.get("email") or "")
+    if not _user_allowed(upn):
+        return PlainTextResponse(
+            f"Geen toegang voor {upn or 'dit account'}. Vraag toegang aan de beheerder.",
+            status_code=403)
     resp = RedirectResponse("/", status_code=302)
     resp.set_cookie(
         SESSION_COOKIE, make_session(claims), max_age=SESSION_MAX_AGE,

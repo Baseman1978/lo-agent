@@ -62,6 +62,18 @@ def read_session(token: str) -> dict[str, Any] | None:
 def _session_user(request: Request) -> dict[str, Any] | None:
     return read_session(request.cookies.get(SESSION_COOKIE, ""))
 
+
+def _allowed_users() -> set[str]:
+    """Toegestane accounts (UPN/e-mail, lowercase) uit SPAN_ALLOWED_USERS,
+    komma-gescheiden. Leeg = iedereen die door de tenant-login komt mag erin."""
+    raw = os.environ.get("SPAN_ALLOWED_USERS", "").strip()
+    return {u.strip().lower() for u in raw.split(",") if u.strip()}
+
+
+def _user_allowed(upn: str) -> bool:
+    allow = _allowed_users()
+    return (not allow) or (upn.strip().lower() in allow)
+
 # door de lifespan gevuld; alle modules delen deze ene dict-referentie
 _state: dict[str, Any] = {}
 

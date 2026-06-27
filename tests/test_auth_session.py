@@ -47,3 +47,16 @@ def test_no_secret_means_no_session(monkeypatch):
 def test_web_login_flag():
     assert JarvisConfig(ms_client_secret="").web_login_enabled is False
     assert JarvisConfig(ms_client_secret="s3cr3t").web_login_enabled is True
+
+
+def test_allowlist_empty_allows_all(monkeypatch):
+    monkeypatch.delenv("SPAN_ALLOWED_USERS", raising=False)
+    assert state._user_allowed("anyone@lomans.nl") is True
+
+
+def test_allowlist_restricts(monkeypatch):
+    monkeypatch.setenv("SPAN_ALLOWED_USERS", "B.Spaan@Lomans.nl, chef@lomans.nl")
+    assert state._user_allowed("b.spaan@lomans.nl") is True       # case-insensitive
+    assert state._user_allowed("CHEF@LOMANS.NL") is True
+    assert state._user_allowed("intruder@lomans.nl") is False
+    assert state._user_allowed("") is False
