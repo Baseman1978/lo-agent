@@ -68,12 +68,21 @@ class ContextRegistry:
 
     def __init__(self, settings: Settings,
                  build_o365: Callable[[str], Any] | None = None,
-                 brain_factory: Callable[[Settings, str], BrainDB] = build_user_brain):
+                 brain_factory: Callable[[Settings, str], BrainDB] = build_user_brain,
+                 owner_oid: str = ""):
         self._settings = settings
         self._build_o365 = build_o365
         self._brain_factory = brain_factory
+        # de 'owner' houdt zijn bestaande brein (settings.brain_db, bv. span-brain)
+        # i.p.v. een verse brain-<oid>; zo migreert de huidige NOVA zonder verlies.
+        self._owner_oid = owner_oid.strip().lower()
         self._ctx: dict[str, UserContext] = {}
         self._lock = threading.Lock()
+
+    def _db_for(self, oid: str) -> str:
+        if self._owner_oid and oid.strip().lower() == self._owner_oid:
+            return self._settings.brain_db
+        return user_db_name(oid)
 
     def get(self, oid: str, upn: str = "", name: str = "") -> UserContext:
         with self._lock:
@@ -81,7 +90,7 @@ class ContextRegistry:
             if ctx is not None:
                 return ctx
         # buiten de lock bouwen (db-init kan traag zijn); daarna onder lock zetten
-        brain = self._brain_factory(self._settings, user_db_name(oid))
+        brain = self._brain_factory(self._settings, self._db_for(oid))
         o365 = self._build_o365(oid) if self._build_o365 else None
         ctx = UserContext(oid=oid, upn=upn, name=name, brain=brain, o365=o365)
         with self._lock:

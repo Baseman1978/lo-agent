@@ -45,6 +45,26 @@ def test_registry_caches_per_oid():
     assert calls == ["brain-user-a", "brain-user-b"]   # factory 1x per oid
 
 
+class _Settings:
+    brain_db = "span-brain"
+
+
+def test_owner_keeps_existing_brain():
+    seen = []
+
+    def fake_factory(settings, db):
+        seen.append(db)
+        return _FakeBrain(db)
+
+    reg = ContextRegistry(settings=_Settings(), brain_factory=fake_factory,
+                          owner_oid="OWNER-OID")
+    owner = reg.get("owner-oid")          # case-insensitief op de owner
+    other = reg.get("someone-else")
+    assert owner.brain.database == "span-brain"        # owner houdt z'n brein
+    assert other.brain.database == "brain-someone-else"
+    assert seen == ["span-brain", "brain-someone-else"]
+
+
 def test_shared_brain_singleton():
     def fake_factory(settings, db):
         return _FakeBrain(db)

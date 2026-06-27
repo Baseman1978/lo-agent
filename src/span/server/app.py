@@ -37,7 +37,7 @@ from span.orchestrator.agent import SpanAgent
 from span.server import auth, routes
 from span.server.state import (
     SESSION_COOKIE, STATIC_DIR, _auth_token, _check_token, _effective_settings,
-    _state, read_session,
+    _state, _ws_context, read_session,
 )
 
 
@@ -93,6 +93,21 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         print(f"[mcp] registry-init mislukt: {exc}", flush=True)
         _state["mcp"] = None
+    # WP-2 multi-user: alleen aan als expliciet ingeschakeld. Owner houdt zijn
+    # bestaande brein; andere gebruikers krijgen brain-<oid>. Uit => globale staat.
+    import os as _os
+    owner_oid = _os.environ.get("SPAN_OWNER_OID", "").strip()
+    multiuser = (_os.environ.get("SPAN_MULTIUSER", "").strip().lower()
+                 in ("1", "true", "yes")) or bool(owner_oid)
+    if multiuser:
+        from span.server.usercontext import ContextRegistry
+        _state["contexts"] = ContextRegistry(
+            settings, build_o365=lambda oid: _state.get("o365"),
+            owner_oid=owner_oid,
+        )
+        print(f"[multiuser] aan (owner={'ja' if owner_oid else 'nee'})", flush=True)
+    else:
+        _state["contexts"] = None
     if fireflies is not None:
         _state["fireflies"] = fireflies
     if not _auth_token():
@@ -110,6 +125,8 @@ async def lifespan(app: FastAPI):
         t.cancel()
     # wacht tot de taken echt gestopt zijn vóór de db-verbinding dichtgaat
     await asyncio.gather(*tasks, return_exceptions=True)
+    if _state.get("contexts") is not None:
+        _state["contexts"].close_all()
     brain.close()
     if work:
         work.close()
@@ -151,7 +168,6 @@ async def ws_chat(ws: WebSocket) -> None:
     client_host = ws.client.host if ws.client else None
 
     settings: Settings = _effective_settings()
-    brain: BrainDB = _state["brain"]
     llm: LLMClient = _state["llm"]
 
     try:
@@ -168,9 +184,14 @@ async def ws_chat(ws: WebSocket) -> None:
         await ws.close(code=4401)
         return
 
+    # per-user context (WP-2): eigen brein/connector als multi-user aan staat,
+    # anders de globale staat (owner houdt zijn bestaande brein)
+    ctx = _ws_context(ws)
+    brain: BrainDB = ctx.brain
+
     agent = SpanAgent(
         settings, brain, llm, _state["work"],
-        o365=_state.get("o365"), asana=_state.get("asana"),
+        o365=ctx.o365, asana=_state.get("asana"),
         inbox=_state["inbox"], autonomy=_state["autonomy"],
         disabled_tools=_state.get("disabled_tools"),
         fireflies=_state.get("fireflies"),

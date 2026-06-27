@@ -74,6 +74,43 @@ def _user_allowed(upn: str) -> bool:
     allow = _allowed_users()
     return (not allow) or (upn.strip().lower() in allow)
 
+
+# -- per-user context-resolver (WP-2) --------------------------------------
+# Zolang multi-user uit staat (geen "contexts" in _state) levert dit gewoon de
+# globale staat -> de live single-user-flow verandert niet.
+
+class _GlobalContext:
+    """Fallback: de bestaande globale staat als één gedeeld 'context'-object."""
+    @property
+    def brain(self) -> Any:
+        return _state["brain"]
+
+    @property
+    def o365(self) -> Any:
+        return _state.get("o365")
+
+    oid = ""
+    upn = ""
+
+
+def _resolve_context(user: dict[str, Any] | None) -> Any:
+    reg = _state.get("contexts")
+    if reg is not None and user and user.get("oid"):
+        return reg.get(user["oid"], user.get("upn", ""), user.get("name", ""))
+    return _GlobalContext()
+
+
+def _request_context(request: Request) -> Any:
+    return _resolve_context(_session_user(request))
+
+
+def _ws_context(ws: Any) -> Any:
+    try:
+        token = ws.cookies.get(SESSION_COOKIE, "")
+    except Exception:
+        token = ""
+    return _resolve_context(read_session(token))
+
 # door de lifespan gevuld; alle modules delen deze ene dict-referentie
 _state: dict[str, Any] = {}
 
