@@ -1,6 +1,6 @@
 """Per-user context-fundament: db-naam-afleiding + registry-caching."""
 
-from span.server.usercontext import ContextRegistry, user_db_name
+from span.server.usercontext import ContextRegistry, user_cache_path, user_db_name
 
 
 class _FakeBrain:
@@ -74,3 +74,22 @@ def test_shared_brain_singleton():
     s2 = reg.shared_brain()
     assert s1 is s2
     assert s1.database == "brain-shared"
+
+
+def test_user_cache_path_safe():
+    p = user_cache_path("ABC-123!@#/x")
+    assert p.name == "msal_cache.json"
+    assert ".span" in str(p)
+    assert all(c.isalnum() or c == "-" for c in p.parent.name)   # oid-map gesanitized
+
+
+def test_registry_invalidate_rebuilds():
+    def fake_factory(settings, db):
+        return _FakeBrain(db)
+
+    reg = ContextRegistry(settings=None, brain_factory=fake_factory)
+    a = reg.get("user-x")
+    reg.invalidate("user-x")
+    assert a.brain.closed is True       # oude context netjes gesloten
+    b = reg.get("user-x")
+    assert b is not a                   # opnieuw opgebouwd

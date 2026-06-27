@@ -100,10 +100,22 @@ async def lifespan(app: FastAPI):
     multiuser = (_os.environ.get("SPAN_MULTIUSER", "").strip().lower()
                  in ("1", "true", "yes")) or bool(owner_oid)
     if multiuser:
-        from span.server.usercontext import ContextRegistry
+        from span.server.usercontext import ContextRegistry, user_cache_path
+        from span.integrations.o365 import O365Client
+        _jc = settings.jarvis
+
+        def _build_user_o365(oid: str):
+            # met web-login: elke gebruiker een eigen token-cache (eigen mailbox);
+            # zonder secret valt het terug op de gedeelde client
+            if not _jc.web_login_enabled:
+                return _state.get("o365")
+            return O365Client(
+                client_id=_jc.ms_client_id, tenant_id=_jc.ms_tenant_id,
+                cache_path=user_cache_path(oid), client_secret=_jc.ms_client_secret,
+            )
+
         _state["contexts"] = ContextRegistry(
-            settings, build_o365=lambda oid: _state.get("o365"),
-            owner_oid=owner_oid,
+            settings, build_o365=_build_user_o365, owner_oid=owner_oid,
         )
         print(f"[multiuser] aan (owner={'ja' if owner_oid else 'nee'})", flush=True)
     else:

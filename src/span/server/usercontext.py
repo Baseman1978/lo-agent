@@ -33,6 +33,12 @@ def user_db_name(oid: str) -> str:
     return ("brain-" + slug)[:63] or "brain-unknown"
 
 
+def user_cache_path(oid: str) -> Path:
+    """Pad naar de MSAL-token-cache van één gebruiker (eigen mailbox-tokens)."""
+    safe = _DB_RE.sub("-", oid.strip().lower()).strip("-") or "unknown"
+    return Path.home() / ".span" / safe / "msal_cache.json"
+
+
 def user_settings(settings: Settings, db: str) -> Settings:
     """Kopie van de settings met een andere brein-database (frozen dataclass)."""
     return replace(settings, brain_db=db)
@@ -100,6 +106,14 @@ class ContextRegistry:
                 return existing
             self._ctx[oid] = ctx
             return ctx
+
+    def invalidate(self, oid: str) -> None:
+        """Gooi de gecachede context van een gebruiker weg (bv. na (her)login,
+        zodat de O365-client de verse token-cache opnieuw inleest)."""
+        with self._lock:
+            ctx = self._ctx.pop(oid, None)
+        if ctx is not None:
+            ctx.close()
 
     def shared_brain(self) -> BrainDB:
         """Het gedeelde brein (brain-shared) — lazy, eenmalig opgebouwd."""

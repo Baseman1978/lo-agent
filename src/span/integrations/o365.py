@@ -79,6 +79,11 @@ class O365Client:
         self._persist_cache()
         return result.get("id_token_claims", {}) or {}
 
+    def cache_dump(self) -> str:
+        """Serialiseer de huidige token-cache (voor het wegschrijven naar de
+        per-user cache na een browser-login)."""
+        return self._cache.serialize()
+
     def _persist_cache(self) -> None:
         if self._cache.has_state_changed:
             # refresh tokens met Mail.Send-rechten: alleen eigenaar mag lezen

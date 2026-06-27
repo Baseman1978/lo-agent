@@ -72,19 +72,55 @@ async def auth_callback(request: Request) -> Any:
                                  status_code=400)
     if time.time() - pending.get("ts", 0) > _PENDING_TTL:
         return PlainTextResponse("Login verlopen — start opnieuw.", status_code=400)
-    o365 = _state["o365"]
+    # redeem: identiteit (id_token-claims) + Graph-token. Bij multi-user landt de
+    # token in de eigen cache van de gebruiker (eigen mailbox); anders in de
+    # gedeelde client (single-user).
+    settings = _state["settings"]
+    reg = _state.get("contexts")
+    per_user = reg is not None and settings.jarvis.web_login_enabled
+    login_client = None
     try:
-        claims = await asyncio.to_thread(o365.redeem_auth_flow, pending["flow"], params)
+        if per_user:
+            import tempfile
+            from pathlib import Path
+            from span.integrations.o365 import O365Client
+            jc = settings.jarvis
+            tmp = Path(tempfile.mkstemp(prefix="span-login-", suffix=".json")[1])
+            login_client = O365Client(jc.ms_client_id, jc.ms_tenant_id, tmp,
+                                      client_secret=jc.ms_client_secret)
+            claims = await asyncio.to_thread(
+                login_client.redeem_auth_flow, pending["flow"], params)
+        else:
+            claims = await asyncio.to_thread(
+                _state["o365"].redeem_auth_flow, pending["flow"], params)
     except Exception as exc:
         return PlainTextResponse(f"Login mislukt: {exc}", status_code=400)
-    if not claims.get("oid") and not claims.get("sub"):
+    oid = claims.get("oid") or claims.get("sub") or ""
+    upn = (claims.get("preferred_username") or claims.get("email") or "")
+    if not oid:
         return PlainTextResponse("Geen geldige identiteit ontvangen.", status_code=400)
     from span.server.state import _user_allowed
-    upn = (claims.get("preferred_username") or claims.get("email") or "")
     if not _user_allowed(upn):
         return PlainTextResponse(
             f"Geen toegang voor {upn or 'dit account'}. Vraag toegang aan de beheerder.",
             status_code=403)
+    if per_user and login_client is not None:
+        # tokens naar de per-user cache; context verversen zodat de O365-client
+        # van deze gebruiker de verse tokens inleest
+        from pathlib import Path
+        from span.server.usercontext import user_cache_path
+        dest = user_cache_path(oid)
+        dest.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        dest.write_text(login_client.cache_dump(), encoding="utf-8")
+        try:
+            dest.chmod(0o600)
+        except OSError:
+            pass
+        try:
+            Path(login_client._cache_path).unlink()
+        except Exception:
+            pass
+        reg.invalidate(oid)
     resp = RedirectResponse("/", status_code=302)
     resp.set_cookie(
         SESSION_COOKIE, make_session(claims), max_age=SESSION_MAX_AGE,
