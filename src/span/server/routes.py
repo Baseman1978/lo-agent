@@ -80,6 +80,45 @@ async def memory(request: Request, q: str = Query(...), k: int = Query(8, le=25)
     return await asyncio.to_thread(fragments.search, q, k)
 
 
+@router.post("/api/share")
+async def share_memory(request: Request) -> dict[str, Any]:
+    """Deel een knoop (Insight/Skill/Protocol/Idea/Fragment) met het team
+    (kopie naar brain-shared). Iedereen op de allowlist mag delen (WP-3)."""
+    _require_rest_auth(request)
+    ctx = _request_context(request)
+    if getattr(ctx, "shared", None) is None:
+        raise HTTPException(status_code=400, detail="Gedeeld geheugen niet actief.")
+    body = await request.json()
+    node_id = (body.get("id") or "").strip()
+    if not node_id:
+        raise HTTPException(status_code=422, detail="Knoop-id vereist.")
+    from span.memory.sharing import share_node
+    try:
+        res = await asyncio.to_thread(
+            share_node, ctx.brain, ctx.shared, node_id, getattr(ctx, "upn", ""))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await asyncio.to_thread(_audit, "memory_share", f"{res['label']} {node_id}")
+    return {"shared": True, **res}
+
+
+@router.post("/api/unshare")
+async def unshare_memory(request: Request) -> dict[str, Any]:
+    """Trek een gedeelde knoop terug uit brain-shared."""
+    _require_rest_auth(request)
+    ctx = _request_context(request)
+    if getattr(ctx, "shared", None) is None:
+        raise HTTPException(status_code=400, detail="Gedeeld geheugen niet actief.")
+    body = await request.json()
+    node_id = (body.get("id") or "").strip()
+    if not node_id:
+        raise HTTPException(status_code=422, detail="Knoop-id vereist.")
+    from span.memory.sharing import unshare_node
+    res = await asyncio.to_thread(unshare_node, ctx.shared, node_id)
+    await asyncio.to_thread(_audit, "memory_unshare", node_id)
+    return res
+
+
 @router.get("/api/settings")
 async def get_settings(request: Request) -> dict[str, Any]:
     _require_rest_auth(request)

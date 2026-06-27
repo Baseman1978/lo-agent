@@ -1,6 +1,9 @@
-"""Gedeeld geheugen (WP-3): FragmentStore leest privé ∪ shared."""
+"""Gedeeld geheugen (WP-3): FragmentStore leest privé ∪ shared + delen."""
+
+import pytest
 
 from span.memory.fragments import FragmentStore
+from span.memory.sharing import share_node, unshare_node
 
 
 class _LLM:
@@ -42,3 +45,44 @@ def test_search_union_dedup_sort_tag():
     assert by["s1"]["shared"] is True          # uit het gedeelde brein -> getagd
     assert by["dup"]["shared"] is False        # privé eerst gezien
     assert by["s1"]["source"] == "shared"
+
+
+class _RunBrain:
+    def __init__(self, match_rows=None):
+        self.calls = []
+        self._match = match_rows
+
+    def run(self, query, **params):
+        self.calls.append((query, params))
+        if query.lstrip().startswith("MATCH (n {id:$id}) RETURN labels"):
+            return self._match or []
+        return []
+
+
+def test_share_node_copies_with_provenance():
+    priv = _RunBrain(match_rows=[{"labels": ["Insight"],
+                                  "props": {"id": "i1", "content": "c", "embedding": [0.1]}}])
+    shared = _RunBrain()
+    res = share_node(priv, shared, "i1", "bas@lomans.nl")
+    assert res["label"] == "Insight"
+    merge = [(q, p) for q, p in shared.calls if "MERGE" in q][0]
+    assert "MERGE (n:`Insight`" in merge[0]
+    assert merge[1]["props"]["shared_by"] == "bas@lomans.nl"
+    assert merge[1]["props"]["origin_id"] == "i1"
+
+
+def test_share_node_rejects_non_shareable():
+    priv = _RunBrain(match_rows=[{"labels": ["Session"], "props": {"id": "s1"}}])
+    with pytest.raises(ValueError):
+        share_node(priv, _RunBrain(), "s1")
+
+
+def test_share_node_not_found():
+    with pytest.raises(ValueError):
+        share_node(_RunBrain(match_rows=[]), _RunBrain(), "nope")
+
+
+def test_unshare_deletes():
+    shared = _RunBrain()
+    unshare_node(shared, "i1")
+    assert any("DETACH DELETE" in q for q, _ in shared.calls)
