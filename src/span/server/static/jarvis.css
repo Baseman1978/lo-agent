@@ -236,6 +236,11 @@ body.glitching main, body.glitching header {
 .holo-rel i { color: var(--cyan-dim); font-style: normal; font-size: 9px; letter-spacing: .06em; }
 .holo-hint { color: var(--dim); opacity: .6; font-size: 9.5px; margin-top: 8px; }
 .holo-x { position: absolute; top: 6px; right: 6px; padding: 0 6px; font-size: 11px; }
+.holo-share { margin-top: 9px; padding: 4px 9px; font-size: 9px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--cyan); background: transparent;
+  border: 1px solid var(--cyan-dim); border-radius: 3px; cursor: pointer; }
+.holo-share:hover:not(:disabled) { background: var(--cyan-dim); color: #001; }
+.holo-share:disabled { opacity: .7; cursor: default; }
 
 /* zoekbalk + suggesties */
 #holo-search-wrap { position: relative; margin-bottom: 5px; }
