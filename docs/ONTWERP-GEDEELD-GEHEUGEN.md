@@ -71,13 +71,32 @@ en **`ctx.shared`** (gedeeld, read; write alleen via de deel-actie).
 7. Tests: union-merge ontdubbelt + sorteert; `share_memory` kopieert + idempotent;
    privé-fragment lekt niet naar shared.
 
-## Open ontwerpkeuzes (voor jou)
-- **A. Trigger om te delen:** alleen een HUD-knop (mens beslist), óf mag Span
-  zelf voorstellen te delen (via de Agent Inbox, jij keurt goed)?
-- **B. Wat standaard mee uit shared in de bootstrap:** alleen team-Protocollen +
-  Skills (aanrader), of ook breder?
-- **C. Beheer:** mag iedereen in de allowlist delen/terugtrekken, of alleen de
-  owner/een beheerder?
+## Vastgelegde keuzes (2026-06-27)
+- **A. Trigger om te delen — beide wegen:**
+  1. **HUD-knop** "deel met team" op een kaart (mens initieert).
+  2. **Span stelt voor** — Span signaleert deelwaardige kennis en zet een
+     voorstel in de **Agent Inbox**; de gebruiker keurt goed (zelfde
+     approve/reject-flow als bestaande inbox-acties). Pas na goedkeuring wordt
+     `share_memory` uitgevoerd.
+- **B. Wat standaard uit shared in de bootstrap:** team-**Skills** + **project-info**
+  (en team-Protocollen). "Project-info" = gedeelde project-context: relevante
+  Documents (scope `werk`), project-`Entity`-knopen en de daaraan gekoppelde
+  Insights. **Uitbreidbaar/configureerbaar later** — welke categorieën standaard
+  meeladen wordt een instelling (bv. in de Config-knoop), zodat we de set kunnen
+  bijstellen zonder code te wijzigen.
+- **C. Beheer:** **iedereen op de allowlist** mag delen én terugtrekken
+  (`share_memory`/`unshare_memory`). Herkomst (`shared_by`) blijft altijd
+  zichtbaar; eventueel later fijnmaziger rollen.
+
+### Gevolg voor de bouw (extra t.o.v. hierboven)
+- Een **deel-categorie-config** (welke shared-categorieën in de bootstrap) —
+  default: Skills + Protocollen + project-info; opslaan in de `Config {id:'runtime'}`.
+- "Project-info" vergt een lichte afbakening in de graph: markeer project-gebonden
+  Documents/Entities (bv. een `project`-property of een `:Project`-anker) zodat de
+  deel-actie en de bootstrap-union weten wat "project-info" is. Te verfijnen bij
+  de bouw.
+- Span-voorstel-tot-delen: een kleine heuristiek/where-clause die kandidaat-knopen
+  (herhaalde Skills, project-Insights) als inbox-voorstel aandraagt.
 
 Zie ook `WERKPLAN-SSO-MULTIUSER.md` (WP-3) en de multi-user-fundamenten in
 `server/usercontext.py`.
