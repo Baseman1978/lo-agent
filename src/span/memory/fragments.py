@@ -44,10 +44,29 @@ _TYPE_WEIGHT = {
 
 
 class FragmentStore:
-    def __init__(self, brain: BrainDB, llm: LLMClient, decay_mode: str = "off"):
+    def __init__(self, brain: BrainDB, llm: LLMClient, decay_mode: str = "off",
+                 extra_brains: list[BrainDB] | None = None):
         self._brain = brain
+        # alleen-lezen extra breinen (bv. brain-shared): hits worden samengevoegd
+        # met de privé-hits, getagd als shared. Schrijven blijft naar self._brain.
+        self._extra = list(extra_brains or [])
         self._llm = llm
         self._decay_mode = decay_mode if decay_mode in {"off", "soft", "log"} else "off"
+
+    def _vsearch_all(self, index: str, embedding: list[float], k: int) -> list[tuple]:
+        """Vector search op het privé-brein + elk gedeeld brein.
+        Geeft (row, is_shared)-tuples terug."""
+        out: list[tuple] = []
+        try:
+            out += [(r, False) for r in self._brain.vector_search(index, embedding, k=k)]
+        except Exception:
+            pass
+        for sb in self._extra:
+            try:
+                out += [(r, True) for r in sb.vector_search(index, embedding, k=k)]
+            except Exception:
+                pass  # gedeeld brein (nog) niet beschikbaar -> negeren
+        return out
 
     def embed(self, text: str) -> list[float]:
         """Eén embedding voor hergebruik over meerdere zoekopdrachten."""
@@ -174,58 +193,58 @@ class FragmentStore:
         'log' print bovendien welke fragmenten t.o.v. pure cosine verschuiven."""
         embedding = embedding or self._llm.embed_one(query)
 
-        def _entry(node: dict[str, Any], score: float) -> dict[str, Any]:
+        def _entry(node: dict[str, Any], score: float, shared: bool = False) -> dict[str, Any]:
             return {
                 "id": node.get("id"), "type": node.get("type"),
                 "content": node.get("content"), "context": node.get("context", ""),
                 "created": str(node.get("created", "")),
                 "event_date": node.get("event_date") or "",
-                "source": node.get("source") or "span",
+                "source": "shared" if shared else (node.get("source") or "span"),
+                "shared": shared,
                 "trust": node.get("trust") or "trusted",
                 "score": round(score, 4),
             }
 
-        if self._decay_mode == "off":
-            rows = self._brain.vector_search("mf_embedding", embedding, k=k + 4)
-            results = []
-            for row in rows:
-                node = row["node"]
-                if node.get("superseded"):
-                    continue  # consolidatie heeft dit fragment afgeschreven
-                if len(results) >= k:
-                    break
-                results.append(_entry(node, row["score"]))
-        else:
-            # ruimere pool zodat herordenen daadwerkelijk iets kan verschuiven
-            pool = max(k * 3, k + 10)
-            rows = self._brain.vector_search("mf_embedding", embedding, k=pool)
-            cands = [r for r in rows if not r["node"].get("superseded")]
-            ranked = sorted(
-                cands,
-                key=lambda r: r["score"] * self._decay_factor(r["node"]),
-                reverse=True,
-            )
-            if self._decay_mode == "log":
-                cosine_order = [r["node"].get("id") for r in cands[:k]]
-                decay_order = [r["node"].get("id") for r in ranked[:k]]
-                if cosine_order != decay_order:
-                    print(f"[decay] top-{k} verschoven\n  cosine: {cosine_order}"
-                          f"\n  decay : {decay_order}", flush=True)
-            results = [_entry(r["node"], r["score"]) for r in ranked[:k]]
+        # kandidaten uit privé + gedeelde breinen, ontdubbeld op id
+        pool = (k + 4) if self._decay_mode == "off" else max(k * 3, k + 10)
+        seen: set[Any] = set()
+        cands: list[tuple] = []  # (row, is_shared)
+        for row, is_shared in self._vsearch_all("mf_embedding", embedding, k=pool):
+            node = row["node"]
+            nid = node.get("id")
+            if node.get("superseded"):
+                continue  # consolidatie heeft dit fragment afgeschreven
+            if nid in seen:
+                continue
+            seen.add(nid)
+            cands.append((row, is_shared))
 
-        # decay-administratie: alleen schrijven als verval aanstaat (M20). Bij
-        # decay_mode='off' telt last_accessed/access_count toch niet mee, dus
-        # de extra write per zoekopdracht is pure belasting.
+        if self._decay_mode == "off":
+            cands.sort(key=lambda t: t[0]["score"], reverse=True)
+            results = [_entry(t[0]["node"], t[0]["score"], t[1]) for t in cands[:k]]
+        else:
+            cands.sort(key=lambda t: t[0]["score"] * self._decay_factor(t[0]["node"]),
+                       reverse=True)
+            if self._decay_mode == "log":
+                cosine = sorted(cands, key=lambda t: t[0]["score"], reverse=True)
+                if ([t[0]["node"].get("id") for t in cosine[:k]]
+                        != [t[0]["node"].get("id") for t in cands[:k]]):
+                    print(f"[decay] top-{k} verschoven", flush=True)
+            results = [_entry(t[0]["node"], t[0]["score"], t[1]) for t in cands[:k]]
+
+        # decay-administratie alleen op privé-fragmenten (gedeeld brein is read-only)
         if results and self._decay_mode != "off":
-            try:
-                self._brain.run(
-                    "UNWIND $ids AS mf_id MATCH (mf:MemoryFragment {id: mf_id}) "
-                    "SET mf.last_accessed = datetime(), "
-                    "    mf.access_count = coalesce(mf.access_count, 0) + 1",
-                    ids=[r["id"] for r in results],
-                )
-            except Exception as exc:
-                print(f"[decay] administratie-write mislukt: {exc}", flush=True)
+            priv_ids = [r["id"] for r in results if not r.get("shared")]
+            if priv_ids:
+                try:
+                    self._brain.run(
+                        "UNWIND $ids AS mf_id MATCH (mf:MemoryFragment {id: mf_id}) "
+                        "SET mf.last_accessed = datetime(), "
+                        "    mf.access_count = coalesce(mf.access_count, 0) + 1",
+                        ids=priv_ids,
+                    )
+                except Exception as exc:
+                    print(f"[decay] administratie-write mislukt: {exc}", flush=True)
         return results
 
     FORMAL_INDEXES = [
@@ -241,19 +260,21 @@ class FragmentStore:
         simpelweg niet gevonden; nieuwe wel."""
         embedding = embedding or self._llm.embed_one(query)
         results: list[dict[str, Any]] = []
+        seen: set[Any] = set()
         for index_name, label in self.FORMAL_INDEXES:
-            try:
-                rows = self._brain.vector_search(index_name, embedding, k=k)
-            except Exception:
-                continue  # index bestaat (nog) niet — geen reden om te breken
-            for row in rows:
+            for row, is_shared in self._vsearch_all(index_name, embedding, k=k):
                 node = row["node"]
+                nid = node.get("id")
+                if nid in seen:
+                    continue  # privé ∪ gedeeld: ontdubbelen op id
+                seen.add(nid)
                 entry = {
-                    "id": node.get("id"),
+                    "id": nid,
                     "label": label,
                     "content": node.get("content"),
                     "created": str(node.get("created", "")),
                     "score": round(row["score"], 4),
+                    "shared": is_shared,
                 }
                 if node.get("lesson"):
                     entry["lesson"] = node["lesson"]
