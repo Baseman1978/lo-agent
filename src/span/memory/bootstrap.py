@@ -56,6 +56,7 @@ def load_bootstrap(
     brain: BrainDB,
     fragments: FragmentStore,
     first_message: str | None = None,
+    shared: BrainDB | None = None,
 ) -> BootstrapContext:
     identity_rows = brain.run(
         """
@@ -74,6 +75,16 @@ def load_bootstrap(
         ORDER BY p.name
         """
     )
+    # gedeelde team-protocollen erbij (ontdubbeld op naam, privé wint)
+    if shared is not None:
+        try:
+            shp = shared.run(
+                "MATCH (p:Protocol) RETURN p.name AS name, p.body AS body, "
+                "p.version AS version, true AS shared ORDER BY p.name")
+            have = {p["name"] for p in protocols}
+            protocols = protocols + [p for p in shp if p["name"] not in have]
+        except Exception:
+            pass
 
     quests = brain.run(
         """
@@ -98,6 +109,17 @@ def load_bootstrap(
         ORDER BY sk.usage_count DESC LIMIT 10
         """
     )
+    # gedeelde team-skills erbij (ontdubbeld op naam, privé wint)
+    if shared is not None:
+        try:
+            shs = shared.run(
+                "MATCH (sk:Skill) RETURN sk.name AS name, sk.description AS description, "
+                "sk.trigger AS trigger, coalesce(sk.usage_count, 0) AS usage_count, "
+                "true AS shared ORDER BY sk.usage_count DESC LIMIT 10")
+            have = {s["name"] for s in skills}
+            skills = skills + [s for s in shs if s["name"] not in have]
+        except Exception:
+            pass
 
     # formele kennis uit de evaluatiecirkel — de leeskant van het leren
     insights = brain.run(
