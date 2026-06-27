@@ -34,9 +34,10 @@ from span.llm.client import LLMClient
 from span.memory.bootstrap import start_session
 from span.memory.fragments import FragmentStore
 from span.orchestrator.agent import SpanAgent
-from span.server import routes
+from span.server import auth, routes
 from span.server.state import (
-    STATIC_DIR, _auth_token, _check_token, _effective_settings, _state,
+    SESSION_COOKIE, STATIC_DIR, _auth_token, _check_token, _effective_settings,
+    _state, read_session,
 )
 
 
@@ -139,6 +140,7 @@ async def _security_headers(request, call_next):
     return resp
 
 
+app.include_router(auth.router)
 app.include_router(routes.router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -158,8 +160,11 @@ async def ws_chat(ws: WebSocket) -> None:
         await ws.close(code=1002)
         return
     ws_forwarded = bool(ws.headers.get("x-forwarded-for") or ws.headers.get("x-real-ip"))
-    if not _check_token(str(hello.get("token", "")), client_host, forwarded=ws_forwarded):
-        await ws.send_json({"type": "error", "error": "auth", "message": "Token ongeldig."})
+    # auth: Microsoft-sessie (cookie) óf de bearer-token in het hello-bericht
+    session_ok = read_session(ws.cookies.get(SESSION_COOKIE, "")) is not None
+    if not session_ok and not _check_token(
+            str(hello.get("token", "")), client_host, forwarded=ws_forwarded):
+        await ws.send_json({"type": "error", "error": "auth", "message": "Niet ingelogd."})
         await ws.close(code=4401)
         return
 

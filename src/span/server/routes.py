@@ -39,7 +39,14 @@ router = APIRouter()
 
 
 @router.get("/")
-async def index() -> FileResponse:
+async def index(request: Request) -> Any:
+    # Web-login aan en nog geen Microsoft-sessie? -> meteen naar de login.
+    from span.server.state import _session_user
+    settings = _state.get("settings")
+    if (settings is not None and settings.jarvis.web_login_enabled
+            and _session_user(request) is None):
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse("/auth/login", status_code=302)
     return FileResponse(STATIC_DIR / "index.html")
 
 

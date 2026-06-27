@@ -35,6 +35,9 @@ class JarvisConfig:
 
     ms_client_id: str = MS_PUBLIC_CLIENT_ID
     ms_tenant_id: str = "common"
+    # Client-secret: aanwezig => confidential web-app (OIDC auth-code login in de
+    # browser). Leeg => public client (device-code flow, zoals voorheen).
+    ms_client_secret: str = ""
     asana_token: str = ""
     asana_workspace: str = ""
     fireflies_api_key: str = ""
@@ -43,6 +46,12 @@ class JarvisConfig:
     @property
     def o365_enabled(self) -> bool:
         return bool(self.ms_client_id)
+
+    @property
+    def web_login_enabled(self) -> bool:
+        """True wanneer een client-secret is gezet: dan doet Span de Microsoft
+        OIDC auth-code login in de browser i.p.v. de device-code flow."""
+        return bool(self.ms_client_secret)
 
     @property
     def asana_enabled(self) -> bool:
@@ -132,6 +141,7 @@ def load_settings(env_file: Path | None = None) -> Settings:
         jarvis=JarvisConfig(
             ms_client_id=os.environ.get("MS_CLIENT_ID", "").strip() or MS_PUBLIC_CLIENT_ID,
             ms_tenant_id=os.environ.get("MS_TENANT_ID", "common").strip() or "common",
+            ms_client_secret=os.environ.get("MS_CLIENT_SECRET", "").strip(),
             asana_token=os.environ.get("ASANA_TOKEN", "").strip(),
             asana_workspace=os.environ.get("ASANA_WORKSPACE", "").strip(),
             fireflies_api_key=os.environ.get("FIREFLIES_API_KEY", "").strip(),

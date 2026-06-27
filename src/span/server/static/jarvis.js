@@ -23,6 +23,7 @@ function token() {
   }
   let t = localStorage.getItem("span_token");
   if (t === null) {
+    if (SPAN.sso) return "";  // SSO-modus: de httpOnly sessie-cookie regelt de auth
     t = prompt("Toegangstoken (leeg laten op localhost):") || "";
     // M26: een lege token alleen accepteren op localhost; elders niet opslaan
     // zodat de prompt terugkomt i.p.v. een kapotte sessie stil te bewaren
@@ -238,7 +239,10 @@ function handle(msg) {
     SPAN.sys(msg.message || "Fout", "warn");
     SPAN.busy = false; SPAN.setState("idle");
     { const st = $("stop"); if (st) st.classList.add("hidden"); }
-    if (msg.error === "auth") localStorage.removeItem("span_token");
+    if (msg.error === "auth") {
+      if (SPAN.sso) { location.href = "/auth/login"; return; }  // sessie weg -> opnieuw inloggen
+      localStorage.removeItem("span_token");
+    }
   }
 }
 
@@ -524,4 +528,10 @@ $("end").onclick = () => {
 
 /* -- start ----------------------------------------------------------------- */
 boot();
-connect();
+// SSO-modus detecteren vóór we verbinden: bij web-login zonder sessie meteen
+// naar de Microsoft-login; anders gewoon verbinden (token- of SSO-cookie).
+fetch("/auth/status").then((r) => r.json()).then((s) => {
+  SPAN.sso = !!s.web_login;
+  if (s.web_login && !s.authenticated) { location.href = "/auth/login"; return; }
+  connect();
+}).catch(() => connect());

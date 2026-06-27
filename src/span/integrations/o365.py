@@ -37,17 +37,47 @@ class NotAuthenticated(RuntimeError):
 
 
 class O365Client:
-    def __init__(self, client_id: str, tenant_id: str, cache_path: Path):
+    def __init__(self, client_id: str, tenant_id: str, cache_path: Path,
+                 client_secret: str = ""):
         self._cache_path = cache_path
         self._cache = msal.SerializableTokenCache()
         if cache_path.exists():
             self._cache.deserialize(cache_path.read_text(encoding="utf-8"))
         atexit.register(self._persist_cache)
-        self._app = msal.PublicClientApplication(
-            client_id,
-            authority=f"https://login.microsoftonline.com/{tenant_id}",
-            token_cache=self._cache,
-        )
+        authority = f"https://login.microsoftonline.com/{tenant_id}"
+        # Met een secret: confidential web-app (browser OIDC auth-code login).
+        # Zonder secret: public client (device-code flow). De refresh-tokens van
+        # een confidential client kunnen alleen door een confidential client
+        # vernieuwd worden, dus login én connector delen dezelfde app + cache.
+        if client_secret:
+            self._app: msal.ClientApplication = msal.ConfidentialClientApplication(
+                client_id, authority=authority,
+                client_credential=client_secret, token_cache=self._cache,
+            )
+        else:
+            self._app = msal.PublicClientApplication(
+                client_id, authority=authority, token_cache=self._cache,
+            )
+
+    # -- browser-login (OIDC auth-code + PKCE, via msal) ------------------
+
+    def build_auth_flow(self, redirect_uri: str) -> dict[str, Any]:
+        """Start de browser-login: msal genereert state, nonce en PKCE-verifier.
+        Bewaar de teruggegeven flow tot de callback; stuur de gebruiker naar
+        flow['auth_uri']."""
+        return self._app.initiate_auth_code_flow(
+            scopes=SCOPES, redirect_uri=redirect_uri)
+
+    def redeem_auth_flow(self, flow: dict[str, Any],
+                         auth_response: dict[str, Any]) -> dict[str, Any]:
+        """Rond de callback af: wissel de code in voor tokens (vult de cache die
+        de connectors gebruiken) en geef de id_token-claims terug (identiteit)."""
+        result = self._app.acquire_token_by_auth_code_flow(flow, auth_response)
+        if "access_token" not in result:
+            raise RuntimeError(result.get(
+                "error_description", result.get("error", "Login mislukt.")))
+        self._persist_cache()
+        return result.get("id_token_claims", {}) or {}
 
     def _persist_cache(self) -> None:
         if self._cache.has_state_changed:

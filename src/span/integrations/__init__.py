@@ -27,6 +27,7 @@ def build_integrations(settings: Settings):
             client_id=settings.jarvis.ms_client_id,
             tenant_id=settings.jarvis.ms_tenant_id,
             cache_path=Path.home() / ".span" / "msal_cache.json",
+            client_secret=settings.jarvis.ms_client_secret,
         )
     asana = None
     if settings.jarvis.asana_enabled:
