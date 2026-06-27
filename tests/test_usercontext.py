@@ -42,7 +42,9 @@ def test_registry_caches_per_oid():
     assert a1.o365 == "o365:user-a"
     assert a1.brain.database == "brain-user-a"
     assert b1.brain.database == "brain-user-b"
-    assert calls == ["brain-user-a", "brain-user-b"]   # factory 1x per oid
+    assert a1.shared.database == "brain-shared"        # gedeeld brein gekoppeld
+    # factory 1x per oid + 1x voor het gedeelde brein (gecached)
+    assert calls == ["brain-user-a", "brain-shared", "brain-user-b"]
 
 
 class _Settings:
@@ -62,7 +64,7 @@ def test_owner_keeps_existing_brain():
     other = reg.get("someone-else")
     assert owner.brain.database == "span-brain"        # owner houdt z'n brein
     assert other.brain.database == "brain-someone-else"
-    assert seen == ["span-brain", "brain-someone-else"]
+    assert seen == ["span-brain", "brain-shared", "brain-someone-else"]
 
 
 def test_shared_brain_singleton():

@@ -114,6 +114,7 @@ class SpanAgent:
         user_location: dict[str, float] | None = None,
         fireflies: Any = None,
         mcp: Any = None,
+        shared_brain: BrainDB | None = None,
     ):
         self._mcp = mcp
         self._settings = settings
@@ -137,7 +138,9 @@ class SpanAgent:
             self._security = dict(DEFAULTS)
         # decay-modus uit de instellingen wint van de .env-default
         decay = self._security.get("decay_mode") or settings.decay_mode
-        self._fragments = FragmentStore(brain, llm, decay_mode=decay)
+        self._fragments = FragmentStore(
+            brain, llm, decay_mode=decay,
+            extra_brains=[shared_brain] if shared_brain else None)
         self._session_id: str | None = None
         self._toolbox: ToolBox | None = None
         self._messages: list[dict[str, Any]] = []

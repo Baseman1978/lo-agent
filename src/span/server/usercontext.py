@@ -61,6 +61,7 @@ class UserContext:
     name: str
     brain: BrainDB               # privé-brein van deze gebruiker
     o365: Any = None             # per-user O365-client (eigen token-cache)
+    shared: Any = None           # gedeeld brein (read), of None in single-user
 
     def close(self) -> None:
         try:
@@ -98,7 +99,12 @@ class ContextRegistry:
         # buiten de lock bouwen (db-init kan traag zijn); daarna onder lock zetten
         brain = self._brain_factory(self._settings, self._db_for(oid))
         o365 = self._build_o365(oid) if self._build_o365 else None
-        ctx = UserContext(oid=oid, upn=upn, name=name, brain=brain, o365=o365)
+        try:
+            shared = self.shared_brain()
+        except Exception:
+            shared = None
+        ctx = UserContext(oid=oid, upn=upn, name=name, brain=brain, o365=o365,
+                          shared=shared)
         with self._lock:
             existing = self._ctx.get(oid)
             if existing is not None:      # race: een ander bouwde 'm net

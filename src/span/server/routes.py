@@ -73,8 +73,10 @@ async def status(request: Request) -> dict[str, Any]:
 @router.get("/api/memory")
 async def memory(request: Request, q: str = Query(...), k: int = Query(8, le=25)) -> list[dict]:
     _require_rest_auth(request)
-    fragments = FragmentStore(_request_context(request).brain, _state["llm"],
-                              decay_mode=_state["settings"].decay_mode)
+    ctx = _request_context(request)
+    fragments = FragmentStore(ctx.brain, _state["llm"],
+                              decay_mode=_state["settings"].decay_mode,
+                              extra_brains=[ctx.shared] if ctx.shared else None)
     return await asyncio.to_thread(fragments.search, q, k)
 
 

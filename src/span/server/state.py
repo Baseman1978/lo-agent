@@ -89,6 +89,7 @@ class _GlobalContext:
     def o365(self) -> Any:
         return _state.get("o365")
 
+    shared = None   # geen gedeeld brein in single-user
     oid = ""
     upn = ""
 

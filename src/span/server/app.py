@@ -208,6 +208,7 @@ async def ws_chat(ws: WebSocket) -> None:
         disabled_tools=_state.get("disabled_tools"),
         fireflies=_state.get("fireflies"),
         mcp=_state.get("mcp"),
+        shared_brain=ctx.shared,
     )
     session_id: str | None = None
     loop = asyncio.get_running_loop()
