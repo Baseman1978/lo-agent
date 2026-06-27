@@ -31,8 +31,8 @@ from span.jarvis.daily import briefing_time, generate_daily, set_briefing_time
 from span.llm.client import LLMClient
 from span.memory.fragments import FragmentStore
 from span.server.state import (
-    GRAPH_LABELS, STATIC_DIR, _audit, _effective_settings, _require_rest_auth,
-    _state, _tools_overview,
+    GRAPH_LABELS, STATIC_DIR, _audit, _effective_settings, _request_context,
+    _require_rest_auth, _state, _tools_overview,
 )
 
 router = APIRouter()
@@ -53,7 +53,7 @@ async def index(request: Request) -> Any:
 @router.get("/api/status")
 async def status(request: Request) -> dict[str, Any]:
     _require_rest_auth(request)
-    brain: BrainDB = _state["brain"]
+    brain: BrainDB = _request_context(request).brain
 
     def _counts() -> dict[str, int]:
         rows = brain.run(
@@ -73,7 +73,7 @@ async def status(request: Request) -> dict[str, Any]:
 @router.get("/api/memory")
 async def memory(request: Request, q: str = Query(...), k: int = Query(8, le=25)) -> list[dict]:
     _require_rest_auth(request)
-    fragments = FragmentStore(_state["brain"], _state["llm"],
+    fragments = FragmentStore(_request_context(request).brain, _state["llm"],
                               decay_mode=_state["settings"].decay_mode)
     return await asyncio.to_thread(fragments.search, q, k)
 
@@ -83,7 +83,7 @@ async def get_settings(request: Request) -> dict[str, Any]:
     _require_rest_auth(request)
     base: Settings = _state["settings"]
     eff = _effective_settings()
-    o365 = _state.get("o365")
+    o365 = _request_context(request).o365
     return {
         "model_main": eff.model_main,
         "model_light": eff.model_light,
@@ -230,7 +230,7 @@ async def graph(request: Request, limit: int = Query(250, le=600),
     since = aantal dagen terug (0 = alles). Formele/kern-labels blijven altijd
     zichtbaar zodat het venster het skelet van het brein niet wegfiltert."""
     _require_rest_auth(request)
-    brain: BrainDB = _state["brain"]
+    brain: BrainDB = _request_context(request).brain
     # labels die altijd zichtbaar blijven, ook buiten het tijdvenster
     always = ["Identity", "Quest", "QuestStep", "Protocol", "Skill", "Insight"]
 
@@ -368,7 +368,7 @@ async def provenance(request: Request, key: str) -> dict[str, Any]:
     """F3.5 — 'waarom weet je dit?': de bron-keten van een formele node of
     fragment (DISTILLED_FROM/FROM_SESSION/MENTIONS), voor de HUD."""
     _require_rest_auth(request)
-    brain: BrainDB = _state["brain"]
+    brain: BrainDB = _request_context(request).brain
 
     def fetch() -> dict[str, Any]:
         node = brain.run(
@@ -396,7 +396,7 @@ async def provenance(request: Request, key: str) -> dict[str, Any]:
 async def backup(request: Request) -> Any:
     """Brein-export als JSON-download (zonder embeddings)."""
     _require_rest_auth(request)
-    brain: BrainDB = _state["brain"]
+    brain: BrainDB = _request_context(request).brain
 
     def dump() -> dict[str, Any]:
         raw_nodes = brain.run(
@@ -495,12 +495,13 @@ async def fireflies_sync(request: Request, deep: bool = Query(False)) -> dict[st
 @router.get("/api/health")
 async def health(request: Request) -> dict[str, Any]:
     _require_rest_auth(request)
+    ctx = _request_context(request)
     brain_ok = True
     try:
-        await asyncio.to_thread(_state["brain"].run, "RETURN 1 AS ok")
+        await asyncio.to_thread(ctx.brain.run, "RETURN 1 AS ok")
     except Exception:
         brain_ok = False
-    o365 = _state.get("o365")
+    o365 = ctx.o365
     return {
         "brain": brain_ok,
         "o365": bool(o365) and await asyncio.to_thread(o365.is_authenticated),
@@ -514,12 +515,13 @@ async def jarvis_daily(request: Request, force: bool = Query(False)) -> dict[str
     """De dagstart van vandaag; genereert hem alsnog als de scheduler nog
     niet geweest is (of bij force=true)."""
     _require_rest_auth(request)
+    ctx = _request_context(request)
     from span.jarvis.daily import today_local
     cached = _state.get("daily")
     if force or not cached or cached.get("date") != today_local():
         _state["daily"] = await asyncio.to_thread(
-            generate_daily, _state["brain"], _state["llm"],
-            _state.get("o365"), _state.get("asana"),
+            generate_daily, ctx.brain, _state["llm"],
+            ctx.o365, _state.get("asana"),
             _effective_settings().model_light,
         )
         _state["daily"]["date"] = today_local()
@@ -550,11 +552,12 @@ async def netinfo(request: Request) -> dict[str, Any]:
 async def jarvis_briefing(request: Request) -> dict[str, Any]:
     """Briefing + paneel-data voor de HUD: agenda, mail, taken, quests."""
     _require_rest_auth(request)
+    ctx = _request_context(request)
     mcp = _state.get("mcp")
     data = await asyncio.to_thread(
-        build_briefing, _state["brain"], _state.get("o365"), _state.get("asana"), "Bas", mcp
+        build_briefing, ctx.brain, ctx.o365, _state.get("asana"), "Bas", mcp
     )
-    o365 = _state.get("o365")
+    o365 = ctx.o365
     o365_auth = bool(o365) and await asyncio.to_thread(o365.is_authenticated) if o365 else False
     # M365 telt als "verbonden" als de directe O365 ingelogd is OF een MCP-server
     # de m365-tools levert (dan vullen de panelen via MCP)
