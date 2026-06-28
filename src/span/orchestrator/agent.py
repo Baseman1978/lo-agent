@@ -114,6 +114,7 @@ class SpanAgent:
         user_location: dict[str, float] | None = None,
         fireflies: Any = None,
         mcp: Any = None,
+        shared_brain: BrainDB | None = None,
     ):
         self._mcp = mcp
         self._settings = settings
@@ -137,7 +138,10 @@ class SpanAgent:
             self._security = dict(DEFAULTS)
         # decay-modus uit de instellingen wint van de .env-default
         decay = self._security.get("decay_mode") or settings.decay_mode
-        self._fragments = FragmentStore(brain, llm, decay_mode=decay)
+        self._shared = shared_brain
+        self._fragments = FragmentStore(
+            brain, llm, decay_mode=decay,
+            extra_brains=[shared_brain] if shared_brain else None)
         self._session_id: str | None = None
         self._toolbox: ToolBox | None = None
         self._messages: list[dict[str, Any]] = []
@@ -173,8 +177,10 @@ class SpanAgent:
             fireflies=self._fireflies,
             security=self._security,
             mcp=self._mcp,
+            shared=self._shared,
         )
-        self._bootstrap = load_bootstrap(self._brain, self._fragments, first_message)
+        self._bootstrap = load_bootstrap(self._brain, self._fragments, first_message,
+                                         shared=self._shared)
         ident = self._bootstrap.identity
         template = BASE_PROMPT
         try:  # door Bas aangepaste systeemprompt (instellingen) gaat vóór

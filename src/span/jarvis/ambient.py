@@ -118,10 +118,17 @@ Antwoord met uitsluitend de concepttekst."""
 
 def execute_approval(item: dict[str, Any], o365: Any, llm: Any = None,
                      light_model: str | None = None, asana: Any = None,
-                     mcp: Any = None, brain: Any = None) -> dict[str, Any]:
+                     mcp: Any = None, brain: Any = None,
+                     shared: Any = None, shared_by: str = "") -> dict[str, Any]:
     """Voer een goedgekeurd Agent Inbox-item uit. Gedeeld door de HUD-API
     en de inbox_approve-tool (stembediening)."""
     payload = item["payload"]
+    if item["action"] == "share_memory":
+        # door Span voorgesteld delen (WP-3): kopieer privé-knoop naar brain-shared
+        if brain is None or shared is None:
+            return {"error": "Delen vereist multi-user (gedeeld brein)."}
+        from span.memory.sharing import share_node
+        return share_node(brain, shared, payload["node_id"], shared_by)
     if item["action"] == "mcp_call":
         if mcp is None:
             return {"error": "Geen MCP-registry beschikbaar."}

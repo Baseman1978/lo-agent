@@ -190,14 +190,30 @@
       if (p.sources && p.sources.length) src.push("gedestilleerd uit " + p.sources.length + " fragment(en)");
       if (p.entities && p.entities.length) src.push("noemt: " + esc(p.entities.join(", ")));
     }
+    const SHAREABLE = ["Insight", "Mistake", "Idea", "Skill", "Protocol", "MemoryFragment"];
+    const canShare = SHAREABLE.includes(n.type);
     card.innerHTML =
       `<button class="iconbtn holo-x" title="Sluiten" aria-label="Sluiten">✕</button>` +
       `<h3>${esc(n.type)}</h3>` +
       `<div class="holo-title">${esc(n.label || "")}</div>` +
       (src.length ? `<h4>herkomst</h4>` + src.map((s) => `<div class="holo-src">${s}</div>`).join("") : "") +
       (rels.length ? `<h4>relaties</h4>` + rels.join("") : "") +
+      (canShare ? `<button class="holo-share" title="Kopieer naar het gedeelde team-geheugen">⇪ deel met team</button>` : "") +
       `<div class="holo-hint">klik de node opnieuw om los te maken</div>`;
     card.querySelector(".holo-x").onclick = () => { closeInfo(); };
+    const sb = card.querySelector(".holo-share");
+    if (sb) sb.onclick = () => {
+      sb.disabled = true; sb.textContent = "delen…";
+      fetch("/api/share", {
+        method: "POST",
+        headers: Object.assign({ "Content-Type": "application/json" },
+                               SPAN.authHeaders ? SPAN.authHeaders() : {}),
+        body: JSON.stringify({ id: n.key }),
+      })
+        .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+        .then(({ ok, d }) => { sb.textContent = ok ? "✓ gedeeld met team" : ("✗ " + (d.detail || "mislukt")); })
+        .catch(() => { sb.textContent = "✗ fout"; sb.disabled = false; });
+    };
     card.classList.add("open");
   }
 

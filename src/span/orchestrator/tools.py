@@ -44,9 +44,11 @@ class ToolBox:
         fireflies: Any = None,
         security: dict[str, Any] | None = None,
         mcp: Any = None,
+        shared: BrainDB | None = None,
     ):
         self._security = security or {}
         self._mcp = mcp                # MCPRegistry of None
+        self._shared = shared          # brain-shared (multi-user) of None
         self._brain = brain
         self._fragments = fragments
         self._session_id = session_id
@@ -69,6 +71,8 @@ class ToolBox:
             hidden.add("work_cypher")
         if self._inbox is None:
             hidden |= {"inbox_open", "inbox_approve", "inbox_reject"}
+        if self._shared is None or self._inbox is None:
+            hidden.add("propose_share")  # delen kan alleen in multi-user mét inbox
         if self._fireflies is None:
             hidden |= {"fireflies_meetings", "fireflies_sync"}
         if self._o365 is None:
@@ -401,6 +405,35 @@ class ToolBox:
         )
         return {"proposed": item_id,
                 "status": "Voorstel staat in de Agent Inbox; Bas beslist + logt in."}
+
+    def _tool_propose_share(self, node_id: str, reason: str = "") -> Any:
+        """Stel voor om een kennisknoop met het team te delen. Voegt NIETS direct
+        toe — het komt als voorstel in de Agent Inbox (origin=agent), Bas keurt
+        goed. Pas dan wordt de knoop naar brain-shared gekopieerd."""
+        if self._inbox is None or self._shared is None:
+            return {"error": "Delen kan alleen in multi-user met een gedeeld brein."}
+        from span.memory.sharing import SHAREABLE
+        rows = self._brain.run(
+            "MATCH (n {id:$id}) RETURN labels(n) AS labels, "
+            "coalesce(n.content, n.name, n.title, '') AS preview LIMIT 1",
+            id=node_id,
+        )
+        if not rows:
+            return {"error": "Knoop niet gevonden in je eigen brein."}
+        labels = rows[0]["labels"] or []
+        label = next((l for l in labels if l in SHAREABLE), None)
+        if label is None:
+            return {"error": f"Dit type is niet deelbaar ({', '.join(labels) or 'onbekend'})."}
+        preview = (rows[0]["preview"] or "")[:160]
+        item_id = self._inbox.add(
+            kind="action", action="share_memory",
+            title=f"Delen met team voorstellen: {label}",
+            detail=(f"{preview}" + (f" — reden: {reason}" if reason else ""))[:240],
+            payload={"node_id": node_id, "label": label, "preview": preview},
+            origin="agent",  # Bas keurt goed in de HUD/CLI; Span mag dit niet zelf
+        )
+        return {"proposed": item_id, "label": label,
+                "status": "Deel-voorstel staat in de Agent Inbox; Bas beslist."}
 
     def _tool_plan_goal(self, goal: str) -> Any:
         from span.orchestrator.planner import make_plan, store_plan
