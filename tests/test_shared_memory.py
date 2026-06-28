@@ -86,3 +86,73 @@ def test_unshare_deletes():
     shared = _RunBrain()
     unshare_node(shared, "i1")
     assert any("DETACH DELETE" in q for q, _ in shared.calls)
+
+
+# --- WP-3 polish: Span stelt delen voor via de Agent Inbox ---
+
+from span.jarvis.ambient import AgentInbox, execute_approval
+from span.orchestrator.tools import ToolBox
+
+
+class _ShareBrain:
+    """Beantwoordt de labels/preview-query van propose_share."""
+
+    def __init__(self, labels, preview="hallo team"):
+        self._labels = labels
+        self._preview = preview
+
+    def run(self, query, **params):
+        if "RETURN labels(n)" in query:
+            return [{"labels": self._labels, "preview": self._preview}]
+        return []
+
+
+def _toolbox(brain, inbox, shared):
+    return ToolBox(brain, None, "sess", inbox=inbox, shared=shared)
+
+
+def test_propose_share_queues_agent_item():
+    inbox = AgentInbox()
+    res = _toolbox(_ShareBrain(["Insight"]), inbox, shared=_RunBrain())._tool_propose_share(
+        "i1", reason="nuttig voor het team")
+    assert res["label"] == "Insight" and "proposed" in res
+    item = inbox.snapshot()[0]
+    assert item["action"] == "share_memory"
+    assert item["origin"] == "agent"          # Bas keurt goed, Span niet zelf
+    assert item["payload"]["node_id"] == "i1"
+
+
+def test_propose_share_rejects_non_shareable():
+    inbox = AgentInbox()
+    res = _toolbox(_ShareBrain(["Session"]), inbox, shared=_RunBrain())._tool_propose_share("s1")
+    assert "error" in res and inbox.open_count() == 0
+
+
+def test_propose_share_needs_shared_brain():
+    inbox = AgentInbox()
+    res = _toolbox(_ShareBrain(["Insight"]), inbox, shared=None)._tool_propose_share("i1")
+    assert "error" in res and inbox.open_count() == 0
+
+
+def test_propose_share_hidden_in_single_user():
+    single = {s["function"]["name"]
+              for s in ToolBox(_ShareBrain([]), None, "s", inbox=AgentInbox(), shared=None).specs()}
+    multi = {s["function"]["name"]
+             for s in ToolBox(_ShareBrain([]), None, "s", inbox=AgentInbox(), shared=_RunBrain()).specs()}
+    assert "propose_share" not in single
+    assert "propose_share" in multi
+
+
+def test_execute_approval_share_memory_copies():
+    priv = _RunBrain(match_rows=[{"labels": ["Skill"], "props": {"id": "k1", "content": "c"}}])
+    shared = _RunBrain()
+    item = {"action": "share_memory", "kind": "action", "payload": {"node_id": "k1"}}
+    res = execute_approval(item, None, brain=priv, shared=shared, shared_by="bas@lomans.nl")
+    assert res["label"] == "Skill"
+    assert any("MERGE" in q for q, _ in shared.calls)
+
+
+def test_execute_approval_share_memory_requires_shared():
+    item = {"action": "share_memory", "kind": "action", "payload": {"node_id": "k1"}}
+    res = execute_approval(item, None, brain=_RunBrain(), shared=None)
+    assert "error" in res

@@ -521,6 +521,25 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "propose_share",
+            "description": "Stel voor om een kennisknoop (Insight, les/Mistake, Idea, "
+            "Skill, Protocol of MemoryFragment) met het team te delen. Dit DEELT NIETS "
+            "DIRECT — het komt als voorstel in de Agent Inbox; Bas keurt goed en pas dan "
+            "gaat de knoop naar het gedeelde brein. Gebruik dit als je kennis tegenkomt "
+            "die teamgenoten duidelijk zou helpen; noem in 'reason' waarom.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "node_id": {"type": "string", "description": "id van de te delen knoop"},
+                    "reason": {"type": "string", "description": "waarom dit nuttig is voor het team"},
+                },
+                "required": ["node_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "plan_goal",
             "description": "Decomponeer een groter doel of meerstaps-opdracht in een "
             "bevroren stappenplan (Quest). Gebruik dit bij 'maak een plan voor…' of "
@@ -610,6 +629,7 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "plan_goal": ("Planning", "write"),
     "mail_archive_folder": ("O365 Mail", "read"),
     "mcp_propose_server": ("MCP", "write"),
+    "propose_share": ("Gedeeld geheugen", "write"),
     "web_search": ("Web", "read"),
     "web_read": ("Web", "read"),
 }

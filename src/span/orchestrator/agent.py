@@ -177,6 +177,7 @@ class SpanAgent:
             fireflies=self._fireflies,
             security=self._security,
             mcp=self._mcp,
+            shared=self._shared,
         )
         self._bootstrap = load_bootstrap(self._brain, self._fragments, first_message,
                                          shared=self._shared)

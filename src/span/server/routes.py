@@ -372,12 +372,14 @@ async def inbox_approve(request: Request, item_id: int) -> dict[str, Any]:
     item = inbox.claim(item_id)  # atomair: dubbelklik kan nooit twee keer uitvoeren
     if item is None:
         raise HTTPException(status_code=404, detail="Item niet gevonden of al afgehandeld.")
+    ctx = _request_context(request)  # per-user brein + gedeeld brein voor share_memory
     from span.jarvis.ambient import execute_approval
     try:
         result = await asyncio.to_thread(
             execute_approval, item, _state.get("o365"),
             _state["llm"], _effective_settings().model_light, _state.get("asana"),
-            _state.get("mcp"), _state["brain"],
+            _state.get("mcp"), getattr(ctx, "brain", None) or _state["brain"],
+            getattr(ctx, "shared", None), getattr(ctx, "upn", ""),
         )
         if item.get("action") == "mcp_add":
             await asyncio.to_thread(_rebuild_mcp)
