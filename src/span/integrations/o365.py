@@ -23,10 +23,11 @@ SCOPES = [
     "Calendars.ReadWrite",
     "Tasks.ReadWrite",
     # uitgebreid: hele O365-suite via hetzelfde app-login-token (delegated)
-    "Files.Read.All",     # OneDrive + gedeelde bestanden zoeken/lezen
-    "Sites.Read.All",     # SharePoint-sites doorzoeken
-    "Chat.Read",          # Teams-chatberichten doorzoeken
-    "People.Read",        # personen/collega's opzoeken
+    "Files.Read.All",      # OneDrive + gedeelde bestanden zoeken/lezen
+    "Files.ReadWrite.All", # bestanden schrijven/maken + Excel-cellen bewerken (Fase 2)
+    "Sites.Read.All",      # SharePoint-sites doorzoeken
+    "Chat.Read",           # Teams-chatberichten doorzoeken
+    "People.Read",         # personen/collega's opzoeken
 ]
 TIMEZONE = "W. Europe Standard Time"
 
@@ -680,3 +681,46 @@ class O365Client:
                                json={"body": {"contentType": "Text", "content": body}}, timeout=30)
             r.raise_for_status()
         return {"reply_all_draft": True, "draft_id": did}
+
+    # -- schrijven (Files.ReadWrite.All / Calendars.ReadWrite) ---------------
+
+    def excel_write(self, item_id: str, address: str, values: list[list[Any]],
+                   worksheet: str | None = None) -> dict[str, Any]:
+        """Schrijf waarden naar een Excel-bereik (bv. address='A1:B2',
+        values=[[1,2],[3,4]]). De afmetingen van values moeten op het bereik passen."""
+        from urllib.parse import quote
+        if not worksheet:
+            ws = self.excel_worksheets(item_id)
+            worksheet = ws[0]["name"] if ws else "Blad1"
+        r = requests.patch(
+            f"{GRAPH}/me/drive/items/{item_id}/workbook/worksheets/{quote(worksheet)}"
+            f"/range(address='{address}')",
+            headers=self._headers(), json={"values": values}, timeout=30)
+        r.raise_for_status()
+        return {"written": True, "worksheet": worksheet, "address": address,
+                "rows": len(values)}
+
+    def create_file(self, name: str, content: Any, folder_path: str = "") -> dict[str, Any]:
+        """Maak/overschrijf een bestand in OneDrive. content = str (tekst) of bytes.
+        folder_path = optioneel pad in OneDrive (bv. 'Verslagen')."""
+        from urllib.parse import quote
+        rel = folder_path.strip("/")
+        path = f"{rel}/{name}" if rel else name
+        data = content.encode("utf-8") if isinstance(content, str) else content
+        r = requests.put(
+            f"{GRAPH}/me/drive/root:/{quote(path)}:/content",
+            headers={"Authorization": f"Bearer {self._token()}"}, data=data, timeout=120)
+        r.raise_for_status()
+        j = r.json()
+        return {"created": j.get("name"), "id": j.get("id"), "link": j.get("webUrl")}
+
+    def respond_event(self, event_id: str, response: str, comment: str = "",
+                     send_response: bool = True) -> dict[str, Any]:
+        """Reageer op een afspraak-uitnodiging: response = accept | decline | tentative."""
+        action = {"accept": "accept", "decline": "decline",
+                  "tentative": "tentativelyAccept"}.get(response.strip().lower())
+        if not action:
+            raise ValueError("response moet accept, decline of tentative zijn.")
+        self._post(f"/me/events/{event_id}/{action}",
+                   {"comment": comment, "sendResponse": bool(send_response)})
+        return {"event_id": event_id, "response": response, "sent": bool(send_response)}
