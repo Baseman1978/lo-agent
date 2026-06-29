@@ -20,6 +20,7 @@ TOOL_RISK: dict[str, str] = {
     "o365_teams_search": "low", "o365_people_search": "low",
     "o365_mail_attachments": "low", "o365_attachment_read": "low",
     "o365_archive_folder": "low", "o365_excel_sheets": "low", "o365_excel_read": "low",
+    "o365_unanswered_sent": "low", "o365_enrich_archive": "low",
     "o365_mail_mark_read": "low", "o365_mail_flag": "low",
     "o365_todo_list": "low", "asana_my_tasks": "low", "asana_search": "low",
     "asana_projects": "low", "inbox_open": "low", "fireflies_meetings": "low",

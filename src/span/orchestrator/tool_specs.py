@@ -432,6 +432,29 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "o365_unanswered_sent",
+            "description": "Proactief opvolgen: verzonden mails van de laatste N dagen waar nog GEEN "
+            "antwoord op binnenkwam — 'je wacht nog op een reactie van X'. Handig voor de dagstart.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {"type": "integer", "description": "Aantal dagen terug (default 7)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_enrich_archive",
+            "description": "Verrijk het geheugen: koppel reeds gearchiveerde mail-fragmenten aan hun "
+            "afzender als Persoon-entiteit, zodat de kennisgraaf meer verbindingen krijgt. Idempotent.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "o365_sharepoint_search",
             "description": "Doorzoek SharePoint-sites (documenten + lijstitems) van Lomans.",
             "parameters": {
@@ -975,7 +998,7 @@ O365_TOOLS = {"o365_mail_inbox", "o365_mail_send", "o365_calendar", "o365_event_
               "o365_mail_mark_read", "o365_mail_flag", "o365_mail_move",
               "o365_mail_delete", "o365_mail_forward_draft", "o365_mail_reply_all_draft",
               "o365_excel_write", "o365_file_create", "o365_event_respond",
-              "o365_doc_generate"}
+              "o365_doc_generate", "o365_unanswered_sent", "o365_enrich_archive"}
 
 # Permissie-registry: groep + lezen/schrijven, voor de instellingenpagina.
 TOOL_META: dict[str, tuple[str, str]] = {
@@ -990,6 +1013,8 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "o365_mail_attachments": ("O365 Mail", "read"),
     "o365_attachment_read": ("O365 Mail", "read"),
     "o365_archive_folder": ("O365 Mail", "read"),
+    "o365_unanswered_sent": ("O365 Mail", "read"),
+    "o365_enrich_archive": ("Brein", "write"),
     "o365_thread_summary": ("O365 Mail", "read"),
     "o365_draft_reply": ("O365 Mail", "write"),
     "o365_mail_send": ("O365 Mail", "write"),

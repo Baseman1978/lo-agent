@@ -175,8 +175,19 @@ def archive_folder_native(o365: Any, brain: Any, fragments: Any, session_id: str
                 fragments.write_external(
                     mf_type="observation", content=content, session_id=session_id,
                     source="mail", context=f"mailarchief/{folder_name}", scope="werk",
-                    extra_props={"mail_graph_id": gid, "event_date": date})
+                    extra_props={"mail_graph_id": gid, "event_date": date, "sender": sender})
                 archived += 1
+                # afzender als Persoon-entiteit koppelen -> relatielijnen in de graaf
+                if sender and sender != "onbekend":
+                    try:
+                        brain.run(
+                            "MATCH (mf:MemoryFragment {mail_graph_id:$g}) "
+                            "MERGE (e:Entity {name:$s}) "
+                            "ON CREATE SET e.etype='person', e.created=datetime() "
+                            "SET e.last_seen=datetime() MERGE (mf)-[:FROM]->(e)",
+                            g=gid, s=sender)
+                    except Exception:
+                        pass
             except Exception:
                 skipped += 1
         if len(mails) < batch:
@@ -185,3 +196,32 @@ def archive_folder_native(o365: Any, brain: Any, fragments: Any, session_id: str
             "archived": archived, "skipped_already_known": skipped,
             "done": archived + skipped >= total_in_folder,
             "tip": "Roep nogmaals aan om verder te vullen tot done=true."}
+
+
+def enrich_archive_senders(brain: Any) -> dict[str, Any]:
+    """Backfill: koppel reeds gearchiveerde mail-fragmenten aan hun afzender als
+    Persoon-entiteit (geen LLM). Idempotent — slaat al-gekoppelde over."""
+    import re
+    rows = brain.run(
+        "MATCH (mf:MemoryFragment) WHERE mf.context STARTS WITH 'mailarchief' "
+        "AND NOT (mf)-[:FROM]->(:Entity) "
+        "RETURN mf.id AS id, mf.content AS content, mf.sender AS sender")
+    linked = 0
+    for r in rows:
+        sender = r.get("sender")
+        if not sender:
+            m = re.match(r"Mail van (.+?) \(", r.get("content") or "")
+            sender = m.group(1).strip() if m else None
+        if not sender or sender == "onbekend":
+            continue
+        try:
+            brain.run(
+                "MATCH (mf:MemoryFragment {id:$id}) "
+                "MERGE (e:Entity {name:$s}) "
+                "ON CREATE SET e.etype='person', e.created=datetime() "
+                "SET e.last_seen=datetime() MERGE (mf)-[:FROM]->(e)",
+                id=r["id"], s=sender)
+            linked += 1
+        except Exception:
+            pass
+    return {"enriched": linked, "tip": "afzenders gekoppeld als Persoon-entiteit"}

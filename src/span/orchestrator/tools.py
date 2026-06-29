@@ -25,7 +25,8 @@ from span.orchestrator.tool_specs import (  # noqa: F401  (re-export)
 # DATA omkaderd richting het hoofdmodel (review M4, prompt-injectie-blootstelling).
 _UNTRUSTED_OUTPUT_TOOLS = {"o365_mail_inbox", "o365_thread_summary", "fireflies_meetings",
                            "o365_mail_search", "o365_file_read", "o365_sharepoint_search",
-                           "o365_teams_search", "o365_attachment_read", "o365_excel_read"}
+                           "o365_teams_search", "o365_attachment_read", "o365_excel_read",
+                           "o365_unanswered_sent"}
 
 
 class ToolBox:
@@ -388,6 +389,17 @@ class ToolBox:
             except Exception as exc:
                 out["pdf_error"] = f"{type(exc).__name__}: {exc}"
         return out
+
+    def _tool_o365_enrich_archive(self) -> Any:
+        """Koppel reeds gearchiveerde mail-fragmenten aan hun afzender (Persoon-
+        entiteit) -> rijkere kennisgraaf met meer relatielijnen."""
+        from span.jarvis.mail_archive import enrich_archive_senders
+        return enrich_archive_senders(self._brain)
+
+    def _tool_o365_unanswered_sent(self, days: int = 7) -> Any:
+        """Proactief: verzonden mails van de laatste N dagen waar nog geen
+        antwoord op kwam — 'je wacht nog op een reactie van …'."""
+        return self._require_o365().unanswered_sent(days=days)
 
     def _tool_o365_sharepoint_search(self, query: str, top: int = 15) -> Any:
         return self._require_o365().search_sharepoint(query=query, top=top)
