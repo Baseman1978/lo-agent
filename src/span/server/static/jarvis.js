@@ -43,6 +43,33 @@ SPAN.setState = (next) => {
   label.classList.toggle("hot", next !== "idle");
 };
 
+/* -- "bezig"-indicator in de chat (tijdens denken/tool-aanroepen) -------- */
+const TOOL_LABELS = {
+  o365_mail_search: "🔎 Mail zoeken (alle mappen)", o365_archive_folder: "📥 Mailmap archiveren",
+  o365_attachment_read: "📎 Bijlage lezen", o365_mail_attachments: "📎 Bijlagen ophalen",
+  o365_mail_inbox: "📧 Inbox lezen", o365_mail_folders: "📂 Mappen ophalen",
+  o365_calendar: "📅 Agenda lezen", o365_calendar_search: "📅 Agenda doorzoeken",
+  o365_files_search: "📁 Bestanden zoeken", o365_file_read: "📄 Bestand lezen",
+  o365_sharepoint_search: "🗂️ SharePoint doorzoeken", o365_teams_search: "💬 Teams doorzoeken",
+  o365_people_search: "👤 Personen zoeken", o365_thread_summary: "📧 Mailthread samenvatten",
+  o365_mail_send: "✉️ Mail klaarzetten", o365_event_create: "📅 Afspraak klaarzetten",
+  brain_search: "🧠 Geheugen doorzoeken", brain_cypher: "🧠 Brein bevragen",
+  remember: "🧠 Onthouden", web_search: "🌐 Web zoeken", web_read: "🌐 Webpagina lezen",
+  asana_search: "✅ Asana doorzoeken", jarvis_briefing: "🗞️ Briefing maken",
+};
+SPAN.toolLabel = (n) => TOOL_LABELS[n] || ("⚙ " + String(n).replace(/^o365_/, "").replace(/_/g, " "));
+SPAN.working = (text) => {
+  const log = $("log"); if (!log) return;
+  let el = document.getElementById("working");
+  if (text === null) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement("div"); el.id = "working"; el.className = "working";
+    log.appendChild(el);
+  }
+  el.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${text}`;
+  log.scrollTop = log.scrollHeight;
+};
+
 /* -- audio chime (gedeeld) ----------------------------------------------- */
 let actx = null;
 SPAN.chime = (freq, dur) => {
@@ -192,11 +219,17 @@ function handle(msg) {
     SPAN.sys(`sessie ${msg.session_id} · ${msg.protocols} protocollen · ${msg.relevant} herinneringen`);
   }
   else if (msg.type === "delta") {
+    SPAN.working(null);  // er komt tekst -> indicator weg
     if (!current) current = el("span", "SPAN");
     current.dataset.raw = (current.dataset.raw || "") + msg.text;
     current.innerHTML = '<span class="who">SPAN</span>' + md(current.dataset.raw);
     log.scrollTop = log.scrollHeight;
     if (SPAN.speakDelta) SPAN.speakDelta(msg.text);  // streaming TTS per zin
+  }
+  else if (msg.type === "tool") {
+    // live tonen welke tool draait -> duidelijk dat Span bezig is
+    if (msg.phase === "start") SPAN.working(SPAN.toolLabel(msg.name) + "…");
+    else SPAN.working("Span werkt verder…");
   }
   else if (msg.type === "touched") {
     if (SPAN.highlightNodes) SPAN.highlightNodes(msg.ids || []);
@@ -215,6 +248,7 @@ function handle(msg) {
       if (SPAN.highlightFacts) SPAN.highlightFacts(current);
     }
     if (SPAN.reactorOk) SPAN.reactorOk();
+    SPAN.working(null);
     current = null; SPAN.busy = false; SPAN.setState("idle");
     { const st = $("stop"); if (st) st.classList.add("hidden"); }
     if (SPAN.speakOn && SPAN.speakFlush) SPAN.speakFlush();  // rest van de stream
@@ -237,6 +271,7 @@ function handle(msg) {
   }
   else if (msg.type === "error") {
     SPAN.sys(msg.message || "Fout", "warn");
+    SPAN.working(null);
     SPAN.busy = false; SPAN.setState("idle");
     { const st = $("stop"); if (st) st.classList.add("hidden"); }
     if (msg.error === "auth") {
@@ -257,6 +292,7 @@ SPAN.send = (textOverride) => {
   ws.send(JSON.stringify({ type: "user", text }));
   input.value = ""; input.style.height = "auto";
   SPAN.busy = true; SPAN.setState("busy");
+  SPAN.working("Span werkt…");  // meteen zichtbaar dat hij bezig is
   const st = $("stop"); if (st) st.classList.remove("hidden");
 };
 

@@ -207,7 +207,8 @@ class SpanAgent:
         return self._bootstrap
 
     def turn(self, user_message: str, on_text: Callable[[str], None] | None = None,
-             on_memory: Callable[..., None] | None = None) -> str:
+             on_memory: Callable[..., None] | None = None,
+             on_tool: Callable[..., None] | None = None) -> str:
         """Eén gespreksbeurt: RAG-injectie, tool-loop, continuous recording.
 
         on_text streamt tekst-deltas direct naar de UI; recording draait op
@@ -338,7 +339,13 @@ class SpanAgent:
                 except json.JSONDecodeError:
                     arguments = {}
                 tools_used.append(tc.function.name)
+                if on_tool:
+                    try: on_tool(tc.function.name, "start")
+                    except Exception: pass
                 result = self._toolbox.dispatch(tc.function.name, arguments)
+                if on_tool:
+                    try: on_tool(tc.function.name, "done")
+                    except Exception: pass
                 self._messages.append(
                     {"role": "tool", "tool_call_id": tc.id, "content": result}
                 )

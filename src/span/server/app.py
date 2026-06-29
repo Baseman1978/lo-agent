@@ -267,8 +267,16 @@ async def ws_chat(ws: WebSocket) -> None:
                     except Exception:
                         pass  # een WS-hapering mag de beurt nooit breken
 
+                def on_tool(name: str, phase: str) -> None:
+                    # live tonen welke tool draait -> "bezig"-indicator in de chat
+                    try:
+                        loop.call_soon_threadsafe(queue.put_nowait, {
+                            "type": "tool", "name": name, "phase": phase})
+                    except Exception:
+                        pass
+
                 future = loop.run_in_executor(
-                    None, lambda: agent.turn(text, on_text, on_memory))
+                    None, lambda: agent.turn(text, on_text, on_memory, on_tool))
                 future.add_done_callback(
                     lambda _f: loop.call_soon_threadsafe(queue.put_nowait, None)
                 )
