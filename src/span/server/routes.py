@@ -282,7 +282,7 @@ async def graph(request: Request, limit: int = Query(250, le=600),
     # quests, skills, protocollen). Die horen altijd zichtbaar te zijn, niet
     # weggedrukt te worden door een bulk-import van losse fragmenten.
     core_labels = ["Identity", "Protocol", "Quest", "QuestStep", "Skill",
-                   "Insight", "Mistake", "Idea", "Entity", "Meeting"]
+                   "Insight", "Mistake", "Idea", "Entity", "Meeting", "Document"]
 
     # max ~60% van het budget voor de kern, de rest voor recente fragmenten;
     # de hubs (hoogste relatie-graad) eerst zodat de betekenisvolle groepjes
