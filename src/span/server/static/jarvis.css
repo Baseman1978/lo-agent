@@ -53,12 +53,16 @@ header {
   background: linear-gradient(180deg, rgba(6,12,22,.85), rgba(6,12,22,.55));
   backdrop-filter: blur(4px);
 }
+.brand { display: flex; flex-direction: column; gap: 1px; line-height: 1.05; }
 header h1 {
-  font-size: 20px; letter-spacing: .5em; color: var(--cyan); font-weight: 300;
+  font-size: 21px; letter-spacing: .42em; color: var(--cyan); font-weight: 300;
   text-shadow: 0 0 18px var(--cyan-soft);
 }
-header .sub { font-size: 10.5px; color: var(--dim); letter-spacing: .18em; }
+header .sub { font-size: 10px; color: var(--dim); letter-spacing: .2em; text-transform: uppercase; }
 #clockbox { margin-left: auto; text-align: right; }
+/* controls als één strak cluster, met een dunne scheidslijn van de klok */
+.hdr-controls { display: flex; align-items: center; gap: 8px; padding-left: 16px;
+  margin-left: 18px; border-left: 1px solid var(--line); }
 #clock {
   font-family: Consolas, monospace; font-size: 22px; color: var(--cyan);
   text-shadow: 0 0 14px var(--cyan-soft); letter-spacing: .12em;
@@ -193,6 +197,9 @@ body.glitching main, body.glitching header {
 }
 
 /* -- brein-hologram --------------------------------------------------- */
+/* hologram = pronkstuk: meer hoogte dan mail/quests (alleen desktop;
+   op mobiel stapelen de panelen en geldt de flex:0 0 auto uit de media-query) */
+@media (min-width: 1101px) { #panel-brein { flex: 2.4; } }
 #panel-brein h2 { display: flex; align-items: center; justify-content: space-between; }
 .iconbtn {
   background: transparent; color: var(--cyan); border: 1px solid var(--line);
@@ -200,21 +207,27 @@ body.glitching main, body.glitching header {
 }
 .iconbtn:hover { border-color: var(--cyan-dim); box-shadow: 0 0 8px rgba(56,225,255,.25); }
 #holo-canvas {
-  height: 215px; border: 1px solid var(--line); border-radius: 8px;
+  flex: 1 1 auto; min-height: 260px; border: none; border-radius: 10px;
   overflow: hidden; margin-bottom: 6px; position: relative;
-  background: radial-gradient(circle at 50% 45%, rgba(13,35,56,.65), rgba(2,6,12,.9));
-  /* holografische gloed buiten WebGL (geen per-frame kosten) */
-  box-shadow: 0 0 22px rgba(56,225,255,.22), inset 0 0 34px rgba(56,225,255,.10);
+  /* geen afgekaderde doos meer: zachte gloed in het midden die naar de
+     panel-achtergrond uitvloeit, zodat het hologram lijkt te zweven */
+  background:
+    radial-gradient(ellipse 72% 64% at 50% 46%,
+      rgba(56,225,255,.10), rgba(13,35,56,.38) 42%, transparent 76%);
 }
-/* fijn cyaan grid + fresnel-vignette als statische overlay (CSP-proof, geen GPU) */
+/* fijn cyaan grid dat naar de randen uitvloeit (radiale mask) — geen harde
+   vierkante grens meer achter de zwevende nodes (CSP-proof, geen GPU) */
 #holo-canvas::before {
   content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
   background:
-    repeating-linear-gradient(0deg, rgba(56,225,255,.035) 0 1px, transparent 1px 22px),
-    repeating-linear-gradient(90deg, rgba(56,225,255,.035) 0 1px, transparent 1px 22px),
-    radial-gradient(circle at 50% 48%, transparent 55%, rgba(2,6,12,.55) 100%);
+    repeating-linear-gradient(0deg, rgba(56,225,255,.045) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, rgba(56,225,255,.045) 0 1px, transparent 1px 24px);
+  -webkit-mask: radial-gradient(ellipse 62% 60% at 50% 50%, #000 28%, transparent 80%);
+          mask: radial-gradient(ellipse 62% 60% at 50% 50%, #000 28%, transparent 80%);
 }
 #holo-scene { width: 100%; height: 100%; position: relative; z-index: 0; }
+/* tekstlijst onder de graph blijft compact -> de chamber is het pronkstuk */
+#brein { flex: 0 1 auto; max-height: 108px; }
 
 /* infopaneel bij een gepinde node */
 .holo-card {
