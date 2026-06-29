@@ -25,7 +25,7 @@ from span.orchestrator.tool_specs import (  # noqa: F401  (re-export)
 # DATA omkaderd richting het hoofdmodel (review M4, prompt-injectie-blootstelling).
 _UNTRUSTED_OUTPUT_TOOLS = {"o365_mail_inbox", "o365_thread_summary", "fireflies_meetings",
                            "o365_mail_search", "o365_file_read", "o365_sharepoint_search",
-                           "o365_teams_search", "o365_attachment_read"}
+                           "o365_teams_search", "o365_attachment_read", "o365_excel_read"}
 
 
 class ToolBox:
@@ -296,8 +296,27 @@ class ToolBox:
     def _tool_o365_files_search(self, query: str, top: int = 15) -> Any:
         return self._require_o365().search_files(query=query, top=top)
 
-    def _tool_o365_file_read(self, item_id: str) -> Any:
-        return self._require_o365().read_file(item_id=item_id)
+    def _tool_o365_file_read(self, item_id: str, to_memory: bool = False) -> Any:
+        """Lees een OneDrive/SharePoint-bestand (pdf/docx/pptx/xlsx/txt…): download
+        + tekstextractie. to_memory=True slaat het ook op in het geheugen mét
+        entiteit-extractie (rijk geheugen), net als een 📎-upload."""
+        name, raw = self._require_o365().download_file(item_id)
+        from span.jarvis.documents import extract_text, ingest_document
+        if to_memory:
+            state = {"brain": self._brain, "llm": self._llm,
+                     "settings": type("S", (), {"model_light": self._light_model})()}
+            res = ingest_document(state, name, raw)
+            res["bestand"] = name
+            return res
+        return {"name": name, "text": extract_text(name, raw)[:8000]}
+
+    def _tool_o365_excel_sheets(self, item_id: str) -> Any:
+        return self._require_o365().excel_worksheets(item_id)
+
+    def _tool_o365_excel_read(self, item_id: str, worksheet: str = "",
+                              address: str = "") -> Any:
+        return self._require_o365().excel_read(
+            item_id, worksheet=worksheet or None, address=address or None)
 
     def _tool_o365_sharepoint_search(self, query: str, top: int = 15) -> Any:
         return self._require_o365().search_sharepoint(query=query, top=top)

@@ -214,12 +214,46 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "o365_file_read",
-            "description": "Lees metadata + (voor tekstbestanden) de inhoud van een OneDrive-bestand. "
-            "Gebruik het id uit o365_files_search.",
+            "description": "Lees een OneDrive/SharePoint-bestand (pdf/docx/pptx/xlsx/txt): download + "
+            "tekstextractie. Werkt OOK voor Word/PowerPoint/Excel. Zet to_memory=true om het document "
+            "in het geheugen op te slaan mét entiteit-extractie (rijk geheugen). Id uit o365_files_search.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "item_id": {"type": "string", "description": "Bestand-id uit o365_files_search"},
+                    "to_memory": {"type": "boolean", "description": "Opslaan in geheugen + entiteiten (default false)"},
+                },
+                "required": ["item_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_excel_sheets",
+            "description": "Lijst de werkbladen (tabbladen) van een Excel-bestand. Id uit o365_files_search.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Excel-bestand-id uit o365_files_search"},
+                },
+                "required": ["item_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_excel_read",
+            "description": "Lees Excel-celdata als rijen — de gebruikte cellen van een werkblad, of een "
+            "specifiek bereik (bv. 'A1:D20'). Gebruik dit voor precieze datavragen (totalen, kolommen, "
+            "rijen opzoeken) i.p.v. de platte tekst. Id uit o365_files_search.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Excel-bestand-id"},
+                    "worksheet": {"type": "string", "description": "Werkbladnaam (leeg = eerste blad)"},
+                    "address": {"type": "string", "description": "Bereik zoals A1:D20 (leeg = alle gevulde cellen)"},
                 },
                 "required": ["item_id"],
             },
@@ -766,7 +800,8 @@ O365_TOOLS = {"o365_mail_inbox", "o365_mail_send", "o365_calendar", "o365_event_
               "o365_mail_search", "o365_mail_folders", "o365_calendar_search",
               "o365_files_search", "o365_file_read", "o365_sharepoint_search",
               "o365_teams_search", "o365_people_search",
-              "o365_mail_attachments", "o365_attachment_read", "o365_archive_folder"}
+              "o365_mail_attachments", "o365_attachment_read", "o365_archive_folder",
+              "o365_excel_sheets", "o365_excel_read"}
 
 # Permissie-registry: groep + lezen/schrijven, voor de instellingenpagina.
 TOOL_META: dict[str, tuple[str, str]] = {
@@ -789,6 +824,8 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "o365_event_create": ("O365 Agenda", "write"),
     "o365_files_search": ("O365 Bestanden", "read"),
     "o365_file_read": ("O365 Bestanden", "read"),
+    "o365_excel_sheets": ("O365 Excel", "read"),
+    "o365_excel_read": ("O365 Excel", "read"),
     "o365_sharepoint_search": ("O365 SharePoint", "read"),
     "o365_teams_search": ("O365 Teams", "read"),
     "o365_people_search": ("O365 Personen", "read"),
