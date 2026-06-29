@@ -35,6 +35,7 @@ TOOL_RISK: dict[str, str] = {
     "o365_mail_move": "med", "o365_mail_delete": "med",
     "o365_mail_forward_draft": "med", "o365_mail_reply_all_draft": "med",
     "o365_excel_write": "med", "o365_file_create": "med", "o365_event_respond": "med",
+    "o365_doc_generate": "med",
     "asana_task_create": "med", "asana_task_complete": "med",
     "fireflies_sync": "med",
     # naar buiten / onomkeerbaar / voert namens Bas uit — hoog

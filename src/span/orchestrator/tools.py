@@ -353,6 +353,42 @@ class ToolBox:
                                  comment: str = "") -> Any:
         return self._require_o365().respond_event(event_id, response, comment=comment)
 
+    def _tool_o365_doc_generate(self, kind: str, title: str, content: str,
+                                template_query: str = "", folder: str = "",
+                                to_pdf: bool = False) -> Any:
+        """Genereer een Word/PowerPoint/Excel-document (optioneel uit een Lomans-
+        template), sla het op in OneDrive en converteer desgewenst naar PDF."""
+        o = self._require_o365()
+        from span.jarvis import docgen
+        template_raw, tname = None, ""
+        if template_query:
+            hits = o.search_sharepoint(template_query, top=6)
+            cand = next((h for h in hits if h.get("drive_id") and (h.get("name") or "")
+                         .lower().endswith((".dotx", ".potx", ".xltx", ".docx", ".pptx", ".xlsx"))), None)
+            if cand:
+                tname = cand["name"]
+                _, template_raw = o.download_drive_item(cand["drive_id"], cand["item_id"])
+        if kind == "word":
+            data, ext = docgen.generate_docx(title, content, template_raw), ".docx"
+        elif kind == "powerpoint":
+            data, ext = docgen.generate_pptx(title, docgen.parse_slides(content), template_raw), ".pptx"
+        elif kind == "excel":
+            data, ext = docgen.generate_xlsx(title, docgen.parse_rows(content), template_raw=template_raw), ".xlsx"
+        else:
+            return {"error": "kind moet 'word', 'powerpoint' of 'excel' zijn."}
+        safe = "".join(c for c in title if c not in '<>:"/\\|?*').strip()[:80] or "document"
+        res = o.create_file(f"{safe}{ext}", data, folder_path=folder)
+        out = {"created": res.get("created"), "link": res.get("link"),
+               "template": tname or "geen (blanco)"}
+        if to_pdf and res.get("id"):
+            try:
+                pdf = o.export_pdf(res["id"])
+                pres = o.create_file(f"{safe}.pdf", pdf, folder_path=folder)
+                out["pdf_link"] = pres.get("link")
+            except Exception as exc:
+                out["pdf_error"] = f"{type(exc).__name__}: {exc}"
+        return out
+
     def _tool_o365_sharepoint_search(self, query: str, top: int = 15) -> Any:
         return self._require_o365().search_sharepoint(query=query, top=top)
 

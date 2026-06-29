@@ -407,6 +407,31 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "o365_doc_generate",
+            "description": "Genereer een document en sla het op in OneDrive — Word, PowerPoint of Excel, "
+            "optioneel in de Lomans-huisstijl via een template. Geef de inhoud als content: bij 'word' "
+            "markdown (# kop, ## subkop, - opsomming); bij 'powerpoint' markdown waarbij elke '# Titel' "
+            "een nieuwe slide is en '- ' een bullet; bij 'excel' regels met kommagescheiden of tab-gescheiden "
+            "cellen (eerste regel = kolomkoppen). Met template_query zoekt Nova de Lomans-template "
+            "(bv. 'Lomans PowerPoint template' of 'Word-template met logo') in SharePoint en gebruikt die "
+            "als basis (huisstijl behouden). to_pdf=true levert ook een PDF op.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["word", "powerpoint", "excel"]},
+                    "title": {"type": "string", "description": "Titel/bestandsnaam"},
+                    "content": {"type": "string", "description": "Inhoud (zie beschrijving per kind)"},
+                    "template_query": {"type": "string", "description": "Naam van de Lomans-template (leeg = blanco)"},
+                    "folder": {"type": "string", "description": "OneDrive-map om in op te slaan (optioneel)"},
+                    "to_pdf": {"type": "boolean", "description": "Ook een PDF maken (default false)"},
+                },
+                "required": ["kind", "title", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "o365_sharepoint_search",
             "description": "Doorzoek SharePoint-sites (documenten + lijstitems) van Lomans.",
             "parameters": {
@@ -949,7 +974,8 @@ O365_TOOLS = {"o365_mail_inbox", "o365_mail_send", "o365_calendar", "o365_event_
               "o365_excel_sheets", "o365_excel_read",
               "o365_mail_mark_read", "o365_mail_flag", "o365_mail_move",
               "o365_mail_delete", "o365_mail_forward_draft", "o365_mail_reply_all_draft",
-              "o365_excel_write", "o365_file_create", "o365_event_respond"}
+              "o365_excel_write", "o365_file_create", "o365_event_respond",
+              "o365_doc_generate"}
 
 # Permissie-registry: groep + lezen/schrijven, voor de instellingenpagina.
 TOOL_META: dict[str, tuple[str, str]] = {
@@ -982,6 +1008,7 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "o365_excel_read": ("O365 Excel", "read"),
     "o365_excel_write": ("O365 Excel", "write"),
     "o365_file_create": ("O365 Bestanden", "write"),
+    "o365_doc_generate": ("O365 Bestanden", "write"),
     "o365_event_respond": ("O365 Agenda", "write"),
     "o365_sharepoint_search": ("O365 SharePoint", "read"),
     "o365_teams_search": ("O365 Teams", "read"),
