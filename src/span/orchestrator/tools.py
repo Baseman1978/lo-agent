@@ -25,7 +25,7 @@ from span.orchestrator.tool_specs import (  # noqa: F401  (re-export)
 # DATA omkaderd richting het hoofdmodel (review M4, prompt-injectie-blootstelling).
 _UNTRUSTED_OUTPUT_TOOLS = {"o365_mail_inbox", "o365_thread_summary", "fireflies_meetings",
                            "o365_mail_search", "o365_file_read", "o365_sharepoint_search",
-                           "o365_teams_search"}
+                           "o365_teams_search", "o365_attachment_read"}
 
 
 class ToolBox:
@@ -307,6 +307,23 @@ class ToolBox:
 
     def _tool_o365_people_search(self, query: str, top: int = 10) -> Any:
         return self._require_o365().search_people(query=query, top=top)
+
+    def _tool_o365_mail_attachments(self, message_id: str) -> Any:
+        return self._require_o365().list_attachments(message_id)
+
+    def _tool_o365_attachment_read(self, message_id: str, attachment_id: str,
+                                   to_memory: bool = True) -> Any:
+        """Download een mailbijlage + lees 'm (pdf/docx/xlsx/…); standaard ook
+        opslaan in het geheugen (chunks + samenvatting), net als een 📎-upload."""
+        name, raw = self._require_o365().download_attachment(message_id, attachment_id)
+        from span.jarvis.documents import extract_text, ingest_document
+        if to_memory:
+            state = {"brain": self._brain, "llm": self._llm,
+                     "settings": type("S", (), {"model_light": self._light_model})()}
+            res = ingest_document(state, name, raw)
+            res["bijlage"] = name
+            return res
+        return {"name": name, "text": extract_text(name, raw)[:8000]}
 
     def _tool_o365_event_create(
         self,

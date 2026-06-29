@@ -273,6 +273,40 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "o365_mail_attachments",
+            "description": "Lijst de bijlagen van een mail (naam, type, grootte). Gebruik de "
+            "graph_id uit o365_mail_search/o365_mail_inbox als message_id.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message_id": {"type": "string", "description": "graph_id van de mail"},
+                },
+                "required": ["message_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_attachment_read",
+            "description": "Download een mailbijlage EN lees de inhoud (pdf/docx/pptx/xlsx/txt…); "
+            "standaard wordt het document ook in het geheugen opgeslagen (chunks + samenvatting), "
+            "net als een 📎-upload. Je KUNT dus bijlagen ophalen — zeg nooit dat dat niet kan. "
+            "Gebruik message_id + attachment_id uit o365_mail_attachments.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message_id": {"type": "string", "description": "graph_id van de mail"},
+                    "attachment_id": {"type": "string", "description": "id uit o365_mail_attachments"},
+                    "to_memory": {"type": "boolean", "description": "Ook in geheugen opslaan (default true)"},
+                },
+                "required": ["message_id", "attachment_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "o365_event_create",
             "description": "Maak een agenda-afspraak. Tijden in lokale tijd (W. Europe), "
             "ISO-formaat: 2026-06-12T14:00:00.",
@@ -711,7 +745,8 @@ O365_TOOLS = {"o365_mail_inbox", "o365_mail_send", "o365_calendar", "o365_event_
               "o365_todo_list", "o365_todo_create", "o365_todo_complete",
               "o365_mail_search", "o365_mail_folders", "o365_calendar_search",
               "o365_files_search", "o365_file_read", "o365_sharepoint_search",
-              "o365_teams_search", "o365_people_search"}
+              "o365_teams_search", "o365_people_search",
+              "o365_mail_attachments", "o365_attachment_read"}
 
 # Permissie-registry: groep + lezen/schrijven, voor de instellingenpagina.
 TOOL_META: dict[str, tuple[str, str]] = {
@@ -723,6 +758,8 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "o365_mail_inbox": ("O365 Mail", "read"),
     "o365_mail_search": ("O365 Mail", "read"),
     "o365_mail_folders": ("O365 Mail", "read"),
+    "o365_mail_attachments": ("O365 Mail", "read"),
+    "o365_attachment_read": ("O365 Mail", "read"),
     "o365_thread_summary": ("O365 Mail", "read"),
     "o365_draft_reply": ("O365 Mail", "write"),
     "o365_mail_send": ("O365 Mail", "write"),

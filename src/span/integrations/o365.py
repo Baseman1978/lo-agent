@@ -527,3 +527,24 @@ class O365Client:
             "email": ((p.get("scoredEmailAddresses") or [{}])[0] or {}).get("address"),
             "title": p.get("jobTitle"), "department": p.get("department"),
         } for p in data.get("value", [])]
+
+    # -- mail-bijlagen --------------------------------------------------------
+
+    def list_attachments(self, message_id: str) -> list[dict[str, Any]]:
+        """Lijst de bijlagen van een mail (id, naam, type, grootte)."""
+        data = self._get(f"/me/messages/{message_id}/attachments",
+                         {"$select": "id,name,contentType,size"})
+        return [{
+            "id": a.get("id"), "name": a.get("name"),
+            "type": a.get("contentType"), "size": a.get("size"),
+        } for a in data.get("value", [])]
+
+    def download_attachment(self, message_id: str, attachment_id: str) -> tuple[str, bytes]:
+        """Download één bijlage; geeft (bestandsnaam, ruwe bytes) terug."""
+        import base64
+        a = self._get(f"/me/messages/{message_id}/attachments/{attachment_id}")
+        name = a.get("name") or "bijlage"
+        b64 = a.get("contentBytes")
+        if not b64:
+            raise ValueError("Geen bestandsbijlage (mogelijk een inline- of item-bijlage).")
+        return name, base64.b64decode(b64)
