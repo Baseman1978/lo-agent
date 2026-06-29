@@ -352,6 +352,60 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "o365_excel_write",
+            "description": "Schrijf waarden naar een Excel-bereik (bv. address 'A1:B2', "
+            "values [[1,2],[3,4]]). De afmetingen van values moeten op het bereik passen. "
+            "Vat samen wat je gaat schrijven vóór je het doet. Id uit o365_files_search.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Excel-bestand-id"},
+                    "address": {"type": "string", "description": "Bereik, bv. A1:C3"},
+                    "values": {"type": "array", "items": {"type": "array", "items": {}},
+                               "description": "2D-array van waarden (rijen × kolommen)"},
+                    "worksheet": {"type": "string", "description": "Werkbladnaam (leeg = eerste blad)"},
+                },
+                "required": ["item_id", "address", "values"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_file_create",
+            "description": "Maak (of overschrijf) een bestand in OneDrive met tekst-inhoud "
+            "(txt/md/csv/html). Gebruik dit om een notitie/rapport op te slaan.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Bestandsnaam incl. extensie"},
+                    "content": {"type": "string", "description": "Tekst-inhoud"},
+                    "folder_path": {"type": "string", "description": "Optioneel pad in OneDrive, bv. Verslagen"},
+                },
+                "required": ["name", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_event_respond",
+            "description": "Reageer op een afspraak-uitnodiging: accepteren, afwijzen of onder voorbehoud. "
+            "Dit stuurt een reactie naar de organisator — vat samen om welke afspraak het gaat.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "event_id": {"type": "string", "description": "Afspraak-id"},
+                    "response": {"type": "string", "enum": ["accept", "decline", "tentative"]},
+                    "comment": {"type": "string", "description": "Optionele opmerking aan de organisator"},
+                },
+                "required": ["event_id", "response"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "o365_sharepoint_search",
             "description": "Doorzoek SharePoint-sites (documenten + lijstitems) van Lomans.",
             "parameters": {
@@ -893,7 +947,8 @@ O365_TOOLS = {"o365_mail_inbox", "o365_mail_send", "o365_calendar", "o365_event_
               "o365_mail_attachments", "o365_attachment_read", "o365_archive_folder",
               "o365_excel_sheets", "o365_excel_read",
               "o365_mail_mark_read", "o365_mail_flag", "o365_mail_move",
-              "o365_mail_delete", "o365_mail_forward_draft", "o365_mail_reply_all_draft"}
+              "o365_mail_delete", "o365_mail_forward_draft", "o365_mail_reply_all_draft",
+              "o365_excel_write", "o365_file_create", "o365_event_respond"}
 
 # Permissie-registry: groep + lezen/schrijven, voor de instellingenpagina.
 TOOL_META: dict[str, tuple[str, str]] = {
@@ -924,6 +979,9 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "o365_file_read": ("O365 Bestanden", "read"),
     "o365_excel_sheets": ("O365 Excel", "read"),
     "o365_excel_read": ("O365 Excel", "read"),
+    "o365_excel_write": ("O365 Excel", "write"),
+    "o365_file_create": ("O365 Bestanden", "write"),
+    "o365_event_respond": ("O365 Agenda", "write"),
     "o365_sharepoint_search": ("O365 SharePoint", "read"),
     "o365_teams_search": ("O365 Teams", "read"),
     "o365_people_search": ("O365 Personen", "read"),

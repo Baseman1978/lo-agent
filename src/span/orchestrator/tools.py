@@ -337,6 +337,18 @@ class ToolBox:
     def _tool_o365_mail_reply_all_draft(self, message_id: str, body: str = "") -> Any:
         return self._require_o365().draft_reply_all(message_id, body=body)
 
+    def _tool_o365_excel_write(self, item_id: str, address: str,
+                               values: list[list[Any]], worksheet: str = "") -> Any:
+        return self._require_o365().excel_write(
+            item_id, address=address, values=values, worksheet=worksheet or None)
+
+    def _tool_o365_file_create(self, name: str, content: str, folder_path: str = "") -> Any:
+        return self._require_o365().create_file(name, content, folder_path=folder_path)
+
+    def _tool_o365_event_respond(self, event_id: str, response: str,
+                                 comment: str = "") -> Any:
+        return self._require_o365().respond_event(event_id, response, comment=comment)
+
     def _tool_o365_sharepoint_search(self, query: str, top: int = 15) -> Any:
         return self._require_o365().search_sharepoint(query=query, top=top)
 
