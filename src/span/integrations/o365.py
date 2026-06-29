@@ -52,6 +52,9 @@ def _search_hits(data: dict[str, Any]) -> list[dict[str, Any]]:
                     "link": res.get("webUrl") or res.get("webLink") or fields.get("webUrl"),
                     "from": ((res.get("from") or {}).get("emailAddress") or {}).get("name"),
                     "type": str(res.get("@odata.type", "")).split(".")[-1],
+                    # voor downloaden van SharePoint-bestanden (o365_file_read met drive_id)
+                    "drive_id": (res.get("parentReference") or {}).get("driveId"),
+                    "item_id": res.get("id"),
                 })
     return out
 
@@ -586,6 +589,18 @@ class O365Client:
         r = request_with_retry(lambda: requests.get(
             f"{GRAPH}/me/drive/items/{item_id}/content",
             headers={"Authorization": f"Bearer {self._token()}"}, timeout=60))
+        r.raise_for_status()
+        return name, r.content
+
+    def download_drive_item(self, drive_id: str, item_id: str) -> tuple[str, bytes]:
+        """Download een bestand uit een willekeurige (SharePoint-)drive: (naam, bytes).
+        Gebruik drive_id + item_id uit o365_sharepoint_search."""
+        from span.integrations.http import request_with_retry
+        meta = self._get(f"/drives/{drive_id}/items/{item_id}", {"$select": "id,name"})
+        name = meta.get("name") or "bestand"
+        r = request_with_retry(lambda: requests.get(
+            f"{GRAPH}/drives/{drive_id}/items/{item_id}/content",
+            headers={"Authorization": f"Bearer {self._token()}"}, timeout=120))
         r.raise_for_status()
         return name, r.content
 
