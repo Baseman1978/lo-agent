@@ -156,6 +156,123 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "o365_mail_search",
+            "description": "Zoek e-mail over de HELE mailbox — ALLE mappen (Inbox, Archief, "
+            "Verwijderd, eigen mappen). Gebruik dit als een mail niet (meer) in de inbox staat: "
+            "geef NOOIT op met 'kan niet in mappen kijken', maar zoek hiermee. Query = trefwoorden, "
+            "afzender of onderwerp (KQL, bv. 'from:jan factuur' of 'offerte lomans').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Zoekterm/afzender/onderwerp"},
+                    "top": {"type": "integer", "description": "Aantal resultaten (default 15, max 25)"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_mail_folders",
+            "description": "Toon de mailmappen met aantallen (Inbox, Archief, Verzonden, eigen mappen).",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_calendar_search",
+            "description": "Zoek afspraken op trefwoord (titel/locatie/organisator) over alle datums — "
+            "handig voor 'wanneer was/is dat overleg over X'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Zoekterm"},
+                    "top": {"type": "integer", "description": "Aantal (default 15, max 25)"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_files_search",
+            "description": "Zoek bestanden in OneDrive en gedeelde items op naam/inhoud.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Bestandsnaam of inhoud"},
+                    "top": {"type": "integer", "description": "Aantal (default 15, max 25)"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_file_read",
+            "description": "Lees metadata + (voor tekstbestanden) de inhoud van een OneDrive-bestand. "
+            "Gebruik het id uit o365_files_search.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Bestand-id uit o365_files_search"},
+                },
+                "required": ["item_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_sharepoint_search",
+            "description": "Doorzoek SharePoint-sites (documenten + lijstitems) van Lomans.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Zoekterm"},
+                    "top": {"type": "integer", "description": "Aantal (default 15, max 25)"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_teams_search",
+            "description": "Doorzoek Teams-chatberichten op trefwoord.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Zoekterm"},
+                    "top": {"type": "integer", "description": "Aantal (default 15, max 25)"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_people_search",
+            "description": "Zoek personen/collega's (naam, e-mail, functie, afdeling).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Naam of trefwoord"},
+                    "top": {"type": "integer", "description": "Aantal (default 10, max 15)"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "o365_event_create",
             "description": "Maak een agenda-afspraak. Tijden in lokale tijd (W. Europe), "
             "ISO-formaat: 2026-06-12T14:00:00.",
@@ -591,7 +708,10 @@ TOOL_SPECS: list[dict[str, Any]] = [
 
 O365_TOOLS = {"o365_mail_inbox", "o365_mail_send", "o365_calendar", "o365_event_create",
               "o365_draft_reply", "o365_thread_summary",
-              "o365_todo_list", "o365_todo_create", "o365_todo_complete"}
+              "o365_todo_list", "o365_todo_create", "o365_todo_complete",
+              "o365_mail_search", "o365_mail_folders", "o365_calendar_search",
+              "o365_files_search", "o365_file_read", "o365_sharepoint_search",
+              "o365_teams_search", "o365_people_search"}
 
 # Permissie-registry: groep + lezen/schrijven, voor de instellingenpagina.
 TOOL_META: dict[str, tuple[str, str]] = {
@@ -601,11 +721,19 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "quest_upsert": ("Brein", "write"),
     "jarvis_briefing": ("Briefing", "read"),
     "o365_mail_inbox": ("O365 Mail", "read"),
+    "o365_mail_search": ("O365 Mail", "read"),
+    "o365_mail_folders": ("O365 Mail", "read"),
     "o365_thread_summary": ("O365 Mail", "read"),
     "o365_draft_reply": ("O365 Mail", "write"),
     "o365_mail_send": ("O365 Mail", "write"),
     "o365_calendar": ("O365 Agenda", "read"),
+    "o365_calendar_search": ("O365 Agenda", "read"),
     "o365_event_create": ("O365 Agenda", "write"),
+    "o365_files_search": ("O365 Bestanden", "read"),
+    "o365_file_read": ("O365 Bestanden", "read"),
+    "o365_sharepoint_search": ("O365 SharePoint", "read"),
+    "o365_teams_search": ("O365 Teams", "read"),
+    "o365_people_search": ("O365 Personen", "read"),
     "o365_todo_list": ("O365 To Do", "read"),
     "o365_todo_create": ("O365 To Do", "write"),
     "o365_todo_complete": ("O365 To Do", "write"),

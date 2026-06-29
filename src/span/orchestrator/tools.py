@@ -23,7 +23,9 @@ from span.orchestrator.tool_specs import (  # noqa: F401  (re-export)
 
 # Tools die door-derden-bestuurbare inhoud teruggeven; hun output wordt als
 # DATA omkaderd richting het hoofdmodel (review M4, prompt-injectie-blootstelling).
-_UNTRUSTED_OUTPUT_TOOLS = {"o365_mail_inbox", "o365_thread_summary", "fireflies_meetings"}
+_UNTRUSTED_OUTPUT_TOOLS = {"o365_mail_inbox", "o365_thread_summary", "fireflies_meetings",
+                           "o365_mail_search", "o365_file_read", "o365_sharepoint_search",
+                           "o365_teams_search"}
 
 
 class ToolBox:
@@ -281,6 +283,30 @@ class ToolBox:
 
     def _tool_o365_calendar(self, days: int = 1) -> Any:
         return self._require_o365().calendar(days=days)
+
+    def _tool_o365_mail_search(self, query: str, top: int = 15) -> Any:
+        return self._require_o365().search_mail(query=query, top=top)
+
+    def _tool_o365_mail_folders(self) -> Any:
+        return self._require_o365().list_folders()
+
+    def _tool_o365_calendar_search(self, query: str, top: int = 15) -> Any:
+        return self._require_o365().calendar_search(query=query, top=top)
+
+    def _tool_o365_files_search(self, query: str, top: int = 15) -> Any:
+        return self._require_o365().search_files(query=query, top=top)
+
+    def _tool_o365_file_read(self, item_id: str) -> Any:
+        return self._require_o365().read_file(item_id=item_id)
+
+    def _tool_o365_sharepoint_search(self, query: str, top: int = 15) -> Any:
+        return self._require_o365().search_sharepoint(query=query, top=top)
+
+    def _tool_o365_teams_search(self, query: str, top: int = 15) -> Any:
+        return self._require_o365().search_chat(query=query, top=top)
+
+    def _tool_o365_people_search(self, query: str, top: int = 10) -> Any:
+        return self._require_o365().search_people(query=query, top=top)
 
     def _tool_o365_event_create(
         self,

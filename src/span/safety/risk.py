@@ -15,6 +15,9 @@ TOOL_RISK: dict[str, str] = {
     "weather": "low", "jarvis_briefing": "low",
     "web_search": "low", "web_read": "low",   # lezen; output is untrusted -> quarantaine
     "o365_mail_inbox": "low", "o365_thread_summary": "low", "o365_calendar": "low",
+    "o365_mail_search": "low", "o365_mail_folders": "low", "o365_calendar_search": "low",
+    "o365_files_search": "low", "o365_file_read": "low", "o365_sharepoint_search": "low",
+    "o365_teams_search": "low", "o365_people_search": "low",
     "o365_todo_list": "low", "asana_my_tasks": "low", "asana_search": "low",
     "asana_projects": "low", "inbox_open": "low", "fireflies_meetings": "low",
     "cron_list": "low", "triage_rules_get": "low",

@@ -22,6 +22,11 @@ SCOPES = [
     "Mail.Send",
     "Calendars.ReadWrite",
     "Tasks.ReadWrite",
+    # uitgebreid: hele O365-suite via hetzelfde app-login-token (delegated)
+    "Files.Read.All",     # OneDrive + gedeelde bestanden zoeken/lezen
+    "Sites.Read.All",     # SharePoint-sites doorzoeken
+    "Chat.Read",          # Teams-chatberichten doorzoeken
+    "People.Read",        # personen/collega's opzoeken
 ]
 TIMEZONE = "W. Europe Standard Time"
 
@@ -30,6 +35,24 @@ def odata_quote(value: str) -> str:
     """OData string-literal: enkele quotes verdubbelen en omsluiten (M10).
     Centrale helper voor álle $filter-stringwaarden tegen filter-injectie."""
     return "'" + str(value).replace("'", "''") + "'"
+
+
+def _search_hits(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Vlak de hitsContainers van de Microsoft Search-API (/search/query) uit."""
+    out: list[dict[str, Any]] = []
+    for resp in data.get("value", []):
+        for hc in resp.get("hitsContainers", []):
+            for hit in hc.get("hits", []):
+                res = hit.get("resource", {}) or {}
+                fields = res.get("fields") or {}
+                out.append({
+                    "summary": (hit.get("summary") or "")[:300],
+                    "name": res.get("name") or res.get("subject") or fields.get("title"),
+                    "link": res.get("webUrl") or res.get("webLink") or fields.get("webUrl"),
+                    "from": ((res.get("from") or {}).get("emailAddress") or {}).get("name"),
+                    "type": str(res.get("@odata.type", "")).split(".")[-1],
+                })
+    return out
 
 
 class NotAuthenticated(RuntimeError):
@@ -381,3 +404,126 @@ class O365Client:
         )
         resp.raise_for_status()
         return {"completed": True, "id": task_id}
+
+    # -- mail-zoeken over ALLE mappen ----------------------------------------
+
+    def search_mail(self, query: str, top: int = 15) -> list[dict[str, Any]]:
+        """Zoek over de HELE mailbox (alle mappen incl. Archief/Verwijderd),
+        niet alleen de inbox. Graph $search = KQL-relevantie."""
+        data = self._get("/me/messages", {
+            "$search": f'"{query}"',
+            "$top": min(int(top), 25),
+            "$select": "id,conversationId,subject,from,receivedDateTime,"
+                       "bodyPreview,isRead,webLink,parentFolderId",
+        })
+        return [{
+            "graph_id": m.get("id"),
+            "conversation_id": m.get("conversationId"),
+            "subject": m.get("subject"),
+            "from": (m.get("from") or {}).get("emailAddress", {}).get("name"),
+            "received": m.get("receivedDateTime"),
+            "preview": (m.get("bodyPreview") or "")[:200],
+            "unread": not m.get("isRead", True),
+            "link": m.get("webLink"),
+            "folder_id": m.get("parentFolderId"),
+        } for m in data.get("value", [])]
+
+    def list_folders(self, top: int = 60) -> list[dict[str, Any]]:
+        """Mailmappen met aantallen (Inbox, Archief, Verzonden, eigen mappen…)."""
+        data = self._get("/me/mailFolders", {
+            "$top": min(int(top), 100),
+            "$select": "id,displayName,totalItemCount,unreadItemCount",
+        })
+        return [{
+            "id": f.get("id"), "name": f.get("displayName"),
+            "total": f.get("totalItemCount"), "unread": f.get("unreadItemCount"),
+        } for f in data.get("value", [])]
+
+    # -- agenda-zoeken --------------------------------------------------------
+
+    def calendar_search(self, query: str, top: int = 15) -> list[dict[str, Any]]:
+        """Zoek afspraken op trefwoord (titel/locatie/organisator), alle datums."""
+        data = self._get("/me/events", {
+            "$search": f'"{query}"',
+            "$top": min(int(top), 25),
+            "$select": "subject,start,end,location,organizer,webLink",
+        })
+        return [{
+            "subject": e.get("subject"),
+            "start": (e.get("start") or {}).get("dateTime"),
+            "end": (e.get("end") or {}).get("dateTime"),
+            "location": (e.get("location") or {}).get("displayName"),
+            "organizer": (e.get("organizer") or {}).get("emailAddress", {}).get("name"),
+            "link": e.get("webLink"),
+        } for e in data.get("value", [])]
+
+    # -- bestanden (OneDrive) -------------------------------------------------
+
+    def search_files(self, query: str, top: int = 15) -> list[dict[str, Any]]:
+        """Zoek bestanden in OneDrive en gedeelde items."""
+        q = str(query).replace("'", "''")
+        data = self._get(f"/me/drive/root/search(q='{q}')", {
+            "$top": min(int(top), 25),
+            "$select": "id,name,webUrl,size,lastModifiedDateTime,file,folder",
+        })
+        return [{
+            "id": it.get("id"), "name": it.get("name"), "link": it.get("webUrl"),
+            "size": it.get("size"), "modified": it.get("lastModifiedDateTime"),
+            "is_folder": "folder" in it,
+        } for it in data.get("value", [])]
+
+    def read_file(self, item_id: str, max_chars: int = 4000) -> dict[str, Any]:
+        """Metadata + (voor tekstbestanden) de inhoud van een OneDrive-bestand."""
+        meta = self._get(f"/me/drive/items/{item_id}",
+                         {"$select": "id,name,webUrl,size,file"})
+        name = meta.get("name") or ""
+        mime = (meta.get("file") or {}).get("mimeType", "")
+        out: dict[str, Any] = {"id": meta.get("id"), "name": name,
+                               "link": meta.get("webUrl"), "mime": mime}
+        if mime.startswith("text/") or name.endswith((".txt", ".md", ".csv", ".json", ".log")):
+            from span.integrations.http import request_with_retry
+            r = request_with_retry(lambda: requests.get(
+                f"{GRAPH}/me/drive/items/{item_id}/content",
+                headers={"Authorization": f"Bearer {self._token()}"}, timeout=30))
+            if r.ok:
+                out["content"] = r.text[:max_chars]
+        else:
+            out["note"] = "Office/binair bestand — open via de link of voeg toe aan het geheugen."
+        return out
+
+    # -- SharePoint -----------------------------------------------------------
+
+    def search_sharepoint(self, query: str, top: int = 15) -> list[dict[str, Any]]:
+        """Doorzoek SharePoint (documenten + lijstitems) via de Search-API."""
+        data = self._post("/search/query", {"requests": [{
+            "entityTypes": ["driveItem", "listItem"],
+            "query": {"queryString": query},
+            "from": 0, "size": min(int(top), 25),
+        }]})
+        return _search_hits(data)
+
+    # -- Teams ----------------------------------------------------------------
+
+    def search_chat(self, query: str, top: int = 15) -> list[dict[str, Any]]:
+        """Doorzoek Teams-chatberichten via de Search-API."""
+        data = self._post("/search/query", {"requests": [{
+            "entityTypes": ["chatMessage"],
+            "query": {"queryString": query},
+            "from": 0, "size": min(int(top), 25),
+        }]})
+        return _search_hits(data)
+
+    # -- personen -------------------------------------------------------------
+
+    def search_people(self, query: str, top: int = 10) -> list[dict[str, Any]]:
+        """Zoek personen/collega's (naam, e-mail, functie, afdeling)."""
+        data = self._get("/me/people", {
+            "$search": f'"{query}"',
+            "$top": min(int(top), 15),
+            "$select": "displayName,scoredEmailAddresses,jobTitle,department",
+        })
+        return [{
+            "name": p.get("displayName"),
+            "email": ((p.get("scoredEmailAddresses") or [{}])[0] or {}).get("address"),
+            "title": p.get("jobTitle"), "department": p.get("department"),
+        } for p in data.get("value", [])]
