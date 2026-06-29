@@ -439,6 +439,32 @@ class O365Client:
             "total": f.get("totalItemCount"), "unread": f.get("unreadItemCount"),
         } for f in data.get("value", [])]
 
+    def folder_messages(self, folder_id: str, top: int = 50, skip: int = 0,
+                        since_days: int = 0) -> list[dict[str, Any]]:
+        """Berichten uit één map, nieuwste eerst, optioneel alleen de laatste
+        N dagen (receivedDateTime-filter) — voor systematisch archiveren."""
+        import datetime as _dt
+        params: dict[str, Any] = {
+            "$top": min(int(top), 50), "$skip": max(int(skip), 0),
+            "$orderby": "receivedDateTime desc",
+            "$select": "id,conversationId,subject,from,receivedDateTime,"
+                       "bodyPreview,hasAttachments,webLink",
+        }
+        if since_days and int(since_days) > 0:
+            since = (_dt.datetime.utcnow() - _dt.timedelta(days=int(since_days)))
+            params["$filter"] = f"receivedDateTime ge {since.strftime('%Y-%m-%dT00:00:00Z')}"
+        data = self._get(f"/me/mailFolders/{folder_id}/messages", params)
+        return [{
+            "graph_id": m.get("id"),
+            "conversation_id": m.get("conversationId"),
+            "subject": m.get("subject"),
+            "from": (m.get("from") or {}).get("emailAddress", {}).get("name"),
+            "received": m.get("receivedDateTime"),
+            "preview": (m.get("bodyPreview") or "")[:300],
+            "has_attachments": m.get("hasAttachments", False),
+            "link": m.get("webLink"),
+        } for m in data.get("value", [])]
+
     # -- agenda-zoeken --------------------------------------------------------
 
     def calendar_search(self, query: str, top: int = 15) -> list[dict[str, Any]]:

@@ -307,6 +307,26 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "o365_archive_folder",
+            "description": "Archiveer een hele Outlook-MAP (bv. 'Meetingverslag', 'Meeting update') "
+            "batchgewijs in het geheugen — werkt via het app-login-token, NIET via mail_archive_folder "
+            "(die vereist een MCP-server die niet gekoppeld is). Datum-gefilterd (since_days) en "
+            "idempotent: roep herhaald aan tot done=true om grote mappen helemaal te vullen. "
+            "Naam mag een deel van de mapnaam zijn (hoofdletterongevoelig).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "folder_name": {"type": "string", "description": "(deel van de) mapnaam, bv. Meetingverslag"},
+                    "limit": {"type": "integer", "description": "Max mails per aanroep (default 150, max 300)"},
+                    "since_days": {"type": "integer", "description": "Alleen mails van de laatste N dagen (default 365)"},
+                },
+                "required": ["folder_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "o365_event_create",
             "description": "Maak een agenda-afspraak. Tijden in lokale tijd (W. Europe), "
             "ISO-formaat: 2026-06-12T14:00:00.",
@@ -746,7 +766,7 @@ O365_TOOLS = {"o365_mail_inbox", "o365_mail_send", "o365_calendar", "o365_event_
               "o365_mail_search", "o365_mail_folders", "o365_calendar_search",
               "o365_files_search", "o365_file_read", "o365_sharepoint_search",
               "o365_teams_search", "o365_people_search",
-              "o365_mail_attachments", "o365_attachment_read"}
+              "o365_mail_attachments", "o365_attachment_read", "o365_archive_folder"}
 
 # Permissie-registry: groep + lezen/schrijven, voor de instellingenpagina.
 TOOL_META: dict[str, tuple[str, str]] = {
@@ -760,6 +780,7 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "o365_mail_folders": ("O365 Mail", "read"),
     "o365_mail_attachments": ("O365 Mail", "read"),
     "o365_attachment_read": ("O365 Mail", "read"),
+    "o365_archive_folder": ("O365 Mail", "read"),
     "o365_thread_summary": ("O365 Mail", "read"),
     "o365_draft_reply": ("O365 Mail", "write"),
     "o365_mail_send": ("O365 Mail", "write"),

@@ -325,6 +325,15 @@ class ToolBox:
             return res
         return {"name": name, "text": extract_text(name, raw)[:8000]}
 
+    def _tool_o365_archive_folder(self, folder_name: str, limit: int = 150,
+                                  since_days: int = 365) -> Any:
+        """Archiveer een hele Outlook-map (bv. 'Meetingverslag') batchgewijs in het
+        geheugen — via het app-token, géén MCP. Datum-gefilterd; idempotent."""
+        from span.jarvis.mail_archive import archive_folder_native
+        return archive_folder_native(
+            self._require_o365(), self._brain, self._fragments, self._session_id,
+            folder_name, limit=min(int(limit), 300), since_days=since_days)
+
     def _tool_o365_event_create(
         self,
         subject: str,
