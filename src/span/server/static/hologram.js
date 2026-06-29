@@ -113,11 +113,10 @@
       .onNodeClick(onNodeClick)
       .onBackgroundClick(() => { closeInfo(); updateSpin(); });
 
-    // diepte: verre nodes vervagen. Best-effort — alleen als de bundle THREE deelt.
-    try {
-      const THREE = window.THREE;
-      if (THREE && THREE.FogExp2) g.scene().fog = new THREE.FogExp2(0x04070e, 0.0016);
-    } catch (e) { /* geen THREE -> geen fog, geen probleem */ }
+    // GEEN fog: de losse window.THREE is een ándere instance dan die in de
+    // 3d-force-graph-bundle. Een FogExp2 van de verkeerde instance liet de
+    // renderer crashen (refreshFogUniforms: "n.color.getRGB is not a function"),
+    // waardoor de nodes nooit tekenden en je een leeg vierkant overhield.
 
     // force-tuning: verbonden nodes dichter bij elkaar -> duidelijke clusters
     // (fragmenten rond hun Document/Session) i.p.v. een gelijkmatige wolk
