@@ -20,6 +20,7 @@ TOOL_RISK: dict[str, str] = {
     "o365_teams_search": "low", "o365_people_search": "low",
     "o365_mail_attachments": "low", "o365_attachment_read": "low",
     "o365_archive_folder": "low", "o365_excel_sheets": "low", "o365_excel_read": "low",
+    "o365_mail_mark_read": "low", "o365_mail_flag": "low",
     "o365_todo_list": "low", "asana_my_tasks": "low", "asana_search": "low",
     "asana_projects": "low", "inbox_open": "low", "fireflies_meetings": "low",
     "cron_list": "low", "triage_rules_get": "low",
@@ -31,6 +32,8 @@ TOOL_RISK: dict[str, str] = {
     "mail_archive_folder": "med",   # leest mail -> eigen brein (omkeerbaar)
     # eigen taken / concepten — midden
     "o365_draft_reply": "med", "o365_todo_create": "med", "o365_todo_complete": "med",
+    "o365_mail_move": "med", "o365_mail_delete": "med",
+    "o365_mail_forward_draft": "med", "o365_mail_reply_all_draft": "med",
     "asana_task_create": "med", "asana_task_complete": "med",
     "fireflies_sync": "med",
     # naar buiten / onomkeerbaar / voert namens Bas uit — hoog

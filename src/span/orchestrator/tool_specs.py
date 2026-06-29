@@ -262,6 +262,96 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "o365_mail_mark_read",
+            "description": "Markeer een mail als gelezen (of ongelezen). message_id = graph_id.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message_id": {"type": "string"},
+                    "read": {"type": "boolean", "description": "true=gelezen (default), false=ongelezen"},
+                },
+                "required": ["message_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_mail_flag",
+            "description": "Vlag een mail voor opvolging (of haal de vlag weg).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message_id": {"type": "string"},
+                    "flagged": {"type": "boolean", "description": "true=vlaggen (default), false=ontvlaggen"},
+                },
+                "required": ["message_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_mail_move",
+            "description": "Verplaats een mail naar een map (bv. 'Archief', '11: Meetingverslag', "
+            "'Verwijderd'). Mapnaam mag een deel zijn; bekende namen (Archief/Inbox/Verwijderd/Verzonden) werken direct.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message_id": {"type": "string"},
+                    "folder": {"type": "string", "description": "doelmap (naam of deel ervan)"},
+                },
+                "required": ["message_id", "folder"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_mail_delete",
+            "description": "Verplaats een mail naar Verwijderde items (herstelbaar, NOOIT permanent gewist). "
+            "Vat eerst kort samen welke mail en vraag bevestiging bij twijfel.",
+            "parameters": {
+                "type": "object",
+                "properties": {"message_id": {"type": "string"}},
+                "required": ["message_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_mail_forward_draft",
+            "description": "Maak een DOORSTUUR-concept naar ontvangers (verstuurt niets — Bas verstuurt zelf).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message_id": {"type": "string"},
+                    "to": {"type": "array", "items": {"type": "string"}, "description": "E-mailadressen"},
+                    "comment": {"type": "string", "description": "Optionele begeleidende tekst"},
+                },
+                "required": ["message_id", "to"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_mail_reply_all_draft",
+            "description": "Maak een ALLEN-BEANTWOORDEN-concept (verstuurt niets — Bas verstuurt zelf).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message_id": {"type": "string"},
+                    "body": {"type": "string", "description": "Concepttekst (platte tekst)"},
+                },
+                "required": ["message_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "o365_sharepoint_search",
             "description": "Doorzoek SharePoint-sites (documenten + lijstitems) van Lomans.",
             "parameters": {
@@ -801,7 +891,9 @@ O365_TOOLS = {"o365_mail_inbox", "o365_mail_send", "o365_calendar", "o365_event_
               "o365_files_search", "o365_file_read", "o365_sharepoint_search",
               "o365_teams_search", "o365_people_search",
               "o365_mail_attachments", "o365_attachment_read", "o365_archive_folder",
-              "o365_excel_sheets", "o365_excel_read"}
+              "o365_excel_sheets", "o365_excel_read",
+              "o365_mail_mark_read", "o365_mail_flag", "o365_mail_move",
+              "o365_mail_delete", "o365_mail_forward_draft", "o365_mail_reply_all_draft"}
 
 # Permissie-registry: groep + lezen/schrijven, voor de instellingenpagina.
 TOOL_META: dict[str, tuple[str, str]] = {
@@ -819,6 +911,12 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "o365_thread_summary": ("O365 Mail", "read"),
     "o365_draft_reply": ("O365 Mail", "write"),
     "o365_mail_send": ("O365 Mail", "write"),
+    "o365_mail_mark_read": ("O365 Mail", "write"),
+    "o365_mail_flag": ("O365 Mail", "write"),
+    "o365_mail_move": ("O365 Mail", "write"),
+    "o365_mail_delete": ("O365 Mail", "write"),
+    "o365_mail_forward_draft": ("O365 Mail", "write"),
+    "o365_mail_reply_all_draft": ("O365 Mail", "write"),
     "o365_calendar": ("O365 Agenda", "read"),
     "o365_calendar_search": ("O365 Agenda", "read"),
     "o365_event_create": ("O365 Agenda", "write"),
