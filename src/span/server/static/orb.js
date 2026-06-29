@@ -47,10 +47,11 @@
   function buildCanvas(){
     cv=document.createElement("canvas"); cv.id="orb-canvas";
     cv.style.cssText="position:absolute;top:2px;left:50%;transform:translateX(-50%);"+
-      "width:190px;height:190px;pointer-events:none;filter:drop-shadow(0 0 22px rgba(56,225,255,.30))";
+      "width:190px;height:190px;pointer-events:none;filter:drop-shadow(0 0 14px rgba(56,225,255,.55)) drop-shadow(0 0 36px rgba(56,225,255,.30))";
     wrap.insertBefore(cv, classic.nextSibling);
     renderer=new THREE.WebGLRenderer({canvas:cv,alpha:true,antialias:true});
     renderer.setPixelRatio(1); renderer.setSize(300,300,false);
+    renderer.setClearColor(0x000000, 0);   // transparante achtergrond (geen vierkant)
     scene=new THREE.Scene();
     cam=new THREE.PerspectiveCamera(50,1,0.1,100);
     tint=new THREE.Color(0x38e1ff);
@@ -58,7 +59,11 @@
     try {
       if (THREE.EffectComposer && THREE.UnrealBloomPass) {
         composer=new THREE.EffectComposer(renderer);
-        composer.addPass(new THREE.RenderPass(scene,cam));
+        // RenderPass mét clearAlpha 0, anders tekent de composer een
+        // ondoorzichtig (grijs) vierkant achter de orb i.p.v. transparant
+        const rp=new THREE.RenderPass(scene,cam);
+        rp.clearAlpha=0;
+        composer.addPass(rp);
         bloomPass=new THREE.UnrealBloomPass(new THREE.Vector2(300,300), cfg.bloom, 0.9, 0.0);
         composer.addPass(bloomPass);
       }
@@ -108,12 +113,13 @@
     const N=Math.max(120,Math.min(2500,cfg.cubes|0)); const R=cfg.radius;
     cam.position.z=R*3.1;
     geo=new THREE.BoxGeometry(cfg.cubeSize,cfg.cubeSize,cfg.cubeSize);
-    mat=new THREE.MeshBasicMaterial({toneMapped:false});
+    mat=new THREE.MeshBasicMaterial({toneMapped:false, transparent:true,
+        blending:THREE.AdditiveBlending, depthWrite:false});
     mesh=new THREE.InstancedMesh(geo,mat,N); scene.add(mesh);
     pts=makePoints(cfg.shape,N,R);
     const stops=PALETTES[cfg.palette]||PALETTES.span;
     for(let i=0;i<pts.length;i++){ pts[i].band=Math.min(NB-1,(pts[i].u*NB)|0);
-      mesh.setColorAt(i, paletteColor(stops, i/pts.length)); }
+      mesh.setColorAt(i, paletteColor(stops, i/pts.length).multiplyScalar(2.2)); }  // lichter/beter zichtbaar
     // ongebruikte instances ver weg parkeren
     for(let i=pts.length;i<N;i++){ m4.makeTranslation(9999,9999,9999); mesh.setMatrixAt(i,m4); }
     mesh.instanceColor.needsUpdate=true;
@@ -146,8 +152,10 @@
     mesh.instanceMatrix.needsUpdate=true;
     mesh.rotation.y+=0.002+rot*0.004; mesh.rotation.x=0.22;
     tintAmt*=0.95; mat.color.setRGB(1,1,1).lerp(tint, tintAmt*0.75);
-    if(composer && cfg.bloom>0){ if(bloomPass) bloomPass.strength=cfg.bloom; composer.render(); }
-    else renderer.render(scene,cam);
+    // altijd direct renderen (transparant) — de bloom-composer tekende een
+    // ondoorzichtig grijs vierkant achter de orb. Gloed komt nu van additieve
+    // blending op de kubussen + de CSS-drop-shadow op het canvas.
+    renderer.render(scene,cam);
     raf=requestAnimationFrame(frame);
   }
   function start(){ if(!raf) raf=requestAnimationFrame(frame); }
