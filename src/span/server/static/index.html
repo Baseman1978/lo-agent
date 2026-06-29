@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SPAN · J.A.R.V.I.S.</title>
-<link rel="stylesheet" href="/static/jarvis.css?v=12">
+<link rel="stylesheet" href="/static/jarvis.css?v=14">
 <link rel="stylesheet" href="/static/effects.css?v=12">
 </head>
 <body>
@@ -16,16 +16,20 @@
 </div>
 
 <header>
-  <h1>SPAN</h1>
-  <span class="sub">J.A.R.V.I.S. MODE · EEN AI DIE ZICHZELF ONTHOUDT</span>
+  <div class="brand">
+    <h1>SPAN</h1>
+    <span class="sub">J.A.R.V.I.S. MODE · EEN AI DIE ZICHZELF ONTHOUDT</span>
+  </div>
   <div id="clockbox">
     <div id="clock">--:--:--</div>
     <div id="date">—</div>
   </div>
-  <span id="health-dot" title="systeemstatus"></span>
-  <button id="palette-btn" class="iconbtn" title="Commando-palet (Ctrl+K)" aria-label="Commando-palet">⌘</button>
-  <button id="inbox-btn" class="iconbtn" title="Acties ter goedkeuring (Agent Inbox)" aria-label="Acties ter goedkeuring">✓ <b id="inbox-badge"></b></button>
-  <button id="settings-btn" class="iconbtn" title="Instellingen" aria-label="Instellingen">⚙</button>
+  <div class="hdr-controls">
+    <span id="health-dot" title="systeemstatus"></span>
+    <button id="palette-btn" class="iconbtn" title="Commando-palet (Ctrl+K)" aria-label="Commando-palet">⌘</button>
+    <button id="inbox-btn" class="iconbtn" title="Acties ter goedkeuring (Agent Inbox)" aria-label="Acties ter goedkeuring">✓ <b id="inbox-badge"></b></button>
+    <button id="settings-btn" class="iconbtn" title="Instellingen" aria-label="Instellingen">⚙</button>
+  </div>
 </header>
 
 <div id="toasts"></div>
@@ -71,14 +75,6 @@
   </section>
 
   <aside id="right" class="col">
-    <section class="panel" id="panel-mail">
-      <h2><span>⟢ Mail</span></h2>
-      <div class="body" id="mail"><div class="empty">geen data</div></div>
-    </section>
-    <section class="panel" id="panel-quests">
-      <h2>⟢ Quests &amp; gepland</h2>
-      <div class="body" id="quests"><div class="empty">geen data</div></div>
-    </section>
     <section class="panel" id="panel-brein">
       <h2>⟢ Brein-hologram <button id="holo-expand" class="iconbtn" title="Fullscreen">⛶</button></h2>
       <div id="holo-canvas"><div id="holo-scene"></div></div>
@@ -86,6 +82,14 @@
       <div id="holo-filters"></div>
       <div id="holo-count" class="m"></div>
       <div class="body" id="brein"><div class="empty">geen data</div></div>
+    </section>
+    <section class="panel" id="panel-mail">
+      <h2><span>⟢ Mail</span></h2>
+      <div class="body" id="mail"><div class="empty">geen data</div></div>
+    </section>
+    <section class="panel" id="panel-quests">
+      <h2>⟢ Quests &amp; gepland</h2>
+      <div class="body" id="quests"><div class="empty">geen data</div></div>
     </section>
   </aside>
 </main>
