@@ -24,11 +24,14 @@
       defaults = s.defaults;
       const models = mRes.ok ? (await mRes.json()).models : [s.model_main, s.model_light];
 
-      $("set-o365-status").textContent = s.o365.authenticated
-        ? `gekoppeld: ${s.o365.account}`
-        : (s.o365.configured ? "niet gekoppeld" : "niet geconfigureerd");
-      $("o365-login").classList.toggle("hidden", s.o365.authenticated || !s.o365.configured);
-      $("o365-logout").classList.toggle("hidden", !s.o365.authenticated);
+      $("set-o365-status").textContent = SPAN.sso
+        ? `via app-login (SSO)${s.o365.account ? " — " + s.o365.account : ""} · uitloggen rechtsboven`
+        : (s.o365.authenticated
+            ? `gekoppeld: ${s.o365.account}`
+            : (s.o365.configured ? "niet gekoppeld" : "niet geconfigureerd"));
+      // in SSO-modus is de losse O365-koppeling overbodig (de app-login regelt het)
+      $("o365-login").classList.toggle("hidden", SPAN.sso || s.o365.authenticated || !s.o365.configured);
+      $("o365-logout").classList.toggle("hidden", SPAN.sso || !s.o365.authenticated);
 
       $("set-asana-status").textContent = s.asana.configured
         ? "gekoppeld (token in .env)"
