@@ -220,8 +220,9 @@ TOOL_SPECS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "item_id": {"type": "string", "description": "Bestand-id uit o365_files_search"},
+                    "item_id": {"type": "string", "description": "Bestand-id (uit o365_files_search of o365_sharepoint_search)"},
                     "to_memory": {"type": "boolean", "description": "Opslaan in geheugen + entiteiten (default false)"},
+                    "drive_id": {"type": "string", "description": "Voor SharePoint-bestanden: drive_id uit o365_sharepoint_search"},
                 },
                 "required": ["item_id"],
             },

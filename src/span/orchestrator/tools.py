@@ -296,11 +296,15 @@ class ToolBox:
     def _tool_o365_files_search(self, query: str, top: int = 15) -> Any:
         return self._require_o365().search_files(query=query, top=top)
 
-    def _tool_o365_file_read(self, item_id: str, to_memory: bool = False) -> Any:
+    def _tool_o365_file_read(self, item_id: str, to_memory: bool = False,
+                             drive_id: str = "") -> Any:
         """Lees een OneDrive/SharePoint-bestand (pdf/docx/pptx/xlsx/txt…): download
-        + tekstextractie. to_memory=True slaat het ook op in het geheugen mét
+        + tekstextractie. Geef drive_id mee (uit o365_sharepoint_search) voor een
+        SharePoint-bestand. to_memory=True slaat het ook op in het geheugen mét
         entiteit-extractie (rijk geheugen), net als een 📎-upload."""
-        name, raw = self._require_o365().download_file(item_id)
+        o = self._require_o365()
+        name, raw = (o.download_drive_item(drive_id, item_id) if drive_id
+                     else o.download_file(item_id))
         from span.jarvis.documents import extract_text, ingest_document
         if to_memory:
             state = {"brain": self._brain, "llm": self._llm,
