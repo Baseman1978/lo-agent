@@ -729,6 +729,15 @@ class O365Client:
         j = r.json()
         return {"created": j.get("name"), "id": j.get("id"), "link": j.get("webUrl")}
 
+    def export_pdf(self, item_id: str) -> bytes:
+        """Converteer een Office-bestand in OneDrive naar PDF (Graph-side)."""
+        from span.integrations.http import request_with_retry
+        r = request_with_retry(lambda: requests.get(
+            f"{GRAPH}/me/drive/items/{item_id}/content?format=pdf",
+            headers={"Authorization": f"Bearer {self._token()}"}, timeout=120))
+        r.raise_for_status()
+        return r.content
+
     def respond_event(self, event_id: str, response: str, comment: str = "",
                      send_response: bool = True) -> dict[str, Any]:
         """Reageer op een afspraak-uitnodiging: response = accept | decline | tentative."""
