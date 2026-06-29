@@ -616,3 +616,67 @@ class O365Client:
             "data": values[:max_rows],
             "truncated": len(values) > max_rows,
         }
+
+    # -- mail beheren (Mail.ReadWrite) ---------------------------------------
+
+    _WELL_KNOWN_FOLDERS = {
+        "archief": "archive", "archive": "archive", "inbox": "inbox",
+        "postvak in": "inbox", "verwijderd": "deleteditems",
+        "prullenbak": "deleteditems", "verzonden": "sentitems",
+        "concepten": "drafts", "ongewenst": "junkemail",
+    }
+
+    def _resolve_folder(self, folder: str) -> str:
+        dest = self._WELL_KNOWN_FOLDERS.get(folder.strip().lower())
+        if dest:
+            return dest
+        nl = folder.strip().lower()
+        for f in self.list_folders(top=100):
+            if nl in (f.get("name") or "").lower():
+                return f["id"]
+        raise ValueError(f"Map '{folder}' niet gevonden.")
+
+    def mark_read(self, message_id: str, read: bool = True) -> dict[str, Any]:
+        r = requests.patch(f"{GRAPH}/me/messages/{message_id}",
+                           headers=self._headers(), json={"isRead": bool(read)}, timeout=30)
+        r.raise_for_status()
+        return {"id": message_id, "read": bool(read)}
+
+    def flag_message(self, message_id: str, flagged: bool = True) -> dict[str, Any]:
+        status = "flagged" if flagged else "notFlagged"
+        r = requests.patch(f"{GRAPH}/me/messages/{message_id}", headers=self._headers(),
+                           json={"flag": {"flagStatus": status}}, timeout=30)
+        r.raise_for_status()
+        return {"id": message_id, "flag": status}
+
+    def move_message(self, message_id: str, folder: str) -> dict[str, Any]:
+        dest = self._resolve_folder(folder)
+        res = self._post(f"/me/messages/{message_id}/move", {"destinationId": dest})
+        return {"moved": True, "to": folder, "new_id": res.get("id")}
+
+    def delete_message(self, message_id: str) -> dict[str, Any]:
+        """Soft-delete: verplaatst naar Verwijderde items (herstelbaar) — nooit hard."""
+        self._post(f"/me/messages/{message_id}/move", {"destinationId": "deleteditems"})
+        return {"moved_to_trash": True, "id": message_id,
+                "note": "Naar Verwijderde items (herstelbaar), niet permanent gewist."}
+
+    def draft_forward(self, message_id: str, to: list[str], comment: str = "") -> dict[str, Any]:
+        """Maak een DOORSTUUR-concept (verstuurt niets)."""
+        draft = self._post(f"/me/messages/{message_id}/createForward", {})
+        did = draft.get("id")
+        payload: dict[str, Any] = {"toRecipients": [{"emailAddress": {"address": a}} for a in to]}
+        r = requests.patch(f"{GRAPH}/me/messages/{did}", headers=self._headers(),
+                           json=payload, timeout=30)
+        r.raise_for_status()
+        return {"forward_draft": True, "draft_id": did, "to": to,
+                "link": r.json().get("webLink")}
+
+    def draft_reply_all(self, message_id: str, body: str = "") -> dict[str, Any]:
+        """Maak een ALLEN-BEANTWOORDEN-concept (verstuurt niets)."""
+        draft = self._post(f"/me/messages/{message_id}/createReplyAll", {})
+        did = draft.get("id")
+        if body:
+            r = requests.patch(f"{GRAPH}/me/messages/{did}", headers=self._headers(),
+                               json={"body": {"contentType": "Text", "content": body}}, timeout=30)
+            r.raise_for_status()
+        return {"reply_all_draft": True, "draft_id": did}

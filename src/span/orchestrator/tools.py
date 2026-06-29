@@ -318,6 +318,25 @@ class ToolBox:
         return self._require_o365().excel_read(
             item_id, worksheet=worksheet or None, address=address or None)
 
+    def _tool_o365_mail_mark_read(self, message_id: str, read: bool = True) -> Any:
+        return self._require_o365().mark_read(message_id, read=read)
+
+    def _tool_o365_mail_flag(self, message_id: str, flagged: bool = True) -> Any:
+        return self._require_o365().flag_message(message_id, flagged=flagged)
+
+    def _tool_o365_mail_move(self, message_id: str, folder: str) -> Any:
+        return self._require_o365().move_message(message_id, folder)
+
+    def _tool_o365_mail_delete(self, message_id: str) -> Any:
+        return self._require_o365().delete_message(message_id)
+
+    def _tool_o365_mail_forward_draft(self, message_id: str, to: list[str],
+                                      comment: str = "") -> Any:
+        return self._require_o365().draft_forward(message_id, to=to, comment=comment)
+
+    def _tool_o365_mail_reply_all_draft(self, message_id: str, body: str = "") -> Any:
+        return self._require_o365().draft_reply_all(message_id, body=body)
+
     def _tool_o365_sharepoint_search(self, query: str, top: int = 15) -> Any:
         return self._require_o365().search_sharepoint(query=query, top=top)
 
