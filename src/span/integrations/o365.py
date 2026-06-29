@@ -574,3 +574,45 @@ class O365Client:
         if not b64:
             raise ValueError("Geen bestandsbijlage (mogelijk een inline- of item-bijlage).")
         return name, base64.b64decode(b64)
+
+    # -- bestanden downloaden + Excel-data -----------------------------------
+
+    def download_file(self, item_id: str) -> tuple[str, bytes]:
+        """Download een OneDrive/SharePoint-bestand: (bestandsnaam, ruwe bytes)."""
+        from span.integrations.http import request_with_retry
+        meta = self._get(f"/me/drive/items/{item_id}", {"$select": "id,name"})
+        name = meta.get("name") or "bestand"
+        r = request_with_retry(lambda: requests.get(
+            f"{GRAPH}/me/drive/items/{item_id}/content",
+            headers={"Authorization": f"Bearer {self._token()}"}, timeout=60))
+        r.raise_for_status()
+        return name, r.content
+
+    def excel_worksheets(self, item_id: str) -> list[dict[str, Any]]:
+        """Werkbladen van een Excel-bestand (naam, positie, zichtbaar)."""
+        data = self._get(f"/me/drive/items/{item_id}/workbook/worksheets",
+                         {"$select": "name,position,visibility"})
+        return [{"name": w.get("name"), "position": w.get("position"),
+                 "visible": w.get("visibility") == "Visible"} for w in data.get("value", [])]
+
+    def excel_read(self, item_id: str, worksheet: str | None = None,
+                  address: str | None = None, max_rows: int = 60) -> dict[str, Any]:
+        """Lees de gebruikte cellen (of een specifiek bereik zoals 'A1:D20') van
+        een Excel-werkblad als rijen. Default = eerste werkblad, hele usedRange."""
+        from urllib.parse import quote
+        if not worksheet:
+            ws = self.excel_worksheets(item_id)
+            worksheet = ws[0]["name"] if ws else "Blad1"
+        base = f"/me/drive/items/{item_id}/workbook/worksheets/{quote(worksheet)}"
+        if address:
+            path = f"{base}/range(address='{address}')"
+        else:
+            path = f"{base}/usedRange"
+        data = self._get(path, {"$select": "address,values,rowCount,columnCount"})
+        values = data.get("values") or []
+        return {
+            "worksheet": worksheet, "address": data.get("address"),
+            "rows": data.get("rowCount"), "cols": data.get("columnCount"),
+            "data": values[:max_rows],
+            "truncated": len(values) > max_rows,
+        }
