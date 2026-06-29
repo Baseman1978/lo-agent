@@ -530,8 +530,11 @@ $("end").onclick = () => {
 boot();
 // SSO-modus detecteren vóór we verbinden: bij web-login zonder sessie meteen
 // naar de Microsoft-login; anders gewoon verbinden (token- of SSO-cookie).
+// uitloggen (alleen zinvol in SSO-modus): cookie wissen -> Microsoft-login
+$("logout-btn").onclick = () => { location.href = "/auth/logout"; };
 fetch("/auth/status").then((r) => r.json()).then((s) => {
   SPAN.sso = !!s.web_login;
   if (s.web_login && !s.authenticated) { location.href = "/auth/login"; return; }
+  if (SPAN.sso) $("logout-btn").classList.remove("hidden");  // toon uitlog-knop
   connect();
 }).catch(() => connect());
