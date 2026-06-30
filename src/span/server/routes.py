@@ -617,6 +617,64 @@ async def tts_status(request: Request) -> dict[str, Any]:
     return info
 
 
+@router.get("/api/skills")
+async def skills_list(request: Request) -> Any:
+    _require_rest_auth(request)
+    ctx = _request_context(request)
+    from span.memory import skills as sk
+    from span.orchestrator.tools import TOOL_META
+    items = await asyncio.to_thread(sk.list_skills, ctx.brain, ctx.shared, True)
+    # ook de beschikbare tools meegeven voor de macro-bouwer
+    tools = sorted(name for name, (_grp, _rw) in TOOL_META.items()
+                   if not name.startswith("skill_"))
+    return {"skills": items, "tools": tools}
+
+
+@router.post("/api/skills")
+async def skills_upsert(request: Request) -> Any:
+    _require_rest_auth(request)
+    ctx = _request_context(request)
+    from span.memory import skills as sk
+    body = await request.json()
+    try:
+        res = await asyncio.to_thread(
+            lambda: sk.upsert_skill(
+                ctx.brain,
+                name=body.get("name", ""), description=body.get("description", ""),
+                trigger=body.get("trigger", ""), kind=body.get("kind", "workflow"),
+                body=body.get("body", ""), steps=body.get("steps"),
+                params=body.get("params"), author="user",
+                enabled=bool(body.get("enabled", True))))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    await asyncio.to_thread(_audit, "skill_upsert", res.get("name", ""))
+    return res
+
+
+@router.post("/api/skills/{name}/enable")
+async def skills_enable(request: Request, name: str) -> Any:
+    _require_rest_auth(request)
+    ctx = _request_context(request)
+    from span.memory import skills as sk
+    body = await request.json()
+    en = bool(body.get("enabled", True))
+    ok = await asyncio.to_thread(sk.set_enabled, ctx.brain, name, en)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Skill niet gevonden.")
+    return {"name": name, "enabled": en}
+
+
+@router.delete("/api/skills/{name}")
+async def skills_delete(request: Request, name: str) -> Any:
+    _require_rest_auth(request)
+    ctx = _request_context(request)
+    from span.memory import skills as sk
+    ok = await asyncio.to_thread(sk.delete_skill, ctx.brain, name)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Skill niet gevonden.")
+    return {"deleted": name}
+
+
 @router.post("/api/fireflies/sync")
 async def fireflies_sync(request: Request, deep: bool = Query(False)) -> dict[str, Any]:
     """Handmatige sync: meetings → brein, actiepunten → Agent Inbox.

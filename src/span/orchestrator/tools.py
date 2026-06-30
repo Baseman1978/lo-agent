@@ -247,6 +247,61 @@ class ToolBox:
                 )
         return {"quest": quest_id, "status": status, "steps": len(steps or [])}
 
+    # -- skills: herbruikbare werkwijzen (①) + uitvoerbare tool-macro's (②) ----
+    def _tool_skill_list(self) -> Any:
+        from span.memory import skills as sk
+        items = sk.list_skills(self._brain, shared=self._shared, include_disabled=True)
+        return [{"name": s["name"], "kind": s["kind"], "enabled": s["enabled"],
+                 "description": s["description"], "trigger": s["trigger"],
+                 "params": s["params"], "author": s["author"]} for s in items]
+
+    def _tool_skill_use(self, name: str, params: dict[str, Any] | None = None) -> Any:
+        from span.memory import skills as sk
+        s = sk.get_skill(self._brain, name)
+        if s is None and self._shared is not None:  # misschien een team-skill
+            for cand in sk.list_skills(self._brain, shared=self._shared):
+                if cand["name"] == name:
+                    s = cand
+                    break
+        if s is None:
+            return {"error": f"Skill '{name}' niet gevonden. Zie skill_list."}
+        if not s.get("enabled", True):
+            return {"error": f"Skill '{name}' staat uit (wacht op goedkeuring van Bas)."}
+        try:
+            self._brain.run("MATCH (sk:Skill {name:$n}) "
+                            "SET sk.usage_count = coalesce(sk.usage_count,0)+1", n=s["name"])
+        except Exception:
+            pass
+        if s["kind"] == "macro":
+            known = {t["function"]["name"] for t in self.specs()}
+            return sk.execute_macro(s, params or {}, self.dispatch, known_tools=known)
+        return {"skill": s["name"], "kind": "workflow", "instructie": s["body"],
+                "params": params or {},
+                "note": "Volg deze werkwijze met de gewone tools."}
+
+    def _tool_skill_create(self, name: str, description: str, kind: str,
+                           trigger: str = "", body: str = "",
+                           steps: list | None = None, params: list | None = None) -> Any:
+        from span.memory import skills as sk
+        # de agent stelt een skill voor -> staat UIT tot Bas 'm goedkeurt
+        try:
+            sk.upsert_skill(self._brain, name=name, description=description, trigger=trigger,
+                            kind=kind, body=body, steps=steps, params=params,
+                            author="agent", enabled=False)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        nm = sk.normalize_name(name)
+        if self._inbox is not None:
+            item_id = self._inbox.add(
+                kind="action", action="enable_skill",
+                title=f"Nieuwe skill: {nm}",
+                detail=f"{kind} — {description}"[:240],
+                payload={"name": nm}, origin="agent",
+            )
+            return {"proposed": nm, "queued": item_id,
+                    "status": "Skill aangemaakt maar UIT; wacht op goedkeuring in de Agent Inbox."}
+        return {"created": nm, "status": "Skill aangemaakt (staat uit; geen inbox)."}
+
     def _tool_work_cypher(self, query: str) -> Any:
         if self._work is None:
             return {"error": "Geen productiedata gekoppeld (WORK_NEO4J_URI leeg)."}

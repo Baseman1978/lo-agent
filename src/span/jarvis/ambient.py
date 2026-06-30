@@ -144,6 +144,13 @@ def execute_approval(item: dict[str, Any], o365: Any, llm: Any = None,
         save_servers(brain, servers)
         return {"added": payload["name"],
                 "note": "Toegevoegd — log in via Instellingen → MCP-servers."}
+    if item["action"] == "enable_skill":
+        # door de agent voorgestelde skill goedkeuren -> aanzetten
+        if brain is None:
+            return {"error": "Geen brein beschikbaar."}
+        from span.memory.skills import set_enabled
+        ok = set_enabled(brain, payload["name"], True)
+        return {"enabled": payload["name"]} if ok else {"error": "Skill niet gevonden."}
     if item["action"] == "asana_task" and asana is not None:
         return asana.create_task(
             name=payload["name"], notes=payload.get("notes", ""),

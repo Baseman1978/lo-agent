@@ -578,6 +578,83 @@
   }
   ttsInit();
 
+  /* -- Skills: lijst + maken/bewerken/aan-uit/verwijderen ------------------ */
+  function skillsInit() {
+    const listEl = $("skills-list");
+    if (!listEl) return;
+    const kindSel = $("sk-kind");
+    const toggleKind = () => {
+      const macro = kindSel.value === "macro";
+      $("sk-body-row").classList.toggle("hidden", macro);
+      $("sk-steps-row").classList.toggle("hidden", !macro);
+      $("sk-params-row").classList.toggle("hidden", !macro);
+    };
+    const clearForm = () => {
+      ["sk-name", "sk-desc", "sk-trigger", "sk-body", "sk-steps", "sk-params"]
+        .forEach((id) => { const el = $(id); if (el) el.value = ""; });
+      kindSel.value = "workflow"; toggleKind();
+    };
+    const fillForm = (s) => {
+      $("sk-name").value = s.name || ""; $("sk-desc").value = s.description || "";
+      $("sk-trigger").value = s.trigger || ""; kindSel.value = s.kind || "workflow";
+      $("sk-body").value = s.body || "";
+      $("sk-steps").value = (s.steps && s.steps.length) ? JSON.stringify(s.steps, null, 2) : "";
+      $("sk-params").value = (s.params || []).join(", ");
+      toggleKind();
+    };
+    async function load() {
+      try {
+        const d = await (await fetch("/api/skills", { headers: SPAN.authHeaders() })).json();
+        $("sk-tools").textContent = "Beschikbare tools: " + (d.tools || []).join(", ");
+        const skills = d.skills || [];
+        if (!skills.length) { listEl.innerHTML = '<div class="empty">nog geen skills</div>'; return; }
+        listEl.innerHTML = "";
+        skills.forEach((s) => {
+          const row = document.createElement("div");
+          row.style.cssText = "display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--line)";
+          const tag = s.kind === "macro" ? "⚙ macro" : "werkwijze";
+          const who = s.author === "agent" ? " · door LO" : "";
+          const lab = document.createElement("label");
+          lab.style.cssText = "flex:1;cursor:pointer";
+          lab.innerHTML = `<input type="checkbox" ${s.enabled ? "checked" : ""}> <b>${s.name}</b> <span style="opacity:.6">· ${tag}${who}</span><br><span style="opacity:.7;font-size:11px">${s.description || ""}</span>`;
+          lab.querySelector("input").onchange = (e) =>
+            fetch("/api/skills/" + encodeURIComponent(s.name) + "/enable", {
+              method: "POST", headers: { ...SPAN.authHeaders(), "Content-Type": "application/json" },
+              body: JSON.stringify({ enabled: e.target.checked }) });
+          const ed = document.createElement("button"); ed.className = "iconbtn"; ed.textContent = "✎"; ed.title = "bewerken";
+          ed.onclick = () => fillForm(s);
+          const del = document.createElement("button"); del.className = "iconbtn"; del.textContent = "✕"; del.title = "verwijderen";
+          del.onclick = async () => {
+            if (!confirm("Skill '" + s.name + "' verwijderen?")) return;
+            await fetch("/api/skills/" + encodeURIComponent(s.name), { method: "DELETE", headers: SPAN.authHeaders() });
+            load();
+          };
+          row.appendChild(lab); row.appendChild(ed); row.appendChild(del);
+          listEl.appendChild(row);
+        });
+      } catch (e) { listEl.textContent = "kon skills niet laden"; }
+    }
+    kindSel.addEventListener("change", toggleKind);
+    $("sk-save").onclick = async () => {
+      const kind = kindSel.value;
+      const payload = { name: $("sk-name").value.trim(), description: $("sk-desc").value.trim(),
+                        trigger: $("sk-trigger").value.trim(), kind, enabled: true };
+      if (kind === "workflow") { payload.body = $("sk-body").value; }
+      else {
+        try { payload.steps = JSON.parse($("sk-steps").value || "[]"); }
+        catch (e) { SPAN.sys("Stappen-JSON is ongeldig.", "warn"); return; }
+        payload.params = $("sk-params").value.split(",").map((x) => x.trim()).filter(Boolean);
+      }
+      const res = await fetch("/api/skills", { method: "POST",
+        headers: { ...SPAN.authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); SPAN.sys("Opslaan mislukt: " + (d.detail || res.status), "warn"); return; }
+      SPAN.sys("Skill opgeslagen."); clearForm(); load();
+    };
+    $("sk-clear").onclick = clearForm;
+    toggleKind(); load();
+  }
+  skillsInit();
+
   /* statusje in settings live houden wanneer o365 net (ont)koppeld is */
   window.addEventListener("focus", () => {
     if (overlay.classList.contains("open")) load();
