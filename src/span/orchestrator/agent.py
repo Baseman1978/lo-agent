@@ -23,6 +23,14 @@ from span.orchestrator.tools import ToolBox
 
 MAX_TOOL_ITERATIONS = 8
 
+
+class TurnCancelled(Exception):
+    """De gebruiker onderbrak de beurt (barge-in) — coöperatieve annulering.
+
+    Wordt opgegooid vanuit de on_text-callback zodra de server een cancel
+    signaleert, zodat een lopende streaming-respons direct stopt i.p.v. eerst
+    af te maken."""
+
 BASE_PROMPT = """Je bent {name}, een AI-kennispartner van {owner}.
 Je bent geen kaal taalmodel: je hebt een blijvend geheugen in een Neo4j
 knowledge graph. Behandel die graph als je brein, je geheugen, je intelligentie.
@@ -208,7 +216,8 @@ class SpanAgent:
 
     def turn(self, user_message: str, on_text: Callable[[str], None] | None = None,
              on_memory: Callable[..., None] | None = None,
-             on_tool: Callable[..., None] | None = None) -> str:
+             on_tool: Callable[..., None] | None = None,
+             should_cancel: Callable[[], bool] | None = None) -> str:
         """Eén gespreksbeurt: RAG-injectie, tool-loop, continuous recording.
 
         on_text streamt tekst-deltas direct naar de UI; recording draait op
@@ -287,7 +296,14 @@ class SpanAgent:
         max_iter = min(self._security.get("budget_iterations", MAX_TOOL_ITERATIONS),
                        MAX_TOOL_ITERATIONS)
         budget = RunBudget(max_iterations=max_iter, max_seconds=180.0)
+        cancelled = False
         for _ in range(MAX_TOOL_ITERATIONS):
+            # barge-in: de gebruiker begon te praten -> stop vóór de volgende
+            # (dure) model- of tool-stap. Veilig punt: de history is hier sluitend
+            # (laatste bericht is user of een afgesloten tool-resultaat).
+            if should_cancel and should_cancel():
+                cancelled = True
+                break
             try:
                 budget.tick()
             except BudgetExceeded as exc:
@@ -301,6 +317,11 @@ class SpanAgent:
                     tools=self._toolbox.specs(),
                     on_text=on_text,
                 )
+            except TurnCancelled:
+                # mid-stream onderbroken: niets van deze iteratie is in de
+                # history beland -> sluit netjes af met een assistant-notitie.
+                cancelled = True
+                break
             except Exception as exc:
                 # M16: model-call faalde (bv. provider-fout) — sluit de beurt
                 # netjes af i.p.v. de history half-af te laten (sommige providers
@@ -355,17 +376,30 @@ class SpanAgent:
             )
             self._messages.append({"role": "assistant", "content": answer_parts[-1]})
 
+        if cancelled:
+            # history sluitend houden: geen losse tool_calls/tool-resultaten
+            # zonder afsluitende assistant, anders weigeren sommige providers de
+            # volgende beurt.
+            if not self._messages or self._messages[-1].get("role") != "assistant":
+                self._messages.append(
+                    {"role": "assistant", "content": "(onderbroken door de gebruiker)"})
+            if not any(p.strip() for p in answer_parts):
+                answer_parts.append("(onderbroken)")
+
         answer = "\n\n".join(part.strip() for part in answer_parts if part.strip())
         if not answer:
             answer = "(geen antwoord gegenereerd — probeer het opnieuw)"
 
         self.last_touched = list(dict.fromkeys(self._toolbox.touched))
 
-        recorder = threading.Thread(
-            target=self._record_turn, args=(user_message, answer), daemon=True
-        )
-        recorder.start()
-        self._recorders.append(recorder)
+        # een onderbroken beurt niet vastleggen: het antwoord is onvolledig en
+        # zou het geheugen alleen vervuilen.
+        if not cancelled:
+            recorder = threading.Thread(
+                target=self._record_turn, args=(user_message, answer), daemon=True
+            )
+            recorder.start()
+            self._recorders.append(recorder)
 
         if tools_used or self.last_touched:
             trace = threading.Thread(
