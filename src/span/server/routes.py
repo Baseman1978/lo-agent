@@ -675,6 +675,28 @@ async def skills_delete(request: Request, name: str) -> Any:
     return {"deleted": name}
 
 
+@router.get("/api/tasks")
+async def tasks_list(request: Request) -> Any:
+    _require_rest_auth(request)
+    tm = _state.get("tasks")
+    if tm is None:
+        return {"tasks": [], "active": 0}
+    items = tm.list()[:25]
+    return {"active": tm.active_count(),
+            "tasks": [{"id": t["id"], "title": t["title"], "status": t["status"],
+                       "progress": t["progress"], "steps": t["steps"],
+                       "result": t["result"], "updated": t["updated"]} for t in items]}
+
+
+@router.post("/api/tasks/{tid}/cancel")
+async def tasks_cancel(request: Request, tid: int) -> Any:
+    _require_rest_auth(request)
+    tm = _state.get("tasks")
+    if tm is None:
+        raise HTTPException(status_code=404, detail="Geen taken.")
+    return {"cancelled": tm.cancel(int(tid))}
+
+
 @router.post("/api/fireflies/sync")
 async def fireflies_sync(request: Request, deep: bool = Query(False)) -> dict[str, Any]:
     """Handmatige sync: meetings → brein, actiepunten → Agent Inbox.

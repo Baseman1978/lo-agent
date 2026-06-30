@@ -428,16 +428,16 @@ body[data-theme="warmachine"] {
 
 /* -- agent inbox ----------------------------------------------------------- */
 #inbox-btn b { color: var(--warn); font-weight: 600; }
-#inbox-btn.attention { animation: wakepulse 1.8s ease-in-out infinite; }
-#inbox-overlay {
+#inbox-btn.attention, #tasks-btn.attention { animation: wakepulse 1.8s ease-in-out infinite; }
+#inbox-overlay, #tasks-overlay {
   position: fixed; inset: 0; z-index: 44; display: none;
   background: rgba(2,5,10,.75); backdrop-filter: blur(3px);
 }
-#inbox-overlay.open { display: flex; align-items: center; justify-content: center; }
-#inbox-panel {
+#inbox-overlay.open, #tasks-overlay.open { display: flex; align-items: center; justify-content: center; }
+#inbox-panel, #tasks-panel {
   width: min(600px, 92vw); max-height: 84vh; flex: none; padding: 18px 22px;
 }
-#inbox-panel h2 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+#inbox-panel h2, #tasks-panel h2 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .inbox-card {
   border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px;
   margin-bottom: 9px; background: rgba(10,19,34,.5);
