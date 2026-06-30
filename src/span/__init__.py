@@ -6,4 +6,6 @@ een orchestrator die de juiste laag op het juiste moment aanspreekt.
 """
 
 __version__ = "0.1.0"
-AGENT_NAME = "Span"
+# configureerbare agentnaam (zelfde bron als de HUD/branding); default "LO"
+import os as _os
+AGENT_NAME = _os.environ.get("AGENT_NAME", "LO").strip() or "LO"

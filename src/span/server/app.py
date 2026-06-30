@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -33,7 +34,7 @@ from span.jarvis.daily import daily_scheduler
 from span.llm.client import LLMClient
 from span.memory.bootstrap import start_session
 from span.memory.fragments import FragmentStore
-from span.orchestrator.agent import SpanAgent
+from span.orchestrator.agent import SpanAgent, TurnCancelled
 from span.server import auth, routes
 from span.server.state import (
     SESSION_COOKIE, STATIC_DIR, _auth_token, _check_token, _effective_settings,
@@ -213,14 +214,20 @@ async def ws_chat(ws: WebSocket) -> None:
     session_id: str | None = None
     loop = asyncio.get_running_loop()
 
+    # berichten die de barge-in-watcher tijdens een beurt opving (bv. een /end
+    # terwijl de agent nog antwoordt) en die ná de beurt alsnog verwerkt worden
+    deferred_msgs: list[dict] = []
     try:
         await ws.send_json({"type": "ready", "agent": AGENT_NAME})
         while True:
-            raw = await ws.receive_text()
-            try:
-                msg = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
+            if deferred_msgs:
+                msg = deferred_msgs.pop(0)
+            else:
+                raw = await ws.receive_text()
+                try:
+                    msg = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
 
             if msg.get("type") == "location":
                 try:
@@ -249,8 +256,13 @@ async def ws_chat(ws: WebSocket) -> None:
                 # heterogene queue: zowel tekst-delta's als live 'memory_read'-
                 # events (welk geheugen Span tijdens de beurt raadpleegt)
                 queue: asyncio.Queue[dict | None] = asyncio.Queue()
+                # barge-in: de watcher zet dit zodra de gebruiker onderbreekt;
+                # de worker-thread leest het via should_cancel/on_text.
+                cancel_event = threading.Event()
 
                 def on_text(chunk: str) -> None:
+                    if cancel_event.is_set():
+                        raise TurnCancelled()
                     loop.call_soon_threadsafe(
                         queue.put_nowait, {"type": "delta", "text": chunk})
 
@@ -275,8 +287,33 @@ async def ws_chat(ws: WebSocket) -> None:
                     except Exception:
                         pass
 
+                # tijdens de beurt blijven we luisteren of de gebruiker onderbreekt
+                # (barge-in). Eén socket-lezer tegelijk: alleen de watcher leest
+                # zolang de beurt loopt, daarna leest de buitenste lus weer.
+                async def _watch_cancel() -> None:
+                    try:
+                        while True:
+                            raw2 = await ws.receive_text()
+                            try:
+                                m2 = json.loads(raw2)
+                            except json.JSONDecodeError:
+                                continue
+                            if m2.get("type") == "cancel":
+                                cancel_event.set()
+                                return
+                            if m2.get("type") == "location":
+                                continue  # periodiek; tijdens een beurt overslaan
+                            # ander bericht (bv. /end) niet verliezen: ná de beurt
+                            deferred_msgs.append(m2)
+                    except WebSocketDisconnect:
+                        cancel_event.set()  # verbroken verbinding -> stop de beurt
+
+                watcher = asyncio.ensure_future(_watch_cancel())
                 future = loop.run_in_executor(
-                    None, lambda: agent.turn(text, on_text, on_memory, on_tool))
+                    None,
+                    lambda: agent.turn(text, on_text, on_memory, on_tool,
+                                       should_cancel=cancel_event.is_set),
+                )
                 future.add_done_callback(
                     lambda _f: loop.call_soon_threadsafe(queue.put_nowait, None)
                 )
@@ -288,6 +325,7 @@ async def ws_chat(ws: WebSocket) -> None:
                         await ws.send_json(item)
                     answer = await future
                 except Exception as exc:
+                    watcher.cancel()
                     # beurt netjes laten aflopen (recorder schrijft nog), dan melden
                     await asyncio.wait([future])
                     if isinstance(exc, WebSocketDisconnect):
@@ -297,9 +335,11 @@ async def ws_chat(ws: WebSocket) -> None:
                         "message": f"Er ging iets mis in deze beurt: {exc}",
                     })
                     continue
+                watcher.cancel()
                 # geen losse eind-'touched' meer: de live leescascade dekt dit al
                 # (de :TOUCHED-DB-edges blijven via agent._write_trace)
-                await ws.send_json({"type": "done", "answer": answer})
+                await ws.send_json({"type": "done", "answer": answer,
+                                    "cancelled": cancel_event.is_set()})
 
             elif msg.get("type") == "end":
                 if session_id is None:

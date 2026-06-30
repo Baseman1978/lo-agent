@@ -286,7 +286,13 @@ function handle(msg) {
     SPAN.working(null);
     current = null; SPAN.busy = false; SPAN.setState("idle");
     { const st = $("stop"); if (st) st.classList.add("hidden"); }
-    if (SPAN.speakOn && SPAN.speakFlush) SPAN.speakFlush();  // rest van de stream
+    // bij een onderbroken beurt geen restant voorlezen; anders de stream afmaken
+    if (!msg.cancelled && SPAN.speakOn && SPAN.speakFlush) SPAN.speakFlush();
+    SPAN._muteStream = false;                               // klaar -> volgende antwoord mag weer
+    if (SPAN._pendingText) {                                // barge-in: opgevangen vervolg nu sturen
+      const t = SPAN._pendingText; SPAN._pendingText = null;
+      setTimeout(() => SPAN.send(t), 60);
+    }
     if (turnStart) {
       const stat = document.getElementById("latency-stat");
       if (stat) stat.textContent = ((Date.now() - turnStart) / 1000).toFixed(1) + " s";
@@ -320,6 +326,7 @@ let turnStart = 0;
 SPAN.send = (textOverride) => {
   const text = (textOverride ?? input.value).trim();
   if (!text || SPAN.busy || !ws || ws.readyState !== 1) return;
+  SPAN._muteStream = false;   // een nieuw antwoord mag weer voorgelezen worden
   turnStart = Date.now();
   if (SPAN.beginTurn) SPAN.beginTurn();  // hologram: camera vliegt 1x naar de eerste lees
   const sg = $("suggested"); if (sg) sg.innerHTML = "";  // suggesties weg zodra je begint
@@ -331,10 +338,17 @@ SPAN.send = (textOverride) => {
   const st = $("stop"); if (st) st.classList.remove("hidden");
 };
 
-/* stop: onderbreekt het voorlezen en geeft de UI weer vrij (de serverbeurt
-   loopt af op de achtergrond; de recorder bewaart wat er al was) */
+/* server vragen de lopende beurt af te breken (barge-in / stop-knop) */
+SPAN.cancel = () => {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "cancel" }));
+};
+
+/* stop: onderbreekt het voorlezen, breekt de serverbeurt echt af en geeft de
+   UI weer vrij */
 $("stop").onclick = () => {
   try { window.speechSynthesis && speechSynthesis.cancel(); } catch (e) { /* */ }
+  if (SPAN.busy) SPAN.cancel();           // server: beurt daadwerkelijk stoppen
+  SPAN._muteStream = true;                // resterende delta's niet meer voorlezen
   SPAN.busy = false; SPAN.setState("idle");
   $("stop").classList.add("hidden");
 };

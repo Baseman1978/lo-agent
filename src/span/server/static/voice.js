@@ -107,7 +107,7 @@
   /* streaming: zinnen voorlezen terwijl het antwoord nog binnenstroomt */
   let streamBuf = "";
   SPAN.speakDelta = (delta) => {
-    if (!SPAN.speakOn) return;
+    if (!SPAN.speakOn || SPAN._muteStream) return;
     if (streamBuf === "" && queueOpen === 0) {
       lastTTS = ""; speechSynthesis.cancel();
       spokenChars = 0; capAnnounced = false;
@@ -125,8 +125,25 @@
   };
   const stopSpeaking = () => {
     speechSynthesis.cancel(); queueOpen = 0; streamBuf = "";
+    // mute resterende stream-delta's van de afgebroken beurt: ze mogen de TTS
+    // niet opnieuw starten. Wordt opgeheven bij de volgende beurt/het volgende
+    // antwoord (SPAN.send en de done-afhandeling).
+    SPAN._muteStream = true;
     if (SPAN.state === "speaking") SPAN.setState("idle");
   };
+
+  /* -- barge-in: de gebruiker begint te praten terwijl de agent praat of nadenkt.
+        Stop de TTS meteen en, als er een beurt loopt, breek die op de server af
+        (acoustische onderbreking — niet wachten op een stopwoord). --------------- */
+  let barged = false;
+  function onBargeIn() {
+    stopSpeaking();
+    if (SPAN.busy && SPAN.cancel) {
+      SPAN.cancel();                 // server: breek de lopende beurt af
+      SPAN.sys("· onderbroken — ik luister ·");
+    }
+    if (mode !== "off") SPAN.setState("listening");
+  }
 
   $("speak").classList.add("active");
   $("speak").onclick = (e) => {
@@ -140,7 +157,11 @@
   async function initMicLevel() {
     if (analyser) return;
     try {
-      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // echo-onderdrukking: cruciaal voor barge-in zodat de mic de eigen TTS
+      // niet als 'gebruiker praat' terughoort
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
       const stream = micStream;
       micCtx = new (window.AudioContext || window.webkitAudioContext)();
       const src = micCtx.createMediaStreamSource(stream);
@@ -149,13 +170,23 @@
       src.connect(analyser);   // analyser hoeft niet naar destination (MDN)
       micData = new Uint8Array(analyser.frequencyBinCount);
       timeData = new Uint8Array(analyser.fftSize);
+      const BARGE_THR = 0.10;   // boven rest-echo (met echoCancellation aan)
+      const BARGE_FRAMES = 8;   // ~130 ms aanhoudende stem vóór we onderbreken
+      let bargeFrames = 0;
       const loop = () => {
         analyser.getByteFrequencyData(micData);
         let sum = 0;
         for (let i = 2; i < 40; i++) sum += micData[i];
         const raw = Math.min(1, sum / (38 * 160));
-        const active = mode !== "off" && SPAN.state !== "speaking";
+        const speaking = SPAN.state === "speaking";
+        const active = mode !== "off" && !speaking;
         SPAN.micLevel += ((active ? raw : 0) - SPAN.micLevel) * 0.25; // smoothing
+        // barge-in alleen relevant als de agent praat of nadenkt
+        if (mode !== "off" && (speaking || SPAN.busy)) {
+          if (raw > BARGE_THR) {
+            if (++bargeFrames >= BARGE_FRAMES && !barged) { barged = true; onBargeIn(); }
+          } else if (bargeFrames > 0) { bargeFrames--; }
+        } else { bargeFrames = 0; barged = false; }  // beurt klaar -> reset
         requestAnimationFrame(loop);
       };
       loop();
@@ -245,7 +276,9 @@
     }
     if (similarity(text, lastTTS.slice(0, text.length + 30)) >= 0.7) return; // echo
     if (mode === "open") {
-      if (SPAN.busy) return;                               // denkt nog — even wachten
+      // beurt loopt nog (we onderbraken net): bewaar de zin en stuur 'm zodra de
+      // afgebroken beurt is afgerond — zo gaat je aanvulling niet verloren.
+      if (SPAN.busy) { SPAN._pendingText = text; return; }
       SPAN.send(text);
       return;
     }
@@ -345,7 +378,7 @@
       if (!micStream) return;
       const level = SPAN.micLevel;
       const talking = level > 0.055;
-      if (!recorder && talking && SPAN.state !== "speaking" && !SPAN.busy) {
+      if (!recorder && talking && SPAN.state !== "speaking" && (!SPAN.busy || barged)) {
         startSegment();
       } else if (recorder) {
         if (talking) silenceSince = 0;
