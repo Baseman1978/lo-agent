@@ -73,9 +73,11 @@ def voice_info() -> dict:
         cfg = json.load(open(VOICE_PATH + ".json", encoding="utf-8"))
         info["num_speakers"] = int(cfg.get("num_speakers", 1))
         inf = cfg.get("inference", {})
-        info["model_length"] = inf.get("length_scale", 1.0)
-        info["model_noise"] = inf.get("noise_scale", 0.667)
-        info["model_noisew"] = inf.get("noise_w", 0.8)
+        # effectieve default = env-override (server-default) vóór de modelstandaard,
+        # zodat het paneel en "standaard herstellen" de echte basisklank tonen
+        info["model_length"] = DEF_LENGTH if DEF_LENGTH is not None else inf.get("length_scale", 1.0)
+        info["model_noise"] = DEF_NOISE if DEF_NOISE is not None else inf.get("noise_scale", 0.667)
+        info["model_noisew"] = DEF_NOISEW if DEF_NOISEW is not None else inf.get("noise_w", 0.8)
     except Exception:
         pass
     return info
