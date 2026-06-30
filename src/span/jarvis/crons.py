@@ -33,8 +33,8 @@ def create_cron(brain, text: str, at: str, repeat: str = "once",
         datetime.strptime(run_date, "%Y-%m-%d")
     if repeat == "weekly" and (weekday is None or not 0 <= int(weekday) <= 6):
         raise ValueError("weekly vereist weekday 0 (maandag) t/m 6 (zondag)")
-    if mode not in {"remind", "execute"}:
-        raise ValueError("mode moet remind of execute zijn")
+    if mode not in {"remind", "execute", "task"}:
+        raise ValueError("mode moet remind, execute of task zijn")
     from uuid import uuid4
     cron_id = f"cron-{uuid4().hex[:10]}"
     brain.run(
@@ -99,7 +99,14 @@ def run_due_crons(state: dict[str, Any]) -> int:
         if not _is_due(cron, now):
             continue
         try:
-            if cron["mode"] == "execute":
+            if cron["mode"] == "task" and state.get("tasks") is not None:
+                # geplande ACHTERGRONDtaak: een sub-agent doet het werk, de chat
+                # blijft vrij; resultaat landt in het Taken-paneel
+                tid = state["tasks"].submit(cron["text"], title="⏰ " + cron["text"][:50])
+                title, detail = (f"⏰ Achtergrondtaak gestart: {cron['text'][:50]}",
+                                 f"taak #{tid} — volg de voortgang in het Taken-paneel")
+                tg_text = f"⏰ Achtergrondtaak gestart\n{cron['text']}"
+            elif cron["mode"] == "execute":
                 result = _execute(state, cron["text"])
                 if result.startswith("Uitvoering mislukt:"):
                     raise RuntimeError(result)

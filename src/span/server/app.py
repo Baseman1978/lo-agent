@@ -162,7 +162,7 @@ async def lifespan(app: FastAPI):
             pass
         return result
 
-    _state["tasks"] = TaskManager(_task_runner, max_workers=2)
+    _state["tasks"] = TaskManager(_task_runner, brain=brain, max_workers=2)
     if not _auth_token():
         print("WAARSCHUWING: SPAN_AUTH_TOKEN niet gezet — alleen localhost toegestaan.")
     scheduler = asyncio.create_task(daily_scheduler(_state))

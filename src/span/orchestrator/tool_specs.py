@@ -809,8 +809,9 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "function": {
             "name": "cron_create",
             "description": "Plan een taak of herinnering. mode 'remind' = melding op het "
-            "moment; mode 'execute' = jij voert de opdracht dan zelf uit (met al je tools) "
-            "en levert het resultaat af. repeat: once/daily/weekdays/weekly.",
+            "moment; mode 'execute' = jij voert de opdracht dan kort zelf uit; mode 'task' = "
+            "start de opdracht als ACHTERGRONDtaak (sub-agent, voor langere klussen — de chat "
+            "blijft vrij, resultaat in het Taken-paneel). repeat: once/daily/weekdays/weekly.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -819,7 +820,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
                     "repeat": {"type": "string", "enum": ["once", "daily", "weekdays", "weekly"]},
                     "run_date": {"type": "string", "description": "YYYY-MM-DD, alleen bij once (default vandaag)"},
                     "weekday": {"type": "integer", "description": "0=maandag … 6=zondag, alleen bij weekly"},
-                    "mode": {"type": "string", "enum": ["remind", "execute"]},
+                    "mode": {"type": "string", "enum": ["remind", "execute", "task"]},
                 },
                 "required": ["text", "at"],
             },
