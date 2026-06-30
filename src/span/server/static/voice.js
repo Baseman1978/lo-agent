@@ -267,6 +267,36 @@
     return;
   }
 
+  /* -- Fase 3: adaptieve beurt-aggregatie --------------------------------------
+     Houd een afgeronde transcriptie kort vast en stuur 'm pas als je echt klaar
+     lijkt. Klinkt de zin af (eindigt op .?! of gewoon netjes) -> kort venster;
+     lijkt 'ie onaf (eindigt op een voegwoord/filler, of erg kort) -> langer
+     venster, zodat een denkpauze midden in je zin je niet afkapt. Komt er binnen
+     het venster meer spraak, dan smelt die in dezelfde beurt. */
+  const CONT_CUES = ["en", "maar", "want", "dus", "of", "omdat", "zodat", "eh",
+    "ehm", "uh", "uhm", "nog", "ook", "plus", "dat", "die", "met", "voor", "naar"];
+  let turnBuf = "", turnTimer = null;
+  function looksUnfinished(t) {
+    const trimmed = t.trim();
+    if (/[.?!]$/.test(trimmed)) return false;                  // duidelijke afsluiting
+    const words = trimmed.toLowerCase().replace(/[.,!?]/g, "").split(/\s+/);
+    if (words.length <= 2) return true;                        // erg kort -> wellicht niet af
+    if (CONT_CUES.includes(words[words.length - 1])) return true; // eindigt op voegwoord/filler
+    return false;
+  }
+  function flushTurn() {
+    clearTimeout(turnTimer); turnTimer = null;
+    const t = turnBuf.trim(); turnBuf = "";
+    if (input) input.placeholder = PLACEHOLDER;
+    if (t) SPAN.send(t);
+  }
+  function aggregate(text) {
+    turnBuf = (turnBuf ? turnBuf + " " : "") + text.trim();
+    if (input) input.placeholder = "… " + turnBuf;             // zichtbaar dat ik nog luister
+    clearTimeout(turnTimer);
+    turnTimer = setTimeout(flushTurn, looksUnfinished(turnBuf) ? 1500 : 600);
+  }
+
   function handleFinal(text) {
     text = text.trim();
     if (!text) return;
@@ -279,7 +309,7 @@
       // beurt loopt nog (we onderbraken net): bewaar de zin en stuur 'm zodra de
       // afgebroken beurt is afgerond — zo gaat je aanvulling niet verloren.
       if (SPAN.busy) { SPAN._pendingText = text; return; }
-      SPAN.send(text);
+      aggregate(text);                                    // Fase 3: even wachten op aanvulling
       return;
     }
     // wake-modus
@@ -292,7 +322,7 @@
       SPAN.sys("· ik luister ·");
       return;
     }
-    if (Date.now() < hotUntil && !SPAN.busy) { SPAN.send(text); return; }
+    if (Date.now() < hotUntil && !SPAN.busy) { aggregate(text); return; }
     // niets getriggerd: laat zien wát er gehoord is, zodat stilte niet als
     // 'kapot' voelt — en je ziet of het wake-woord verkeerd verstaan werd
     if (text.length > 1) SPAN.sys('gehoord: "' + text + '" · zeg "' + (SPAN._agentName || "LO") + '" om mij te wekken');
@@ -340,6 +370,7 @@
     $("wake").classList.toggle("active", mode === "wake");
     if (mode === "off") {
       intentionalStop = true; clearTimeout(restartTimer);
+      clearTimeout(turnTimer); turnTimer = null; turnBuf = "";  // aggregatie stoppen
       try { recognizer && recognizer.stop(); } catch (e) {}
       stopSegment(true);
       if (SPAN.state === "listening") SPAN.setState("idle");
