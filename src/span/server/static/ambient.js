@@ -155,10 +155,12 @@
       const div = document.createElement("div");
       const active = ["queued", "running", "cancelling"].includes(t.status);
       div.className = "inbox-card" + (active ? "" : " closed") + (t.status === "error" ? " hot" : "");
+      const pct = Math.max(0, Math.min(100, t.percent || 0));
       div.innerHTML =
         `<div class="k">TAAK #${t.id} · ${esc(T_STATUS[t.status] || t.status)}` +
-        `${t.progress ? " · " + esc(t.progress) : ""}</div>` +
+        `${active ? " · " + pct + "%" : ""}${t.progress ? " · " + esc(t.progress) : ""}</div>` +
         `<b>${esc(t.title)}</b>` +
+        (active ? `<div class="taskbar"><span style="width:${pct}%"></span></div>` : "") +
         (t.result ? `<p>${esc((t.result || "").slice(0, 700))}</p>` : "");
       if (active) {
         const no = document.createElement("button");

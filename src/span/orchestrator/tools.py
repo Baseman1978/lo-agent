@@ -49,8 +49,10 @@ class ToolBox:
         mcp: Any = None,
         shared: BrainDB | None = None,
         tasks: Any = None,
+        progress_cb: Any = None,
     ):
         self._security = security or {}
+        self._progress_cb = progress_cb  # alleen in taak-modus: report_progress
         self._tasks = tasks            # TaskManager (achtergrondtaken) of None
         self._mcp = mcp                # MCPRegistry of None
         self._shared = shared          # brain-shared (multi-user) of None
@@ -80,6 +82,8 @@ class ToolBox:
             hidden.add("propose_share")  # delen kan alleen in multi-user mét inbox
         if self._tasks is None:  # sub-agents krijgen geen taken -> geen recursie
             hidden |= {"spawn_task", "task_status", "task_cancel"}
+        if self._progress_cb is None:  # alleen zinvol als deze agent een taak ís
+            hidden.add("report_progress")
         if self._fireflies is None:
             hidden |= {"fireflies_meetings", "fireflies_sync"}
         if self._o365 is None:
@@ -333,6 +337,16 @@ class ToolBox:
         if self._tasks is None:
             return {"error": "Achtergrondtaken niet beschikbaar."}
         return {"cancelled": self._tasks.cancel(int(id))}
+
+    def _tool_report_progress(self, percent: int, label: str = "") -> Any:
+        # alleen beschikbaar voor een sub-agent die zelf een taak ís
+        if self._progress_cb is None:
+            return {"error": "Niet in een achtergrondtaak."}
+        try:
+            self._progress_cb(int(percent), str(label)[:80])
+        except Exception:
+            pass
+        return {"ok": True, "percent": max(0, min(100, int(percent)))}
 
     def _tool_work_cypher(self, query: str) -> Any:
         if self._work is None:
