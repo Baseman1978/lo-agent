@@ -275,6 +275,11 @@ class ToolBox:
             return {"error": f"Skill '{name}' niet gevonden. Zie skill_list."}
         if not s.get("enabled", True):
             return {"error": f"Skill '{name}' staat uit (wacht op goedkeuring van Bas)."}
+        # een GEDEELDE (team-)macro zou onder jóuw identiteit/mailbox draaien ->
+        # niet rechtstreeks uitvoeren; tekst-werkwijzen delen is wel veilig
+        if s.get("shared") and s["kind"] == "macro":
+            return {"error": f"'{name}' is een gedeelde macro; die voer ik niet "
+                    "rechtstreeks bij jou uit. Maak er een eigen kopie van in de Skills-tab."}
         try:
             self._brain.run("MATCH (sk:Skill {name:$n}) "
                             "SET sk.usage_count = coalesce(sk.usage_count,0)+1", n=s["name"])

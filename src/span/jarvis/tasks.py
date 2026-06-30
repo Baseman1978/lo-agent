@@ -179,8 +179,9 @@ class TaskManager:
             return dict(it) if it else None
 
     def _visible(self, v: dict[str, Any], owner: str | None) -> bool:
-        # owner=None -> alles (intern); anders alleen eigen taken (+ legacy zonder owner)
-        return owner is None or (v.get("owner") or "") in ("", owner)
+        # owner=None -> alles (intern); anders strikt alleen eigen taken. Lege owner
+        # (legacy) is dus NIET 'van iedereen' -> geen footgun bij een lege brein-db.
+        return owner is None or (v.get("owner") or "") == owner
 
     def list(self, owner: str | None = None) -> list[dict[str, Any]]:
         with self._lock:
