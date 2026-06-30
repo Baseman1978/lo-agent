@@ -73,10 +73,23 @@
         af in een wachtrij; barge-in stopt de bron en breekt de fetch af. ----- */
   SPAN.serverTTS = false;
   let _ax = null, ttsQ = [], ttsPlaying = false, curSrc = null, ttsAbort = null, ttsLast = false;
+  let ttsAnalyser = null, ttsLevelData = null;
+  SPAN._ttsLevel = 0;   // niveau van LO's eigen stem (voor echo-bewuste barge-in)
   function audioCtx() {
     if (!_ax) _ax = new (window.AudioContext || window.webkitAudioContext)();
     if (_ax.state === "suspended") _ax.resume();
     return _ax;
+  }
+  // de TTS speelt via een analyser zodat de mic-loop weet hoe hard LO nu praat
+  function ttsMonitor() {
+    const ax = audioCtx();
+    if (!ttsAnalyser) {
+      ttsAnalyser = ax.createAnalyser();
+      ttsAnalyser.fftSize = 256;
+      ttsAnalyser.connect(ax.destination);
+      ttsLevelData = new Uint8Array(ttsAnalyser.frequencyBinCount);
+    }
+    return ttsAnalyser;
   }
   const ttsIdleServer = () => ttsQ.length === 0 && !ttsPlaying;
   function ttsStop() {
@@ -109,7 +122,7 @@
       const audio = await audioCtx().decodeAudioData(arr);
       if (SPAN._muteStream) { ttsPlaying = false; return ttsPump(); }
       const src = audioCtx().createBufferSource();
-      src.buffer = audio; src.connect(audioCtx().destination);
+      src.buffer = audio; src.connect(ttsMonitor());  // via analyser -> luidsprekers
       curSrc = src;
       SPAN.setState("speaking");
       src.onended = () => { curSrc = null; ttsPlaying = false; ttsPump(); };
@@ -206,18 +219,24 @@
   };
 
   /* streaming: zinnen voorlezen terwijl het antwoord nog binnenstroomt */
-  let streamBuf = "";
+  let streamBuf = "", firstChunk = true;
   SPAN.speakDelta = (delta) => {
     if (!SPAN.speakOn || SPAN._muteStream) return;
     if (streamBuf === "" && (SPAN.serverTTS ? ttsIdleServer() : queueOpen === 0)) {
       lastTTS = "";
       if (SPAN.serverTTS) ttsStop(); else speechSynthesis.cancel();
       spokenChars = 0; capAnnounced = false;
+      firstChunk = true;   // nieuw antwoord -> eerste fragment snel laten klinken
     }
     streamBuf += delta;
-    const m = streamBuf.match(/^[\s\S]*?[.!?]\s/);
-    if (m && m[0].length > 30) {
+    // eerste fragment ook op een komma/zinsdeel breken zodat het geluid eerder
+    // begint (XTTS rendert ~evenredig met de lengte); daarna per hele zin
+    const pat = firstChunk ? /^[\s\S]*?[,;:.!?]\s/ : /^[\s\S]*?[.!?]\s/;
+    const minLen = firstChunk ? 14 : 30;
+    const m = streamBuf.match(pat);
+    if (m && m[0].length >= minLen) {
       speakChunk(m[0], false);
+      firstChunk = false;
       streamBuf = streamBuf.slice(m[0].length);
     }
   };
@@ -296,8 +315,16 @@
           noiseFloor = Math.min(0.35, Math.max(0.005, noiseFloor));
         }
         SPAN._recentPeak = Math.max(raw, SPAN._recentPeak * 0.92);
-        // barge-in: duidelijk boven de ruisvloer én een absolute bodem, aanhoudend
-        const bargeThr = Math.max(0.16, SPAN._speechThr() * 1.7);
+        // niveau van LO's eigen stem (echo-bewuste barge-in): tilt de drempel
+        // mee omhoog terwijl LO praat, en laat 'm zakken in de stiltes
+        if (ttsAnalyser && ttsLevelData) {
+          ttsAnalyser.getByteFrequencyData(ttsLevelData);
+          let ts = 0;
+          for (let k = 2; k < 40; k++) ts += ttsLevelData[k];
+          SPAN._ttsLevel += (Math.min(1, ts / (38 * 160)) - SPAN._ttsLevel) * 0.3;
+        } else { SPAN._ttsLevel = 0; }
+        // barge-in: duidelijk boven de ruisvloer/echo én een absolute bodem
+        const bargeThr = Math.max(0.16, SPAN._speechThr() * 1.7) + SPAN._ttsLevel * 0.7;
         if (mode !== "off" && (speaking || SPAN.busy)) {
           if (raw > bargeThr) {
             if (++bargeFrames >= BARGE_FRAMES && !barged) { barged = true; onBargeIn(); }
