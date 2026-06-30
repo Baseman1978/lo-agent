@@ -167,6 +167,19 @@ SPAN._applyDot = () => {
         : "online");
 };
 SPAN.setOnline = (ok) => { SPAN._wsOk = ok; SPAN._applyDot(); };
+
+// merknaam uit /auth/status (één bron in de backend: AGENT_NAME) -> HUD
+SPAN._agentName = "LO";
+SPAN.applyBranding = (name, tagline) => {
+  if (name) {
+    SPAN._agentName = name;
+    const h1 = document.querySelector("header h1"); if (h1) h1.textContent = name;
+    document.title = name + " · Lomans";
+  }
+  if (tagline) {
+    const sub = document.querySelector("header .sub"); if (sub) sub.textContent = tagline;
+  }
+};
 let wsWanted = true, reconnectDelay = 1500, reconnectTimer = 0;
 function connect() {
   clearTimeout(reconnectTimer);
@@ -228,7 +241,7 @@ function handle(msg) {
   if (msg.type === "ready") {
     SPAN.setOnline(true);
     if (!SPAN._welcomed) {  // welkomstmelding maar één keer, niet bij elke reconnect
-      SPAN.sys("Span is wakker — alle systemen online.");
+      SPAN.sys(SPAN._agentName + " is wakker — alle systemen online.");
       SPAN._welcomed = true;
     }
     loadPanels();
@@ -590,6 +603,7 @@ boot();
 $("logout-btn").onclick = () => { location.href = "/auth/logout"; };
 fetch("/auth/status").then((r) => r.json()).then((s) => {
   SPAN.sso = !!s.web_login;
+  SPAN.applyBranding(s.agent_name, s.agent_tagline);
   if (s.web_login && !s.authenticated) { location.href = "/auth/login"; return; }
   if (SPAN.sso) $("logout-btn").classList.remove("hidden");  // toon uitlog-knop
   connect();

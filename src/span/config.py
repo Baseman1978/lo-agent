@@ -83,6 +83,9 @@ class Settings:
     # geheugen-verval: "off" (default, pure cosine), "soft" (zacht herordenen),
     # "log" (zacht + log welke fragmenten zouden stijgen/zakken)
     decay_mode: str = "off"
+    # merknaam van de agent (één bron; wijzig via AGENT_NAME/AGENT_TAGLINE in .env)
+    agent_name: str = "LO"
+    agent_tagline: str = "DE AI-ASSISTENT VAN LOMANS"
 
 
 def _require(name: str) -> str:
@@ -138,6 +141,8 @@ def load_settings(env_file: Path | None = None) -> Settings:
         brain_db=os.environ.get("BRAIN_DB", "span-brain").strip(),
         work=work,
         decay_mode=_decay_mode(),
+        agent_name=os.environ.get("AGENT_NAME", "LO").strip() or "LO",
+        agent_tagline=os.environ.get("AGENT_TAGLINE", "DE AI-ASSISTENT VAN LOMANS").strip(),
         jarvis=JarvisConfig(
             ms_client_id=os.environ.get("MS_CLIENT_ID", "").strip() or MS_PUBLIC_CLIENT_ID,
             ms_tenant_id=os.environ.get("MS_TENANT_ID", "common").strip() or "common",

@@ -60,9 +60,10 @@ def load_bootstrap(
 ) -> BootstrapContext:
     identity_rows = brain.run(
         """
-        MATCH (i:Identity {name: 'Span'})
+        MATCH (i:Identity)
         RETURN i.name AS name, i.philosophy AS philosophy,
                i.origin AS origin, i.owner AS owner
+        LIMIT 1
         """
     )
     if not identity_rows:
@@ -70,7 +71,7 @@ def load_bootstrap(
 
     protocols = brain.run(
         """
-        MATCH (:Identity {name: 'Span'})-[:HAS_PROTOCOL]->(p:Protocol)
+        MATCH (:Identity)-[:HAS_PROTOCOL]->(p:Protocol)
         RETURN p.name AS name, p.body AS body, p.version AS version
         ORDER BY p.name
         """
