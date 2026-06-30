@@ -51,10 +51,10 @@ OPTIONS {{indexConfig: {{
 """
 
 IDENTITY_SEED = """
-MERGE (i:Identity {name: 'Span'})
+MERGE (i:Identity {name: 'LO'})
 ON CREATE SET
   i.philosophy = 'Treat this graph as my brain, my memory, my intelligence.',
-  i.origin = 'Vier letters uit Spaan, de familienaam van Bas. Span: verbinden en overspannen — bruggen tussen sessies. En een span is een duo dat samenwerkt.',
+  i.origin = 'LO — de AI-assistent van Lomans (lomans.nl), gebouwd voor het bedrijf waar de agent werkt.',
   i.owner = 'Bas Spaan',
   i.created = datetime()
 RETURN i.name AS name
@@ -106,7 +106,7 @@ PROTOCOL_SEED = """
 MERGE (p:Protocol {name: $name})
 ON CREATE SET p.body = $body, p.version = 1, p.created = datetime()
 WITH p
-MATCH (i:Identity {name: 'Span'})
+MATCH (i:Identity)
 MERGE (i)-[:HAS_PROTOCOL]->(p)
 """
 
@@ -156,7 +156,7 @@ def init_schema(brain: BrainDB, settings: Settings) -> list[str]:
     log.append(f"embedding-config vastgelegd ({settings.embed_model}, {settings.embed_dims} dims)")
 
     brain.run(IDENTITY_SEED)
-    log.append("identity 'Span' geseed")
+    log.append("identity 'LO' geseed")
 
     for name, body in CORE_PROTOCOLS:
         brain.run(PROTOCOL_SEED, name=name, body=body)

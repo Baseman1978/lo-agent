@@ -151,5 +151,9 @@ async def auth_status(request: Request) -> dict[str, Any]:
     Zo weet de frontend of 'ie om een token moet vragen (token-modus) of niet
     (SSO-modus: de cookie regelt het)."""
     from span.server.state import _session_user
+    import os
     return {"web_login": _web_login_on(),
-            "authenticated": _session_user(request) is not None}
+            "authenticated": _session_user(request) is not None,
+            "agent_name": os.environ.get("AGENT_NAME", "LO").strip() or "LO",
+            "agent_tagline": os.environ.get("AGENT_TAGLINE",
+                                            "DE AI-ASSISTENT VAN LOMANS").strip()}

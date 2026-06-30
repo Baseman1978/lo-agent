@@ -20,19 +20,17 @@
     for (const x of A) if (B.has(x)) hits++;
     return (2 * hits) / (A.size + B.size);
   }
-  // Whisper hoort "Jarvis" geregeld nét anders; varianten + lagere drempel
-  // vangen dat. 'span' blijft strenger (kort woord = sneller vals alarm).
-  const WAKE_WORDS = ["jarvis", "jervis", "jarvix", "charvis", "djarvis", "garvis"];
+  // wake-word = de agentnaam (configureerbaar via AGENT_NAME). Korte namen
+  // (≤3 tekens, bv. "LO") krijgen een strenge drempel tegen vals alarm.
   const STOP_WORDS = ["stop", "stil", "genoeg", "kappen", "stilte"];
+  const wakeWord = () => (window.SPAN && SPAN._agentName ? SPAN._agentName : "LO").toLowerCase();
 
   function findWake(transcript) {
+    const wake = wakeWord();
+    const thr = wake.length <= 3 ? 0.9 : 0.62;
     const words = transcript.toLowerCase().replace(/[.,!?]/g, "").split(/\s+/);
     for (let i = 0; i < words.length; i++) {
-      const tail = () => words.slice(i + 1).join(" ").trim();
-      for (const w of WAKE_WORDS) {
-        if (similarity(words[i], w) >= 0.6) return tail();
-      }
-      if (similarity(words[i], "span") >= 0.8) return tail();  // streng
+      if (similarity(words[i], wake) >= thr) return words.slice(i + 1).join(" ").trim();
     }
     return null;
   }
@@ -264,7 +262,7 @@
     if (Date.now() < hotUntil && !SPAN.busy) { SPAN.send(text); return; }
     // niets getriggerd: laat zien wát er gehoord is, zodat stilte niet als
     // 'kapot' voelt — en je ziet of het wake-woord verkeerd verstaan werd
-    if (text.length > 1) SPAN.sys('gehoord: "' + text + '" · zeg "Jarvis" om mij te wekken');
+    if (text.length > 1) SPAN.sys('gehoord: "' + text + '" · zeg "' + (SPAN._agentName || "LO") + '" om mij te wekken');
   }
 
   function buildRecognizer() {
