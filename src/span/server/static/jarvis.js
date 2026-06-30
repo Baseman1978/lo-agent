@@ -619,6 +619,9 @@ boot();
 $("logout-btn").onclick = () => { location.href = "/auth/logout"; };
 fetch("/auth/status").then((r) => r.json()).then((s) => {
   SPAN.sso = !!s.web_login;
+  // server-side neurale stem (Piper) gebruiken als beschikbaar; localStorage
+  // "span_tts=browser" forceert de browser-stem
+  SPAN.serverTTS = !!s.tts_available && localStorage.getItem("span_tts") !== "browser";
   SPAN.applyBranding(s.agent_name, s.agent_tagline);
   if (s.web_login && !s.authenticated) { location.href = "/auth/login"; return; }
   if (SPAN.sso) $("logout-btn").classList.remove("hidden");  // toon uitlog-knop

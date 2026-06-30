@@ -23,6 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 stt = ["faster-whisper>=1.0"]  # server-side spraakherkenning (Docker)
+tts = ["piper-tts>=1.4"]       # server-side neurale TTS (Docker)
 
 [project.scripts]
 span = "span.cli:main"
