@@ -532,6 +532,7 @@
     const SLIDERS = ["tts-length", "tts-noise", "tts-noisew", "tts-volume"];
     fetch("/api/tts/status", { headers: SPAN.authHeaders() }).then((r) => r.json()).then((s) => {
       if (!s.available) { wrap.style.display = "none"; return; }
+      SPAN._ttsStreaming = !!s.streaming;   // XTTS streamt -> lage latency
       const sel = $("tts-speaker");
       if (s.engine === "xtts") {
         // XTTS: stem = naam, geen Piper-schuiven
