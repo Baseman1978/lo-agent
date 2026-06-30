@@ -117,6 +117,69 @@
     if (e.target === overlay) overlay.classList.remove("open");
   });
 
+  /* -- achtergrondtaken: poll + paneel + meldingen ----------------------- */
+  const tasksOverlay = $("tasks-overlay");
+  const tasksDone = new Set();
+  let tasksFirst = true;
+  const T_STATUS = { queued: "in wachtrij", running: "bezig", cancelling: "annuleren…",
+                     done: "klaar", error: "fout", cancelled: "geannuleerd" };
+  async function pollTasks() {
+    try {
+      const res = await fetch("/api/tasks", { headers: SPAN.authHeaders() });
+      if (!res.ok) return;
+      const d = await res.json();
+      $("tasks-badge").textContent = d.active || "";
+      $("tasks-btn").classList.toggle("attention", d.active > 0);
+      for (const t of d.tasks) {
+        if (["done", "error", "cancelled"].includes(t.status) && !tasksDone.has(t.id)) {
+          tasksDone.add(t.id);
+          if (!tasksFirst) {
+            toast("Taak " + (t.status === "done" ? "klaar" : t.status) + ": " + t.title,
+                  (t.result || "").slice(0, 90), t.status === "error" ? "high" : "normal");
+          }
+        }
+      }
+      tasksFirst = false;
+      if (tasksOverlay.classList.contains("open")) renderTasks(d.tasks);
+    } catch (e) { /* stil */ }
+  }
+  setInterval(pollTasks, 4000);
+  setTimeout(pollTasks, 3500);
+
+  function renderTasks(items) {
+    const list = $("tasks-list");
+    list.innerHTML = "";
+    if (!items.length) { list.innerHTML = '<div class="empty">Geen achtergrondtaken.</div>'; return; }
+    for (const t of items) {
+      const div = document.createElement("div");
+      const active = ["queued", "running", "cancelling"].includes(t.status);
+      div.className = "inbox-card" + (active ? "" : " closed") + (t.status === "error" ? " hot" : "");
+      div.innerHTML =
+        `<div class="k">TAAK #${t.id} · ${esc(T_STATUS[t.status] || t.status)}` +
+        `${t.progress ? " · " + esc(t.progress) : ""}</div>` +
+        `<b>${esc(t.title)}</b>` +
+        (t.result ? `<p>${esc((t.result || "").slice(0, 700))}</p>` : "");
+      if (active) {
+        const no = document.createElement("button");
+        no.className = "ghost reject"; no.textContent = "✕ annuleren";
+        no.onclick = async () => {
+          no.disabled = true;
+          await fetch(`/api/tasks/${t.id}/cancel`, { method: "POST", headers: SPAN.authHeaders() });
+          pollTasks();
+        };
+        const row = document.createElement("div"); row.className = "inbox-actions"; row.append(no);
+        div.appendChild(row);
+      }
+      list.appendChild(div);
+    }
+  }
+  function openTasks() { tasksOverlay.classList.add("open"); pollTasks(); }
+  $("tasks-btn").onclick = openTasks;
+  $("tasks-close").onclick = () => tasksOverlay.classList.remove("open");
+  tasksOverlay.addEventListener("click", (e) => {
+    if (e.target === tasksOverlay) tasksOverlay.classList.remove("open");
+  });
+
   /* -- health-dot -------------------------------------------------------- */
   async function healthPoll() {
     try {

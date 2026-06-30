@@ -574,7 +574,7 @@ addEventListener("drop", async (e) => {
 /* -- Escape sluit de bovenste open overlay ---------------------------------- */
 addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  for (const id of ["holo-overlay", "settings-overlay", "inbox-overlay"]) {
+  for (const id of ["holo-overlay", "settings-overlay", "inbox-overlay", "tasks-overlay"]) {
     const ov = $(id);
     if (ov && ov.classList.contains("open")) {
       if (id === "holo-overlay") {

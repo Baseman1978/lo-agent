@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LO · Lomans</title>
-<link rel="stylesheet" href="/static/jarvis.css?v=39">
-<link rel="stylesheet" href="/static/effects.css?v=39">
+<link rel="stylesheet" href="/static/jarvis.css?v=40">
+<link rel="stylesheet" href="/static/effects.css?v=40">
 </head>
 <body>
 
@@ -28,6 +28,7 @@
     <span id="health-dot" title="systeemstatus"></span>
     <button id="palette-btn" class="iconbtn" title="Commando-palet (Ctrl+K)" aria-label="Commando-palet">⌘</button>
     <button id="inbox-btn" class="iconbtn" title="Acties ter goedkeuring (Agent Inbox)" aria-label="Acties ter goedkeuring">✓ <b id="inbox-badge"></b></button>
+    <button id="tasks-btn" class="iconbtn" title="Achtergrondtaken" aria-label="Achtergrondtaken">⟳ <b id="tasks-badge"></b></button>
     <button id="settings-btn" class="iconbtn" title="Instellingen" aria-label="Instellingen">⚙</button>
     <button id="logout-btn" class="iconbtn hidden" title="Uitloggen (Microsoft)" aria-label="Uitloggen">⏻</button>
   </div>
@@ -39,6 +40,13 @@
   <div id="inbox-panel" class="panel">
     <h2>⟢ Agent Inbox <button id="inbox-close" class="iconbtn">✕</button></h2>
     <div id="inbox-list" class="body"></div>
+  </div>
+</div>
+
+<div id="tasks-overlay" role="dialog" aria-modal="true" aria-label="Achtergrondtaken">
+  <div id="tasks-panel" class="panel">
+    <h2>⟢ Achtergrondtaken <button id="tasks-close" class="iconbtn">✕</button></h2>
+    <div id="tasks-list" class="body"></div>
   </div>
 </div>
 
@@ -447,13 +455,13 @@
 <script src="/static/vendor/postprocessing__EffectComposer.js"></script>
 <script src="/static/vendor/postprocessing__UnrealBloomPass.js"></script>
 <script src="/static/vendor/qrcode.js"></script>
-<script src="/static/jarvis.js?v=39"></script>
-<script src="/static/fx.js?v=39"></script>
-<script src="/static/effects.js?v=39"></script>
-<script src="/static/orb.js?v=39"></script>
-<script src="/static/voice.js?v=39"></script>
-<script src="/static/hologram.js?v=39"></script>
-<script src="/static/settings.js?v=39"></script>
-<script src="/static/ambient.js?v=39"></script>
+<script src="/static/jarvis.js?v=40"></script>
+<script src="/static/fx.js?v=40"></script>
+<script src="/static/effects.js?v=40"></script>
+<script src="/static/orb.js?v=40"></script>
+<script src="/static/voice.js?v=40"></script>
+<script src="/static/hologram.js?v=40"></script>
+<script src="/static/settings.js?v=40"></script>
+<script src="/static/ambient.js?v=40"></script>
 </body>
 </html>

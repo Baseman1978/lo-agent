@@ -1050,6 +1050,51 @@ TOOL_SPECS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "spawn_task",
+            "description": "Start een langlopende klus op de ACHTERGROND zodat Bas verder "
+            "kan praten. Een sub-agent voert 'doel' uit met dezelfde tools en "
+            "veiligheidspoort (schrijfacties komen in de Agent Inbox). Gebruik dit voor "
+            "werk dat minuten duurt (mappen archiveren, onderzoek, batchverwerking, een "
+            "document maken). Je krijgt meteen een taak-id terug; meld dat je het op de "
+            "achtergrond doet.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "description": "Het volledige doel/opdracht "
+                             "voor de sub-agent, met genoeg context om zelfstandig te werken."},
+                    "title": {"type": "string", "description": "Korte titel voor het Taken-paneel (optioneel)"},
+                },
+                "required": ["goal"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "task_status",
+            "description": "Toon de status van achtergrondtaken (of één taak via id): "
+            "status, voortgang en — indien klaar — het resultaat.",
+            "parameters": {
+                "type": "object",
+                "properties": {"id": {"type": "integer", "description": "Taak-id (leeg = alle)"}},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "task_cancel",
+            "description": "Annuleer een lopende achtergrondtaak via id.",
+            "parameters": {
+                "type": "object",
+                "properties": {"id": {"type": "integer"}},
+                "required": ["id"],
+            },
+        },
+    },
 ]
 
 
@@ -1133,6 +1178,9 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "skill_list": ("Skills", "read"),
     "skill_use": ("Skills", "read"),
     "skill_create": ("Skills", "write"),
+    "spawn_task": ("Achtergrondtaken", "write"),
+    "task_status": ("Achtergrondtaken", "read"),
+    "task_cancel": ("Achtergrondtaken", "write"),
 }
 ASANA_TOOLS = {"asana_my_tasks", "asana_task_create", "asana_task_complete",
                "asana_search", "asana_projects"}

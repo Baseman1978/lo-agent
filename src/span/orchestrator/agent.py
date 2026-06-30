@@ -123,7 +123,9 @@ class SpanAgent:
         fireflies: Any = None,
         mcp: Any = None,
         shared_brain: BrainDB | None = None,
+        tasks: Any = None,
     ):
+        self._tasks = tasks  # TaskManager (achtergrondtaken); None = uit (geen recursie)
         self._mcp = mcp
         self._settings = settings
         self._brain = brain
@@ -186,6 +188,7 @@ class SpanAgent:
             security=self._security,
             mcp=self._mcp,
             shared=self._shared,
+            tasks=self._tasks,
         )
         self._bootstrap = load_bootstrap(self._brain, self._fragments, first_message,
                                          shared=self._shared)
@@ -217,7 +220,8 @@ class SpanAgent:
     def turn(self, user_message: str, on_text: Callable[[str], None] | None = None,
              on_memory: Callable[..., None] | None = None,
              on_tool: Callable[..., None] | None = None,
-             should_cancel: Callable[[], bool] | None = None) -> str:
+             should_cancel: Callable[[], bool] | None = None,
+             max_steps: int | None = None) -> str:
         """Eén gespreksbeurt: RAG-injectie, tool-loop, continuous recording.
 
         on_text streamt tekst-deltas direct naar de UI; recording draait op
@@ -293,11 +297,17 @@ class SpanAgent:
         # F1.6 RunBudget: begrenst de tool-loop in iteraties én wandklok, zodat
         # een doorgeslagen of gekaapte loop zichzelf niet eindeloos voedt.
         from span.safety.budget import BudgetExceeded, RunBudget
-        max_iter = min(self._security.get("budget_iterations", MAX_TOOL_ITERATIONS),
-                       MAX_TOOL_ITERATIONS)
-        budget = RunBudget(max_iterations=max_iter, max_seconds=180.0)
+        # achtergrondtaken (max_steps) mogen langer doorwerken dan een gesprek
+        if max_steps:
+            steps_cap = int(max_steps)
+            max_secs = 900.0
+        else:
+            steps_cap = min(self._security.get("budget_iterations", MAX_TOOL_ITERATIONS),
+                            MAX_TOOL_ITERATIONS)
+            max_secs = 180.0
+        budget = RunBudget(max_iterations=steps_cap, max_seconds=max_secs)
         cancelled = False
-        for _ in range(MAX_TOOL_ITERATIONS):
+        for _ in range(steps_cap):
             # barge-in: de gebruiker begon te praten -> stop vóór de volgende
             # (dure) model- of tool-stap. Veilig punt: de history is hier sluitend
             # (laatste bericht is user of een afgesloten tool-resultaat).

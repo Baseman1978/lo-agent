@@ -48,8 +48,10 @@ class ToolBox:
         security: dict[str, Any] | None = None,
         mcp: Any = None,
         shared: BrainDB | None = None,
+        tasks: Any = None,
     ):
         self._security = security or {}
+        self._tasks = tasks            # TaskManager (achtergrondtaken) of None
         self._mcp = mcp                # MCPRegistry of None
         self._shared = shared          # brain-shared (multi-user) of None
         self._brain = brain
@@ -76,6 +78,8 @@ class ToolBox:
             hidden |= {"inbox_open", "inbox_approve", "inbox_reject"}
         if self._shared is None or self._inbox is None:
             hidden.add("propose_share")  # delen kan alleen in multi-user mét inbox
+        if self._tasks is None:  # sub-agents krijgen geen taken -> geen recursie
+            hidden |= {"spawn_task", "task_status", "task_cancel"}
         if self._fireflies is None:
             hidden |= {"fireflies_meetings", "fireflies_sync"}
         if self._o365 is None:
@@ -301,6 +305,34 @@ class ToolBox:
             return {"proposed": nm, "queued": item_id,
                     "status": "Skill aangemaakt maar UIT; wacht op goedkeuring in de Agent Inbox."}
         return {"created": nm, "status": "Skill aangemaakt (staat uit; geen inbox)."}
+
+    # -- achtergrondtaken: een sub-agent werkt door terwijl Bas blijft praten --
+    def _tool_spawn_task(self, goal: str, title: str = "") -> Any:
+        if self._tasks is None:
+            return {"error": "Achtergrondtaken niet beschikbaar."}
+        tid = self._tasks.submit(goal, title, ctx={
+            "brain": self._brain, "o365": self._o365, "shared": self._shared})
+        return {"task": tid, "status": "gestart op de achtergrond",
+                "note": "Je kunt gewoon doorpraten; ik meld het als 'ie klaar is. "
+                        "Volg de voortgang in het Taken-paneel."}
+
+    def _tool_task_status(self, id: int = 0) -> Any:
+        if self._tasks is None:
+            return {"error": "Achtergrondtaken niet beschikbaar."}
+        if id:
+            t = self._tasks.get(int(id))
+            if t is None:
+                return {"error": "Taak niet gevonden."}
+            return {"id": t["id"], "title": t["title"], "status": t["status"],
+                    "progress": t["progress"],
+                    "result": t["result"] if t["status"] in ("done", "error", "cancelled") else ""}
+        return [{"id": t["id"], "title": t["title"], "status": t["status"],
+                 "progress": t["progress"]} for t in self._tasks.list()[:10]]
+
+    def _tool_task_cancel(self, id: int) -> Any:
+        if self._tasks is None:
+            return {"error": "Achtergrondtaken niet beschikbaar."}
+        return {"cancelled": self._tasks.cancel(int(id))}
 
     def _tool_work_cypher(self, query: str) -> Any:
         if self._work is None:

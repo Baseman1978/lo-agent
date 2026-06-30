@@ -123,6 +123,46 @@ async def lifespan(app: FastAPI):
         _state["contexts"] = None
     if fireflies is not None:
         _state["fireflies"] = fireflies
+
+    # achtergrondtaken: een sub-agent voert een doel uit terwijl de chat vrij
+    # blijft. Zelfde brein + veiligheidspoort; sub-agent kan zelf geen taken
+    # spawnen (tasks niet meegegeven -> geen recursie).
+    from span.jarvis.tasks import TaskManager
+    _TASK_LABELS = {
+        "o365_archive_folder": "📥 mailmap archiveren…", "o365_mail_search": "🔎 mail zoeken…",
+        "brain_search": "🧠 geheugen doorzoeken…", "web_search": "🌐 web zoeken…",
+        "web_read": "🌐 pagina lezen…", "o365_doc_generate": "📄 document maken…",
+        "o365_file_read": "📄 bestand lezen…", "remember": "🧠 onthouden…",
+        "o365_enrich_archive": "🧠 archief verrijken…", "o365_unanswered_sent": "📨 open antwoorden zoeken…",
+    }
+
+    def _task_runner(task, set_progress, should_cancel, ctx):
+        from span.orchestrator.agent import SpanAgent
+        from span.memory.bootstrap import start_session
+        tbrain = ctx.get("brain") or _state["brain"]
+        to365 = ctx.get("o365", _state.get("o365"))
+        agent = SpanAgent(
+            _state["settings"], tbrain, _state["llm"], _state.get("work"),
+            o365=to365, asana=_state.get("asana"), inbox=_state["inbox"],
+            autonomy=_state["autonomy"], disabled_tools=_state.get("disabled_tools"),
+            fireflies=_state.get("fireflies"), mcp=_state.get("mcp"),
+            shared_brain=ctx.get("shared"),
+        )
+        agent.begin(start_session(tbrain), task["goal"])
+
+        def on_tool(name, phase):
+            if phase == "start":
+                set_progress(_TASK_LABELS.get(name, "⚙ " + name + "…"))
+
+        result = agent.turn(task["goal"], on_tool=on_tool,
+                            should_cancel=should_cancel, max_steps=30)
+        try:
+            agent.flush_recording()
+        except Exception:
+            pass
+        return result
+
+    _state["tasks"] = TaskManager(_task_runner, max_workers=2)
     if not _auth_token():
         print("WAARSCHUWING: SPAN_AUTH_TOKEN niet gezet — alleen localhost toegestaan.")
     scheduler = asyncio.create_task(daily_scheduler(_state))
@@ -138,6 +178,8 @@ async def lifespan(app: FastAPI):
         t.cancel()
     # wacht tot de taken echt gestopt zijn vóór de db-verbinding dichtgaat
     await asyncio.gather(*tasks, return_exceptions=True)
+    if _state.get("tasks") is not None:
+        _state["tasks"].shutdown()
     if _state.get("contexts") is not None:
         _state["contexts"].close_all()
     brain.close()
@@ -210,6 +252,7 @@ async def ws_chat(ws: WebSocket) -> None:
         fireflies=_state.get("fireflies"),
         mcp=_state.get("mcp"),
         shared_brain=ctx.shared,
+        tasks=_state.get("tasks"),
     )
     session_id: str | None = None
     loop = asyncio.get_running_loop()
