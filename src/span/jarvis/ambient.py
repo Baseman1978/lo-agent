@@ -50,6 +50,7 @@ class AgentInbox:
         payload: dict[str, Any] | None = None,
         urgency: str = "normal",
         origin: str = "",     # "agent" = door Span zelf gequeued (zie inbox_approve)
+        owner: str = "",      # brain-db van de gebruiker; "" = systeem/melding (voor iedereen)
     ) -> int:
         item = {
             "id": next(self._ids),
@@ -60,6 +61,7 @@ class AgentInbox:
             "payload": payload or {},
             "urgency": urgency,
             "origin": origin,
+            "owner": owner,
             "status": "open",
             "created": now_local().isoformat(timespec="seconds"),
         }
@@ -101,13 +103,27 @@ class AgentInbox:
             item["resolved"] = now_local().isoformat(timespec="seconds")
             return dict(item)
 
-    def snapshot(self) -> list[dict[str, Any]]:
-        with self._lock:
-            return [dict(i) for i in self._items]
+    @staticmethod
+    def _visible(item: dict[str, Any], owner: str | None) -> bool:
+        # owner=None -> alles (intern). Anders: eigen items + systeemmeldingen (owner="").
+        return owner is None or (item.get("owner") or "") in ("", owner)
 
-    def open_count(self) -> int:
+    @staticmethod
+    def approvable_by(item: dict[str, Any], owner: str) -> bool:
+        # Een door de agent klaargezette ACTIE mag alleen de eigenaar goedkeuren —
+        # zo kan gebruiker B niet de mail-actie van gebruiker A bevestigen. Lege owner
+        # (systeem/legacy melding) blijft door iedereen afhandelbaar.
+        o = item.get("owner") or ""
+        return o == "" or o == owner
+
+    def snapshot(self, owner: str | None = None) -> list[dict[str, Any]]:
         with self._lock:
-            return sum(1 for i in self._items if i["status"] == "open")
+            return [dict(i) for i in self._items if self._visible(i, owner)]
+
+    def open_count(self, owner: str | None = None) -> int:
+        with self._lock:
+            return sum(1 for i in self._items
+                       if i["status"] == "open" and self._visible(i, owner))
 
 
 DRAFT_PROMPT = """Je bent Span, de JARVIS van Bas Spaan (Lomans, installatietechniek).

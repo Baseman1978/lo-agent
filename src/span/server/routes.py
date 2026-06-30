@@ -358,10 +358,11 @@ async def graph(request: Request, limit: int = Query(250, le=600),
 
 @router.get("/api/inbox")
 async def inbox_list(request: Request) -> dict[str, Any]:
-    """Agent Inbox: voorgenomen acties + ambient meldingen."""
+    """Agent Inbox: voorgenomen acties + ambient meldingen (per gebruiker geïsoleerd)."""
     _require_rest_auth(request)
     inbox: AgentInbox = _state["inbox"]
-    return {"items": inbox.snapshot(), "open": inbox.open_count()}
+    owner = getattr(_request_context(request).brain, "database", "")
+    return {"items": inbox.snapshot(owner), "open": inbox.open_count(owner)}
 
 
 @router.post("/api/inbox/{item_id}/approve")
@@ -369,10 +370,14 @@ async def inbox_approve(request: Request, item_id: int) -> dict[str, Any]:
     """Keur een actie goed en voer hem uit; needs_reply = concept laten schrijven."""
     _require_rest_auth(request)
     inbox: AgentInbox = _state["inbox"]
+    ctx = _request_context(request)  # per-user brein + gedeeld brein voor share_memory
+    owner = getattr(ctx.brain, "database", "")
+    pre = inbox.get(item_id)  # eigenaar-check vóór de claim: B keurt A's actie niet goed
+    if pre is None or not inbox.approvable_by(pre, owner):
+        raise HTTPException(status_code=404, detail="Item niet gevonden of al afgehandeld.")
     item = inbox.claim(item_id)  # atomair: dubbelklik kan nooit twee keer uitvoeren
     if item is None:
         raise HTTPException(status_code=404, detail="Item niet gevonden of al afgehandeld.")
-    ctx = _request_context(request)  # per-user brein + gedeeld brein voor share_memory
     from span.jarvis.ambient import execute_approval
     try:
         result = await asyncio.to_thread(
@@ -397,7 +402,12 @@ async def inbox_approve(request: Request, item_id: int) -> dict[str, Any]:
 @router.post("/api/inbox/{item_id}/reject")
 async def inbox_reject(request: Request, item_id: int) -> dict[str, Any]:
     _require_rest_auth(request)
-    item = _state["inbox"].resolve(item_id, "rejected")
+    inbox: AgentInbox = _state["inbox"]
+    owner = getattr(_request_context(request).brain, "database", "")
+    pre = inbox.get(item_id)  # zelfde eigenaar-check als bij approve
+    if pre is None or not inbox.approvable_by(pre, owner):
+        raise HTTPException(status_code=404, detail="Item niet gevonden.")
+    item = inbox.resolve(item_id, "rejected")
     if item is None:
         raise HTTPException(status_code=404, detail="Item niet gevonden.")
     from span.jarvis.feedback import record_feedback
@@ -728,7 +738,7 @@ async def health(request: Request) -> dict[str, Any]:
         "brain": brain_ok,
         "o365": bool(o365) and await asyncio.to_thread(o365.is_authenticated),
         "asana": _state.get("asana") is not None,
-        "inbox_open": _state["inbox"].open_count(),
+        "inbox_open": _state["inbox"].open_count(getattr(ctx.brain, "database", "")),
     }
 
 
