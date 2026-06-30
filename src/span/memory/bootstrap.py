@@ -104,18 +104,21 @@ def load_bootstrap(
 
     skills = brain.run(
         """
-        MATCH (sk:Skill)
+        MATCH (sk:Skill) WHERE coalesce(sk.enabled, true)
         RETURN sk.name AS name, sk.description AS description,
-               sk.trigger AS trigger, coalesce(sk.usage_count, 0) AS usage_count
-        ORDER BY sk.usage_count DESC LIMIT 10
+               sk.trigger AS trigger, coalesce(sk.kind, 'workflow') AS kind,
+               coalesce(sk.usage_count, 0) AS usage_count
+        ORDER BY sk.usage_count DESC LIMIT 12
         """
     )
     # gedeelde team-skills erbij (ontdubbeld op naam, privé wint)
     if shared is not None:
         try:
             shs = shared.run(
-                "MATCH (sk:Skill) RETURN sk.name AS name, sk.description AS description, "
-                "sk.trigger AS trigger, coalesce(sk.usage_count, 0) AS usage_count, "
+                "MATCH (sk:Skill) WHERE coalesce(sk.enabled, true) "
+                "RETURN sk.name AS name, sk.description AS description, "
+                "sk.trigger AS trigger, coalesce(sk.kind, 'workflow') AS kind, "
+                "coalesce(sk.usage_count, 0) AS usage_count, "
                 "true AS shared ORDER BY sk.usage_count DESC LIMIT 10")
             have = {s["name"] for s in skills}
             skills = skills + [s for s in shs if s["name"] not in have]
@@ -195,8 +198,15 @@ def render_bootstrap(ctx: BootstrapContext) -> str:
 
     if ctx.skills:
         lines.append("\n# Skills")
+        lines.append("Herbruikbare werkwijzen en uitvoerbare macro's. Zet een macro in met "
+                     "skill_use(name); een werkwijze volg je zelf met de gewone tools. "
+                     "Komt een aanpak vaker terug? Leg 'm vast met skill_create.")
         for sk in ctx.skills:
-            lines.append(f"- {sk['name']}: {sk['description']} (trigger: {sk['trigger']})")
+            kind = sk.get("kind", "workflow")
+            tag = "⚙ macro — skill_use" if kind == "macro" else "werkwijze"
+            team = " [team]" if sk.get("shared") else ""
+            trig = f" (trigger: {sk['trigger']})" if sk.get("trigger") else ""
+            lines.append(f"- {sk['name']} · {tag}{team}: {sk['description']}{trig}")
 
     if ctx.decisions:
         lines.append("\n# Recente beslissingen")

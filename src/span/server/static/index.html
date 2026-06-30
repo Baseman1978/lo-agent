@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LO · Lomans</title>
-<link rel="stylesheet" href="/static/jarvis.css?v=38">
-<link rel="stylesheet" href="/static/effects.css?v=38">
+<link rel="stylesheet" href="/static/jarvis.css?v=39">
+<link rel="stylesheet" href="/static/effects.css?v=39">
 </head>
 <body>
 
@@ -102,10 +102,58 @@
     <div class="settabs">
       <button class="settab-btn active" data-tab="verbindingen">Verbindingen</button>
       <button class="settab-btn" data-tab="agent">Agent</button>
+      <button class="settab-btn" data-tab="skills">Skills</button>
       <button class="settab-btn" data-tab="stem">Stem</button>
       <button class="settab-btn" data-tab="uiterlijk">Uiterlijk</button>
       <button class="settab-btn" data-tab="systeem">Systeem</button>
     </div>
+
+    <div class="settab" data-tab="skills">
+    <h3>Skills</h3>
+    <div class="m" style="margin-bottom:6px">Herbruikbare werkwijzen en uitvoerbare
+      tool-macro's die LO kan inzetten. Jij maakt ze hier; LO kan ze ook zelf
+      voorstellen (die staan uit tot je ze hier goedkeurt).</div>
+    <div id="skills-list" class="m">laden…</div>
+
+    <h3>Skill toevoegen / bewerken</h3>
+    <div class="setrow">
+      <label>Naam (kebab-case)</label>
+      <input type="text" id="sk-name" placeholder="bv. wekelijkse-mailsamenvatting">
+    </div>
+    <div class="setrow">
+      <label>Beschrijving</label>
+      <input type="text" id="sk-desc" placeholder="waarvoor is deze skill">
+    </div>
+    <div class="setrow">
+      <label>Wanneer gebruiken (trigger, optioneel)</label>
+      <input type="text" id="sk-trigger" placeholder="bv. als ik om een mail-samenvatting vraag">
+    </div>
+    <div class="setrow">
+      <label>Soort</label>
+      <select id="sk-kind">
+        <option value="workflow">Werkwijze (instructie die LO volgt)</option>
+        <option value="macro">Macro (uitvoerbare reeks tool-stappen)</option>
+      </select>
+    </div>
+    <div class="setrow" id="sk-body-row">
+      <label>Werkwijze (instructie)</label>
+      <textarea id="sk-body" rows="5" placeholder="Beschrijf stap voor stap wat LO moet doen…"></textarea>
+    </div>
+    <div class="setrow hidden" id="sk-steps-row">
+      <label>Stappen (JSON-lijst) — params met {{params.naam}}</label>
+      <textarea id="sk-steps" rows="6" spellcheck="false"
+        placeholder='[{"tool":"o365_mail_search","args":{"query":"{{params.afzender}}"}}]'></textarea>
+      <div class="m" id="sk-tools" style="opacity:.7"></div>
+    </div>
+    <div class="setrow hidden" id="sk-params-row">
+      <label>Parameters (komma-gescheiden, optioneel)</label>
+      <input type="text" id="sk-params" placeholder="bv. afzender, dagen">
+    </div>
+    <div class="setrow">
+      <button id="sk-save" class="ghost">opslaan</button>
+      <button id="sk-clear" class="ghost">leegmaken</button>
+    </div>
+    </div><!-- /skills -->
 
     <div class="settab active" data-tab="verbindingen">
     <h3>Microsoft 365</h3>
@@ -399,13 +447,13 @@
 <script src="/static/vendor/postprocessing__EffectComposer.js"></script>
 <script src="/static/vendor/postprocessing__UnrealBloomPass.js"></script>
 <script src="/static/vendor/qrcode.js"></script>
-<script src="/static/jarvis.js?v=38"></script>
-<script src="/static/fx.js?v=38"></script>
-<script src="/static/effects.js?v=38"></script>
-<script src="/static/orb.js?v=38"></script>
-<script src="/static/voice.js?v=38"></script>
-<script src="/static/hologram.js?v=38"></script>
-<script src="/static/settings.js?v=38"></script>
-<script src="/static/ambient.js?v=38"></script>
+<script src="/static/jarvis.js?v=39"></script>
+<script src="/static/fx.js?v=39"></script>
+<script src="/static/effects.js?v=39"></script>
+<script src="/static/orb.js?v=39"></script>
+<script src="/static/voice.js?v=39"></script>
+<script src="/static/hologram.js?v=39"></script>
+<script src="/static/settings.js?v=39"></script>
+<script src="/static/ambient.js?v=39"></script>
 </body>
 </html>

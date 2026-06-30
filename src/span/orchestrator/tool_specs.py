@@ -984,6 +984,72 @@ TOOL_SPECS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "skill_list",
+            "description": "Toon de beschikbare skills (herbruikbare werkwijzen en "
+            "uitvoerbare tool-macro's) met naam, soort en beschrijving.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "skill_use",
+            "description": "Zet een bestaande skill in. Bij een 'workflow'-skill krijg je de "
+            "werkwijze-instructie terug om te volgen; bij een 'macro'-skill worden de "
+            "tool-stappen uitgevoerd (elk via de normale veiligheidspoort) en krijg je de "
+            "resultaten terug. Geef params mee als de skill die verwacht.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Naam van de skill (kebab-case)"},
+                    "params": {"type": "object",
+                               "description": "Invoerwaarden (optioneel), bv. {\"afzender\": \"...\"}"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "skill_create",
+            "description": "Leg een nieuwe skill vast voor hergebruik. kind='workflow' = een "
+            "werkwijze in tekst (body); kind='macro' = een geordende reeks bestaande "
+            "tool-stappen (steps). Door jou voorgestelde skills staan UIT tot Bas ze "
+            "goedkeurt in de Agent Inbox. Gebruik dit als een aanpak vaker terugkomt.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string",
+                             "description": "Korte kebab-case-naam, bv. 'wekelijkse-mailsamenvatting'"},
+                    "description": {"type": "string", "description": "Waarvoor de skill is"},
+                    "trigger": {"type": "string", "description": "Wanneer in te zetten (optioneel)"},
+                    "kind": {"type": "string", "enum": ["workflow", "macro"],
+                             "description": "workflow (instructie) of macro (uitvoerbare stappen)"},
+                    "body": {"type": "string", "description": "De werkwijze-instructie (bij kind=workflow)"},
+                    "steps": {
+                        "type": "array",
+                        "description": "Bij kind=macro: geordende tool-stappen. In args mag "
+                        "{{params.NAAM}} gebruikt worden.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "tool": {"type": "string", "description": "Naam van een bestaande tool"},
+                                "args": {"type": "object", "description": "Argumenten voor de tool"},
+                            },
+                            "required": ["tool"],
+                        },
+                    },
+                    "params": {"type": "array", "items": {"type": "string"},
+                               "description": "Namen van verwachte invoerwaarden (optioneel)"},
+                },
+                "required": ["name", "description", "kind"],
+            },
+        },
+    },
 ]
 
 
@@ -1064,6 +1130,9 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "propose_share": ("Gedeeld geheugen", "write"),
     "web_search": ("Web", "read"),
     "web_read": ("Web", "read"),
+    "skill_list": ("Skills", "read"),
+    "skill_use": ("Skills", "read"),
+    "skill_create": ("Skills", "write"),
 }
 ASANA_TOOLS = {"asana_my_tasks", "asana_task_create", "asana_task_complete",
                "asana_search", "asana_projects"}
