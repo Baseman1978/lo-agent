@@ -10,10 +10,17 @@ RUN apt-get update \
     && npm cache clean --force \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Zware, zelden-wijzigende deps + Piper-stem vóór COPY src, zodat een
+# src-wijziging (bv. een HUD-bestand) ze niet invalideert -> snelle rebuilds.
+RUN pip install --no-cache-dir \
+      "faster-whisper>=1.0" "piper-tts>=1.4" claude-agent-sdk
+RUN mkdir -p /app/voices && cd /app/voices \
+    && python -m piper.download_voices nl_NL-mls-medium
+
 COPY pyproject.toml README.md ./
 COPY src ./src
-# claude-agent-sdk erbij; de chat-backend kiest tussen ORQ (default) en de SDK
-RUN pip install --no-cache-dir ".[stt]" claude-agent-sdk
+# installeert het span-pakket zelf (deps hierboven al voldaan -> snel)
+RUN pip install --no-cache-dir ".[stt,tts]" claude-agent-sdk
 
 EXPOSE 8472
 

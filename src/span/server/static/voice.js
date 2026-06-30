@@ -53,6 +53,65 @@
   SPAN.nlVoices = () => speechSynthesis.getVoices()
     .filter((v) => v.lang.startsWith("nl")).map((v) => v.name);
 
+  /* -- server-side TTS (Piper) via WebAudio: één heldere stem i.p.v. de
+        wisselende browser-stemmen. Aan als de server tts_available meldt
+        (jarvis.js boot); valt anders terug op SpeechSynthesis. Speelt per zin
+        af in een wachtrij; barge-in stopt de bron en breekt de fetch af. ----- */
+  SPAN.serverTTS = false;
+  let _ax = null, ttsQ = [], ttsPlaying = false, curSrc = null, ttsAbort = null, ttsLast = false;
+  function audioCtx() {
+    if (!_ax) _ax = new (window.AudioContext || window.webkitAudioContext)();
+    if (_ax.state === "suspended") _ax.resume();
+    return _ax;
+  }
+  const ttsIdleServer = () => ttsQ.length === 0 && !ttsPlaying;
+  function ttsStop() {
+    ttsQ = []; ttsLast = false;
+    if (ttsAbort) { try { ttsAbort.abort(); } catch (e) {} ttsAbort = null; }
+    if (curSrc) { try { curSrc.onended = null; curSrc.stop(); } catch (e) {} curSrc = null; }
+    ttsPlaying = false;
+  }
+  async function ttsPump() {
+    if (ttsPlaying) return;
+    const item = ttsQ.shift();
+    if (!item) {
+      if (SPAN.state === "speaking") SPAN.setState("idle");
+      if (ttsLast) { ttsLast = false; openHotWindow(); }
+      return;
+    }
+    ttsPlaying = true;
+    try {
+      ttsAbort = new AbortController();
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { ...SPAN.authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ text: item.text }),
+        signal: ttsAbort.signal,
+      });
+      ttsAbort = null;
+      if (!res.ok) throw new Error("tts " + res.status);
+      const arr = await res.arrayBuffer();
+      if (SPAN._muteStream) { ttsPlaying = false; return ttsPump(); }  // onderbroken tijdens fetch
+      const audio = await audioCtx().decodeAudioData(arr);
+      if (SPAN._muteStream) { ttsPlaying = false; return ttsPump(); }
+      const src = audioCtx().createBufferSource();
+      src.buffer = audio; src.connect(audioCtx().destination);
+      curSrc = src;
+      SPAN.setState("speaking");
+      src.onended = () => { curSrc = null; ttsPlaying = false; ttsPump(); };
+      src.start();
+    } catch (e) {
+      ttsPlaying = false;
+      if (e.name !== "AbortError") setTimeout(ttsPump, 0);  // volgende zin proberen
+    }
+  }
+  function ttsEnqueue(text, last) {
+    if (last) ttsLast = true;
+    const t = (text || "").trim();
+    if (t) ttsQ.push({ text: t });
+    ttsPump();
+  }
+
   let queueOpen = 0;        // utterances onderweg
   let spokenChars = 0;      // spraak-cap per antwoord: niet álles voorlezen
   let capAnnounced = false;
@@ -81,6 +140,7 @@
     spokenChars += clean.length;
     if (!clean) { if (last) openHotWindowSoon(); return; }
     lastTTS += " " + clean;
+    if (SPAN.serverTTS) { ttsEnqueue(clean, last); return; }  // Piper via WebAudio
     const u = new SpeechSynthesisUtterance(clean);
     u.lang = "nl-NL"; if (voice) u.voice = voice;
     u.rate = parseFloat(localStorage.getItem("span_rate") || "1.04");
@@ -98,9 +158,12 @@
   const openHotWindowSoon = () => setTimeout(openHotWindow, 100);
 
   SPAN.speak = (text, full) => {
-    lastTTS = ""; speechSynthesis.cancel(); queueOpen = 0;
+    lastTTS = "";
+    if (SPAN.serverTTS) ttsStop(); else speechSynthesis.cancel();
+    queueOpen = 0;
     spokenChars = full ? -100000 : 0;  // full: geen cap (dagstart, briefing)
     capAnnounced = false;
+    SPAN._muteStream = false;          // expliciete speak (briefing) mag klinken
     speakChunk(text, true);
   };
 
@@ -108,8 +171,9 @@
   let streamBuf = "";
   SPAN.speakDelta = (delta) => {
     if (!SPAN.speakOn || SPAN._muteStream) return;
-    if (streamBuf === "" && queueOpen === 0) {
-      lastTTS = ""; speechSynthesis.cancel();
+    if (streamBuf === "" && (SPAN.serverTTS ? ttsIdleServer() : queueOpen === 0)) {
+      lastTTS = "";
+      if (SPAN.serverTTS) ttsStop(); else speechSynthesis.cancel();
       spokenChars = 0; capAnnounced = false;
     }
     streamBuf += delta;
@@ -124,7 +188,9 @@
     speakChunk(rest, true);
   };
   const stopSpeaking = () => {
-    speechSynthesis.cancel(); queueOpen = 0; streamBuf = "";
+    speechSynthesis.cancel();
+    if (SPAN.serverTTS) ttsStop();
+    queueOpen = 0; streamBuf = "";
     // mute resterende stream-delta's van de afgebroken beurt: ze mogen de TTS
     // niet opnieuw starten. Wordt opgeheven bij de volgende beurt/het volgende
     // antwoord (SPAN.send en de done-afhandeling).

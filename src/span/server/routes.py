@@ -524,6 +524,35 @@ async def stt_status(request: Request) -> dict[str, Any]:
     return {"available": stt.available(), "model": stt.MODEL_NAME}
 
 
+@router.post("/api/tts")
+async def text_to_speech(request: Request) -> Any:
+    """Tekst → gesproken audio (WAV) via server-side Piper. De HUD haalt dit
+    per zin op zodat barge-in schoon werkt."""
+    _require_rest_auth(request)
+    from span.server import tts
+    if not tts.available():
+        raise HTTPException(status_code=501, detail="Server-TTS niet beschikbaar.")
+    body = await request.json()
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Lege tekst.")
+    text = text[:1200]  # cap per fragment
+    try:
+        audio = await asyncio.to_thread(tts.synthesize, text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"TTS mislukt: {exc}")
+    from fastapi.responses import Response
+    return Response(content=audio, media_type="audio/wav",
+                    headers={"Cache-Control": "no-store"})
+
+
+@router.get("/api/tts/status")
+async def tts_status(request: Request) -> dict[str, Any]:
+    _require_rest_auth(request)
+    from span.server import tts
+    return {"available": tts.available()}
+
+
 @router.post("/api/fireflies/sync")
 async def fireflies_sync(request: Request, deep: bool = Query(False)) -> dict[str, Any]:
     """Handmatige sync: meetings → brein, actiepunten → Agent Inbox.
