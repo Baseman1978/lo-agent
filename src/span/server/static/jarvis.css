@@ -294,7 +294,7 @@ body.glitching main, body.glitching header {
   margin-top: 4px; font-size: 10px; letter-spacing: .06em; color: var(--cyan);
   opacity: 0; transition: opacity .3s; min-height: 13px; pointer-events: none;
 }
-#holo-reason::before { content: "◈ Span "; color: var(--dim); }
+#holo-reason::before { content: "◈ LO "; color: var(--dim); }
 
 /* bediening in fullscreen: zoek + filters als overlay boven de scene */
 #holo-full > #holo-search-wrap {
