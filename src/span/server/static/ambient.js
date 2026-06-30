@@ -122,7 +122,8 @@
   const tasksDone = new Set();
   let tasksFirst = true;
   const T_STATUS = { queued: "in wachtrij", running: "bezig", cancelling: "annuleren…",
-                     done: "klaar", error: "fout", cancelled: "geannuleerd" };
+                     done: "klaar", error: "fout", cancelled: "geannuleerd",
+                     interrupted: "onderbroken (herstart)" };
   async function pollTasks() {
     try {
       const res = await fetch("/api/tasks", { headers: SPAN.authHeaders() });

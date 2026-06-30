@@ -19,6 +19,7 @@ CONSTRAINTS = [
     "CREATE CONSTRAINT insight_id IF NOT EXISTS FOR (n:Insight) REQUIRE n.id IS UNIQUE",
     "CREATE CONSTRAINT mistake_id IF NOT EXISTS FOR (n:Mistake) REQUIRE n.id IS UNIQUE",
     "CREATE CONSTRAINT idea_id IF NOT EXISTS FOR (n:Idea) REQUIRE n.id IS UNIQUE",
+    "CREATE CONSTRAINT task_id IF NOT EXISTS FOR (n:Task) REQUIRE n.id IS UNIQUE",
     # M19: gearchiveerde mail is idempotent — één fragment per Graph-mail-id.
     # (Neo4j-uniqueness geldt alleen voor nodes mét de property, dus gewone
     # fragmenten zonder mail_graph_id raken niet beperkt.)

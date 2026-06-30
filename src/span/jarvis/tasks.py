@@ -4,9 +4,12 @@ Een taak = een doel dat een verse SpanAgent (sub-agent) op de achtergrond
 uitvoert, met hetzelfde brein en dezelfde veiligheidspoort. Schrijfacties van
 een sub-agent komen — net als in een gesprek — in de Agent Inbox ter goedkeuring.
 
-De TaskManager houdt de status bij (de HUD pollt /api/tasks). Een kleine
-worker-pool begrenst hoeveel taken tegelijk draaien. Elke taak is annuleerbaar
-via een threading.Event (de sub-agent checkt het via should_cancel)."""
+Taken worden als Task-nodes in het brein bewaard (net als Cron-nodes), dus de
+geschiedenis overleeft een herstart. Een taak die nog liep tijdens een herstart
+kan niet hervatten (de thread is weg) en krijgt status 'interrupted'.
+
+Een kleine worker-pool begrenst hoeveel taken tegelijk draaien. Elke taak is
+annuleerbaar via een threading.Event (de sub-agent checkt het via should_cancel)."""
 
 from __future__ import annotations
 
@@ -17,6 +20,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 ACTIVE = ("queued", "running", "cancelling")
+_DONE = ("done", "error", "cancelled", "interrupted")
 
 
 def _now() -> str:
@@ -24,15 +28,73 @@ def _now() -> str:
 
 
 class TaskManager:
-    def __init__(self, runner: Callable[..., str], max_workers: int = 2) -> None:
+    def __init__(self, runner: Callable[..., str], brain: Any = None,
+                 max_workers: int = 2) -> None:
         # runner(task, set_progress, should_cancel, ctx) -> resultaat-string
         self._runner = runner
+        self._brain = brain
         self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="lo-task")
         self._items: dict[int, dict[str, Any]] = {}
         self._cancels: dict[int, threading.Event] = {}
         self._lock = threading.Lock()
         self._ids = itertools.count(1)
+        if brain is not None:
+            self._load()
 
+    # -- persistentie (best effort; mag de runner nooit breken) -------------
+    def _persist(self, item: dict[str, Any]) -> None:
+        if self._brain is None:
+            return
+        try:
+            self._brain.run(
+                """
+                MERGE (t:Task {id: $id})
+                ON CREATE SET t.created = $created
+                SET t.goal=$goal, t.title=$title, t.status=$status,
+                    t.progress=$progress, t.result=$result, t.updated=$updated
+                """,
+                id=item["id"], created=item["created"], goal=item["goal"][:2000],
+                title=item["title"], status=item["status"], progress=item["progress"],
+                result=(item["result"] or "")[:6000], updated=item["updated"],
+            )
+        except Exception:
+            pass
+
+    def _load(self) -> None:
+        """Bij opstart: bewaarde taken inladen; nog-lopende -> 'interrupted'.
+        Houdt alleen de recentste ~60 (rest opruimen)."""
+        try:
+            rows = self._brain.run(
+                "MATCH (t:Task) RETURN t.id AS id, t.goal AS goal, t.title AS title, "
+                "t.status AS status, t.progress AS progress, t.result AS result, "
+                "t.created AS created, t.updated AS updated ORDER BY t.id DESC LIMIT 60"
+            )
+        except Exception:
+            rows = []
+        maxid = 0
+        for r in rows:
+            tid = int(r["id"])
+            maxid = max(maxid, tid)
+            status = r["status"]
+            if status in ACTIVE:  # liep nog bij de herstart -> kan niet hervatten
+                status = "interrupted"
+            item = {"id": tid, "goal": r["goal"] or "", "title": r["title"] or "",
+                    "status": status, "progress": r["progress"] or "",
+                    "steps": [], "result": r["result"] or "",
+                    "created": r["created"] or _now(), "updated": r["updated"] or _now()}
+            self._items[tid] = item
+            self._cancels[tid] = threading.Event()
+            if status == "interrupted":
+                self._persist(item)
+        # ruim eventueel oudere nodes op
+        try:
+            self._brain.run(
+                "MATCH (t:Task) WITH t ORDER BY t.id DESC SKIP 60 DETACH DELETE t")
+        except Exception:
+            pass
+        self._ids = itertools.count(maxid + 1)
+
+    # -- API ----------------------------------------------------------------
     def submit(self, goal: str, title: str = "", ctx: dict[str, Any] | None = None) -> int:
         tid = next(self._ids)
         item = {"id": tid, "goal": goal, "title": (title or goal[:60]).strip(),
@@ -41,19 +103,24 @@ class TaskManager:
         with self._lock:
             self._items[tid] = item
             self._cancels[tid] = threading.Event()
-            if len(self._items) > 60:  # compact houden
-                for k in sorted(self._items)[:-60]:
+            if len(self._items) > 80:  # compact houden
+                for k in sorted(self._items)[:-80]:
                     self._items.pop(k, None)
                     self._cancels.pop(k, None)
+        self._persist(item)
         self._pool.submit(self._run, tid, ctx or {})
         return tid
 
-    def _update(self, tid: int, **kw: Any) -> None:
+    def _update(self, tid: int, persist: bool = False, **kw: Any) -> None:
         with self._lock:
             it = self._items.get(tid)
-            if it:
-                it.update(kw)
-                it["updated"] = _now()
+            if not it:
+                return
+            it.update(kw)
+            it["updated"] = _now()
+            snap = dict(it) if persist else None
+        if snap is not None:
+            self._persist(snap)
 
     def _progress(self, tid: int, label: str) -> None:
         label = (label or "").strip()
@@ -69,17 +136,18 @@ class TaskManager:
 
     def _run(self, tid: int, ctx: dict[str, Any]) -> None:
         ev = self._cancels.get(tid) or threading.Event()
-        self._update(tid, status="running", progress="gestart")
+        self._update(tid, persist=True, status="running", progress="gestart")
         try:
             result = self._runner(dict(self._items[tid]),
                                   lambda l: self._progress(tid, l), ev.is_set, ctx)
             if ev.is_set():
-                self._update(tid, status="cancelled",
+                self._update(tid, persist=True, status="cancelled",
                              result=(result or "(geannuleerd)"), progress="geannuleerd")
             else:
-                self._update(tid, status="done", result=(result or ""), progress="klaar")
+                self._update(tid, persist=True, status="done",
+                             result=(result or ""), progress="klaar")
         except Exception as exc:  # nooit de worker laten crashen
-            self._update(tid, status="error",
+            self._update(tid, persist=True, status="error",
                          result=f"{type(exc).__name__}: {exc}", progress="fout")
 
     def cancel(self, tid: int) -> bool:
@@ -87,7 +155,7 @@ class TaskManager:
         if ev is None:
             return False
         ev.set()
-        self._update(tid, status="cancelling")
+        self._update(tid, persist=True, status="cancelling")
         return True
 
     def get(self, tid: int) -> dict[str, Any] | None:
