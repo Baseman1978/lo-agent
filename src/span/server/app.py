@@ -214,16 +214,20 @@ async def ws_chat(ws: WebSocket) -> None:
     session_id: str | None = None
     loop = asyncio.get_running_loop()
 
-    # berichten die de barge-in-watcher tijdens een beurt opving (bv. een /end
-    # terwijl de agent nog antwoordt) en die ná de beurt alsnog verwerkt worden
+    # berichten die tijdens een beurt binnenkwamen (bv. een /end terwijl de agent
+    # nog antwoordt) en die ná de beurt alsnog verwerkt worden
     deferred_msgs: list[dict] = []
+    recv_task: asyncio.Future | None = None  # ÉÉN persistente socket-lezer
     try:
         await ws.send_json({"type": "ready", "agent": AGENT_NAME})
         while True:
             if deferred_msgs:
                 msg = deferred_msgs.pop(0)
             else:
-                raw = await ws.receive_text()
+                if recv_task is None:
+                    recv_task = asyncio.ensure_future(ws.receive_text())
+                raw = await recv_task
+                recv_task = None
                 try:
                     msg = json.loads(raw)
                 except json.JSONDecodeError:
@@ -287,28 +291,6 @@ async def ws_chat(ws: WebSocket) -> None:
                     except Exception:
                         pass
 
-                # tijdens de beurt blijven we luisteren of de gebruiker onderbreekt
-                # (barge-in). Eén socket-lezer tegelijk: alleen de watcher leest
-                # zolang de beurt loopt, daarna leest de buitenste lus weer.
-                async def _watch_cancel() -> None:
-                    try:
-                        while True:
-                            raw2 = await ws.receive_text()
-                            try:
-                                m2 = json.loads(raw2)
-                            except json.JSONDecodeError:
-                                continue
-                            if m2.get("type") == "cancel":
-                                cancel_event.set()
-                                return
-                            if m2.get("type") == "location":
-                                continue  # periodiek; tijdens een beurt overslaan
-                            # ander bericht (bv. /end) niet verliezen: ná de beurt
-                            deferred_msgs.append(m2)
-                    except WebSocketDisconnect:
-                        cancel_event.set()  # verbroken verbinding -> stop de beurt
-
-                watcher = asyncio.ensure_future(_watch_cancel())
                 future = loop.run_in_executor(
                     None,
                     lambda: agent.turn(text, on_text, on_memory, on_tool,
@@ -317,27 +299,64 @@ async def ws_chat(ws: WebSocket) -> None:
                 future.add_done_callback(
                     lambda _f: loop.call_soon_threadsafe(queue.put_nowait, None)
                 )
-                try:
-                    while True:
-                        item = await queue.get()
+
+                # Drain de delta-queue én luister tegelijk naar onderbreking via
+                # DEZELFDE persistente socket-lezer (recv_task). Geen tweede
+                # receive en geen mid-flight cancel -> de WS blijft heel, dus de
+                # sessie (en daarmee de gespreksgeschiedenis) blijft staan.
+                if recv_task is None:
+                    recv_task = asyncio.ensure_future(ws.receive_text())
+                qtask: asyncio.Future = asyncio.ensure_future(queue.get())
+                disconnected = False
+                while True:
+                    done_set, _ = await asyncio.wait(
+                        {qtask, recv_task}, return_when=asyncio.FIRST_COMPLETED)
+                    if qtask in done_set:
+                        item = qtask.result()
                         if item is None:
-                            break
+                            break  # beurt klaar (future is af)
                         await ws.send_json(item)
+                        qtask = asyncio.ensure_future(queue.get())
+                        continue
+                    # recv_task vuurde: een bericht tijdens de beurt
+                    try:
+                        raw2 = recv_task.result()
+                    except WebSocketDisconnect:
+                        cancel_event.set()
+                        recv_task = None
+                        disconnected = True
+                        break
+                    except Exception:
+                        recv_task = asyncio.ensure_future(ws.receive_text())
+                        continue
+                    recv_task = None
+                    try:
+                        m2 = json.loads(raw2)
+                    except json.JSONDecodeError:
+                        m2 = {}
+                    t2 = m2.get("type")
+                    if t2 == "cancel":
+                        cancel_event.set()
+                    elif t2 and t2 != "location":
+                        deferred_msgs.append(m2)  # bv. /end -> ná de beurt
+                    recv_task = asyncio.ensure_future(ws.receive_text())
+
+                if not qtask.done():
+                    qtask.cancel()
+                try:
                     answer = await future
                 except Exception as exc:
-                    watcher.cancel()
-                    # beurt netjes laten aflopen (recorder schrijft nog), dan melden
                     await asyncio.wait([future])
-                    if isinstance(exc, WebSocketDisconnect):
-                        raise
+                    if disconnected:
+                        raise WebSocketDisconnect()
                     await ws.send_json({
                         "type": "error", "error": "turn",
                         "message": f"Er ging iets mis in deze beurt: {exc}",
                     })
                     continue
-                watcher.cancel()
+                if disconnected:
+                    raise WebSocketDisconnect()
                 # geen losse eind-'touched' meer: de live leescascade dekt dit al
-                # (de :TOUCHED-DB-edges blijven via agent._write_trace)
                 await ws.send_json({"type": "done", "answer": answer,
                                     "cancelled": cancel_event.is_set()})
 
