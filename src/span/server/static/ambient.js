@@ -159,7 +159,7 @@
       div.innerHTML =
         `<div class="k">TAAK #${t.id} · ${esc(T_STATUS[t.status] || t.status)}` +
         `${active ? " · " + pct + "%" : ""}${t.progress ? " · " + esc(t.progress) : ""}</div>` +
-        `<b>${esc(t.title)}</b>` +
+        `<b>${t.team ? "👥 " : ""}${esc(t.title)}</b>` +
         (active ? `<div class="taskbar"><span style="width:${pct}%"></span></div>` : "") +
         (t.result ? `<p>${esc((t.result || "").slice(0, 700))}</p>` : "");
       if (active) {

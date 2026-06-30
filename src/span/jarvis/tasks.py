@@ -29,9 +29,10 @@ def _now() -> str:
 
 class TaskManager:
     def __init__(self, runner: Callable[..., str], brain: Any = None,
-                 max_workers: int = 2) -> None:
+                 max_workers: int = 2, team_runner: Callable[..., str] | None = None) -> None:
         # runner(task, set_progress, should_cancel, ctx) -> resultaat-string
         self._runner = runner
+        self._team_runner = team_runner  # coördinator + parallelle sub-agents
         self._brain = brain
         self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="lo-task")
         self._items: dict[int, dict[str, Any]] = {}
@@ -96,11 +97,12 @@ class TaskManager:
         self._ids = itertools.count(maxid + 1)
 
     # -- API ----------------------------------------------------------------
-    def submit(self, goal: str, title: str = "", ctx: dict[str, Any] | None = None) -> int:
+    def submit(self, goal: str, title: str = "", ctx: dict[str, Any] | None = None,
+               team: bool = False) -> int:
         tid = next(self._ids)
         item = {"id": tid, "goal": goal, "title": (title or goal[:60]).strip(),
                 "status": "queued", "progress": "", "percent": 0, "steps": [],
-                "result": "", "created": _now(), "updated": _now()}
+                "result": "", "team": bool(team), "created": _now(), "updated": _now()}
         with self._lock:
             self._items[tid] = item
             self._cancels[tid] = threading.Event()
@@ -140,8 +142,11 @@ class TaskManager:
     def _run(self, tid: int, ctx: dict[str, Any]) -> None:
         ev = self._cancels.get(tid) or threading.Event()
         self._update(tid, persist=True, status="running", progress="gestart", percent=3)
+        runner = self._runner
+        if self._items.get(tid, {}).get("team") and self._team_runner is not None:
+            runner = self._team_runner
         try:
-            result = self._runner(
+            result = runner(
                 dict(self._items[tid]),
                 lambda label="", percent=None: self._progress(tid, label, percent),
                 ev.is_set, ctx)

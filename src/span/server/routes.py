@@ -685,8 +685,8 @@ async def tasks_list(request: Request) -> Any:
     return {"active": tm.active_count(),
             "tasks": [{"id": t["id"], "title": t["title"], "status": t["status"],
                        "progress": t["progress"], "percent": t.get("percent", 0),
-                       "steps": t["steps"], "result": t["result"],
-                       "updated": t["updated"]} for t in items]}
+                       "team": t.get("team", False), "steps": t["steps"],
+                       "result": t["result"], "updated": t["updated"]} for t in items]}
 
 
 @router.post("/api/tasks/{tid}/cancel")

@@ -1075,6 +1075,26 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "spawn_team",
+            "description": "Voor een GROTE, samengestelde opdracht: start een ACHTERGROND-team. "
+            "Een coördinator splitst het doel in 2-4 onafhankelijke deeltaken, draait die "
+            "PARALLEL als sub-agents en voegt de resultaten samen tot één eindantwoord. "
+            "Gebruik dit als het doel duidelijk uit losse, parallelle delen bestaat "
+            "(bv. onderzoek + samenvatting + actiepunten, of meerdere bronnen tegelijk). "
+            "Voor één rechttoe-rechtaan klus volstaat spawn_task.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "description": "Het volledige, samengestelde doel."},
+                    "title": {"type": "string", "description": "Korte titel (optioneel)"},
+                },
+                "required": ["goal"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "task_status",
             "description": "Toon de status van achtergrondtaken (of één taak via id): "
             "status, voortgang en — indien klaar — het resultaat.",
@@ -1197,6 +1217,7 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "skill_use": ("Skills", "read"),
     "skill_create": ("Skills", "write"),
     "spawn_task": ("Achtergrondtaken", "write"),
+    "spawn_team": ("Achtergrondtaken", "write"),
     "task_status": ("Achtergrondtaken", "read"),
     "task_cancel": ("Achtergrondtaken", "write"),
     "report_progress": ("Achtergrondtaken", "read"),
