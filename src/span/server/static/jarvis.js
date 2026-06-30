@@ -15,22 +15,18 @@ const SPAN = window.SPAN = {
 let ws = null, current = null;
 
 function token() {
+  // Auth loopt via de Microsoft-sessiecookie (SSO): nooit om een token vragen.
+  // Een ?token= in de URL blijft ondersteund voor token-modus/dev; anders leeg
+  // -> de httpOnly cookie regelt WS én REST. Verlopen sessie -> de foutafhandeling
+  // stuurt naar /auth/login (geen prompt meer; dat schoot bij Ctrl+R te vroeg af
+  // omdat SPAN.sso nog niet gezet was).
   const fromUrl = new URLSearchParams(location.search).get("token");
   if (fromUrl !== null) {
     localStorage.setItem("span_token", fromUrl);
     history.replaceState(null, "", location.pathname);
     return fromUrl;
   }
-  let t = localStorage.getItem("span_token");
-  if (t === null) {
-    if (SPAN.sso) return "";  // SSO-modus: de httpOnly sessie-cookie regelt de auth
-    t = prompt("Toegangstoken (leeg laten op localhost):") || "";
-    // M26: een lege token alleen accepteren op localhost; elders niet opslaan
-    // zodat de prompt terugkomt i.p.v. een kapotte sessie stil te bewaren
-    const local = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
-    if (t || local) localStorage.setItem("span_token", t);
-  }
-  return t;
+  return localStorage.getItem("span_token") || "";
 }
 SPAN.authHeaders = () => ({ Authorization: "Bearer " + token() });
 
