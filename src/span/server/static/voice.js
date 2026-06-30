@@ -25,12 +25,26 @@
   const STOP_WORDS = ["stop", "stil", "genoeg", "kappen", "stilte"];
   const wakeWord = () => (window.SPAN && SPAN._agentName ? SPAN._agentName : "LO").toLowerCase();
 
+  // Een korte naam als "LO" (2 tekens) hoort de browser onbetrouwbaar: er komt
+  // "low", "loo", "loh", "lo" of "loe" uit. Match daarom soepel op fonetische
+  // varianten i.p.v. een strenge bigram-drempel.
+  function wakeMatch(word, wake) {
+    if (!word) return false;
+    if (word === wake) return true;
+    if (wake.length <= 3) {
+      // begint met de naam, hooguit 2 tekens langer (low/loo/loh/lows/loe)
+      if (word.startsWith(wake) && word.length <= wake.length + 2) return true;
+      // of de naam begint met het gehoorde woord (bv. "l" -> "lo")
+      if (wake.startsWith(word)) return true;
+      return similarity(word, wake) >= 0.8;
+    }
+    return similarity(word, wake) >= 0.62;
+  }
   function findWake(transcript) {
     const wake = wakeWord();
-    const thr = wake.length <= 3 ? 0.9 : 0.62;
-    const words = transcript.toLowerCase().replace(/[.,!?]/g, "").split(/\s+/);
+    const words = transcript.toLowerCase().replace(/[.,!?;:]/g, "").split(/\s+/);
     for (let i = 0; i < words.length; i++) {
-      if (similarity(words[i], wake) >= thr) return words.slice(i + 1).join(" ").trim();
+      if (wakeMatch(words[i], wake)) return words.slice(i + 1).join(" ").trim();
     }
     return null;
   }
