@@ -44,7 +44,7 @@
       $("set-telegram-status").textContent = !s.telegram || !s.telegram.configured
         ? "niet geconfigureerd — zet TELEGRAM_BOT_TOKEN in .env (bot via @BotFather)"
         : (s.telegram.linked
-          ? "gekoppeld — Span stuurt je dagstart en antwoordt op berichten"
+          ? "gekoppeld — " + (window.SPAN && SPAN._agentName ? SPAN._agentName : "LO") + " stuurt je dagstart en antwoordt op berichten"
           : "bot actief — stuur hem: /koppel <SPAN_AUTH_TOKEN>");
 
       for (const [selId, current] of [["set-model-main", s.model_main],
@@ -297,7 +297,9 @@
   _bind("sec-save", async () => {
     const inj = $("sec-injection").checked, exf = $("sec-exfil").checked;
     if ((!inj || !exf) && !confirm(
-        "Je zet een bescherming UIT. Span is dan kwetsbaarder voor misleiding " +
+        "Je zet een bescherming UIT. " +
+        (window.SPAN && SPAN._agentName ? SPAN._agentName : "LO") +
+        " is dan kwetsbaarder voor misleiding " +
         "via mail of een datalek. Zeker weten?")) return;
     try {
       const res = await fetch("/api/settings", {
@@ -339,7 +341,8 @@
     const v = spArea.value.trim();
     if (v && !v.includes("{bootstrap}")) {
       SPAN.sys("Let op: {bootstrap} ontbreekt — zonder die plekhouder verliest " +
-        "Span zijn geheugen-context. Voeg hem toe en sla opnieuw op.", "warn");
+        (window.SPAN && SPAN._agentName ? SPAN._agentName : "LO") +
+        " zijn geheugen-context. Voeg hem toe en sla opnieuw op.", "warn");
       return;
     }
     saveSysPrompt(v === spArea.dataset.default ? "" : v);

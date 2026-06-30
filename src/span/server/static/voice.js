@@ -332,7 +332,8 @@
     intentionalStop = true;
     try { recognizer && recognizer.stop(); } catch (e) {}
     SPAN.sys("Browser-spraakdienst geblokkeerd (proxy) — overgeschakeld naar " +
-      "Spans eigen spraakherkenning (Whisper op de server). Eerste zin duurt " +
+      (window.SPAN && SPAN._agentName ? SPAN._agentName : "LO") +
+      "'s eigen spraakherkenning (Whisper op de server). Eerste zin duurt " +
       "even: het model wordt eenmalig geladen.");
     ensureSegmentLoop();
   }
@@ -419,7 +420,8 @@
   $("wake").onclick = () => {
     if (mode === "wake") { setVoiceMode("off"); SPAN.sys("Wake word uit."); return; }
     setVoiceMode("wake");
-    SPAN.sys("Wake word actief — zeg 'Jarvis' + commando, of alleen 'Jarvis' en praat daarna door.");
+    const w = (window.SPAN && SPAN._agentName ? SPAN._agentName : "LO");
+    SPAN.sys("Wake word actief — zeg '" + w + "' + commando, of alleen '" + w + "' en praat daarna door.");
   };
 
   /* compat met de TTS-laag: na het uitspreken kort doorpraten zonder wake word */

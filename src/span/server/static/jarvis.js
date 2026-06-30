@@ -86,7 +86,7 @@ SPAN.chime = (freq, dur) => {
 
 /* -- boot sequence ------------------------------------------------------- */
 const BOOT_LINES = [
-  "SPAN KERNEL v1 — initialisatie",
+  "LO KERNEL v1 — initialisatie",
   new Date().toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" }) +
     " · " + (localStorage.getItem("span_mf_count") ? localStorage.getItem("span_mf_count") + " herinneringen aan boord" : "brein wordt gewekt"),
   "neo4j brein: verbinding",
@@ -100,6 +100,8 @@ const BOOT_LINES = [
 ];
 function boot() {
   const el = $("boot-log");
+  BOOT_LINES[0] = (window.SPAN && SPAN._agentName ? SPAN._agentName : "LO")
+    .toUpperCase() + " KERNEL v1 — initialisatie";
   let i = 0;
   const tick = () => {
     if (i > 0) el.children[i - 1].classList.add("ok");
@@ -262,7 +264,7 @@ function handle(msg) {
   else if (msg.type === "tool") {
     // live tonen welke tool draait -> duidelijk dat Span bezig is
     if (msg.phase === "start") SPAN.working(SPAN.toolLabel(msg.name) + "…");
-    else SPAN.working("Span werkt verder…");
+    else SPAN.working((SPAN._agentName || "LO") + " werkt verder…");
   }
   else if (msg.type === "touched") {
     if (SPAN.highlightNodes) SPAN.highlightNodes(msg.ids || []);
@@ -325,7 +327,7 @@ SPAN.send = (textOverride) => {
   ws.send(JSON.stringify({ type: "user", text }));
   input.value = ""; input.style.height = "auto";
   SPAN.busy = true; SPAN.setState("busy");
-  SPAN.working("Span werkt…");  // meteen zichtbaar dat hij bezig is
+  SPAN.working((SPAN._agentName || "LO") + " werkt…");  // meteen zichtbaar dat hij bezig is
   const st = $("stop"); if (st) st.classList.remove("hidden");
 };
 
