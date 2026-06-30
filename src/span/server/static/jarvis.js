@@ -152,6 +152,21 @@ SPAN.sys = (text, cls) => {
   if (cls === "warn" && SPAN.glitch) SPAN.glitch();
 };
 
+// online/offline rechtsboven via het bolletje i.p.v. meldingen in de chat.
+// groen = WS verbonden ÉN brein ok; rood = WS weg óf brein down.
+SPAN._wsOk = false; SPAN._health = null;
+SPAN._applyDot = () => {
+  const d = $("health-dot"); if (!d) return;
+  const h = SPAN._health;
+  const ok = SPAN._wsOk && (!h || h.brain);
+  d.classList.toggle("ok", ok);
+  d.classList.toggle("down", !ok);
+  d.title = !SPAN._wsOk ? "offline — opnieuw verbinden…"
+    : (h ? `online · brein: ${h.brain ? "ok" : "OFFLINE"} · o365: ${h.o365 ? "gekoppeld" : "—"}`
+         + ` · asana: ${h.asana ? "gekoppeld" : "—"}`
+        : "online");
+};
+SPAN.setOnline = (ok) => { SPAN._wsOk = ok; SPAN._applyDot(); };
 let wsWanted = true, reconnectDelay = 1500, reconnectTimer = 0;
 function connect() {
   clearTimeout(reconnectTimer);
@@ -160,6 +175,7 @@ function connect() {
   ws = new WebSocket(`${proto}://${location.host}/ws/chat`);
   ws.onopen = () => {
     reconnectDelay = 1500;
+    SPAN.setOnline(true);
     ws.send(JSON.stringify({ type: "hello", token: token() }));
     // browser-locatie voor de weer-tool (stil falen bij weigering)
     if (navigator.geolocation) {
@@ -181,7 +197,7 @@ function connect() {
   ws.onclose = () => {
     SPAN.busy = false; SPAN.setState("idle");
     if (!wsWanted) return;  // bewust gesloten (na evaluatie)
-    SPAN.sys("Verbinding verbroken — opnieuw verbinden…");
+    SPAN.setOnline(false);  // bolletje rood i.p.v. melding in de chat
     clearTimeout(reconnectTimer);
     reconnectTimer = setTimeout(connect, reconnectDelay);
     reconnectDelay = Math.min(15000, reconnectDelay * 1.6);
@@ -210,7 +226,11 @@ SPAN.playDaily = async (force) => {
 
 function handle(msg) {
   if (msg.type === "ready") {
-    SPAN.sys("Span is wakker — alle systemen online.");
+    SPAN.setOnline(true);
+    if (!SPAN._welcomed) {  // welkomstmelding maar één keer, niet bij elke reconnect
+      SPAN.sys("Span is wakker — alle systemen online.");
+      SPAN._welcomed = true;
+    }
     loadPanels();
     if (SPAN.showSuggestions) SPAN.showSuggestions();
     setTimeout(() => SPAN.playDaily(false), 2200);
