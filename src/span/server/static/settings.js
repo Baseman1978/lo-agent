@@ -528,24 +528,39 @@
     const g = (k, d) => { const v = localStorage.getItem(k); return v === null ? String(d) : v; };
     const set = (id, v) => { const el = $(id); if (el) el.value = v; };
     const lbl = (id, v) => { const el = $(id); if (el) el.textContent = (+v).toFixed(2); };
+    const showRow = (id, show) => { const el = $(id), row = el && el.closest(".setrow"); if (row) row.style.display = show ? "" : "none"; };
+    const SLIDERS = ["tts-length", "tts-noise", "tts-noisew", "tts-volume"];
     fetch("/api/tts/status", { headers: SPAN.authHeaders() }).then((r) => r.json()).then((s) => {
       if (!s.available) { wrap.style.display = "none"; return; }
-      // schuiven op de opgeslagen waarde, anders de ÉCHTE modelstandaard
-      const dLen = s.model_length != null ? s.model_length : 1.0;
-      const dNoise = s.model_noise != null ? s.model_noise : 0.667;
-      const dNoiseW = s.model_noisew != null ? s.model_noisew : 0.8;
-      set("tts-length", g("span_tts_length", dLen)); lbl("tts-length-label", g("span_tts_length", dLen));
-      set("tts-noise", g("span_tts_noise", dNoise)); lbl("tts-noise-label", g("span_tts_noise", dNoise));
-      set("tts-noisew", g("span_tts_noisew", dNoiseW)); lbl("tts-noisew-label", g("span_tts_noisew", dNoiseW));
-      set("tts-volume", g("span_tts_volume", 1.0)); lbl("tts-volume-label", g("span_tts_volume", 1.0));
       const sel = $("tts-speaker");
-      if (sel && s.num_speakers > 1) {
-        sel.innerHTML = "";
-        for (let i = 0; i < s.num_speakers; i++) {
-          const o = document.createElement("option"); o.value = i; o.textContent = "stem " + i; sel.appendChild(o);
+      if (s.engine === "xtts") {
+        // XTTS: stem = naam, geen Piper-schuiven
+        SLIDERS.forEach((id) => showRow(id, false));
+        if (sel) {
+          const names = s.speakers || [];
+          sel.innerHTML = "";
+          names.forEach((n) => { const o = document.createElement("option"); o.value = n; o.textContent = n; sel.appendChild(o); });
+          const stored = localStorage.getItem("span_tts_speaker");
+          sel.value = (stored && names.includes(stored)) ? stored : (s.default_speaker || names[0] || "");
+          showRow("tts-speaker", names.length > 1);
         }
-        sel.value = g("span_tts_speaker", "0");
-      } else if (sel) { const row = sel.closest(".setrow"); if (row) row.style.display = "none"; }
+      } else {
+        // Piper: nummers + schuiven; defaults = modelstandaard van de server
+        SLIDERS.forEach((id) => showRow(id, true));
+        const dLen = s.model_length != null ? s.model_length : 1.0;
+        const dNoise = s.model_noise != null ? s.model_noise : 0.667;
+        const dNoiseW = s.model_noisew != null ? s.model_noisew : 0.8;
+        set("tts-length", g("span_tts_length", dLen)); lbl("tts-length-label", g("span_tts_length", dLen));
+        set("tts-noise", g("span_tts_noise", dNoise)); lbl("tts-noise-label", g("span_tts_noise", dNoise));
+        set("tts-noisew", g("span_tts_noisew", dNoiseW)); lbl("tts-noisew-label", g("span_tts_noisew", dNoiseW));
+        set("tts-volume", g("span_tts_volume", 1.0)); lbl("tts-volume-label", g("span_tts_volume", 1.0));
+        if (sel && s.num_speakers > 1) {
+          sel.innerHTML = "";
+          for (let i = 0; i < s.num_speakers; i++) { const o = document.createElement("option"); o.value = i; o.textContent = "stem " + i; sel.appendChild(o); }
+          sel.value = g("span_tts_speaker", "0");
+          showRow("tts-speaker", true);
+        } else { showRow("tts-speaker", false); }
+      }
     }).catch(() => {});
     const on = (id, fn) => { const el = $(id); if (el) el.addEventListener("input", fn); };
     on("tts-speaker", (e) => localStorage.setItem("span_tts_speaker", e.target.value));

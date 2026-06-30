@@ -129,7 +129,7 @@
   function ttsParams() {
     const p = {}, g = (k) => localStorage.getItem(k);
     const sp = g("span_tts_speaker");
-    if (sp !== null && sp !== "") p.speaker_id = parseInt(sp, 10);
+    if (sp !== null && sp !== "") p.speaker = sp;  // naam (XTTS) of nummer (Piper)
     if (g("span_tts_length")) p.length_scale = parseFloat(g("span_tts_length"));
     if (g("span_tts_noise")) p.noise_scale = parseFloat(g("span_tts_noise"));
     if (g("span_tts_noisew")) p.noise_w_scale = parseFloat(g("span_tts_noisew"));

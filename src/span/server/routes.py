@@ -552,9 +552,14 @@ async def text_to_speech(request: Request) -> Any:
         spk = int(spk) if spk is not None else None
     except (TypeError, ValueError):
         spk = None
+    # speaker mag een naam zijn (XTTS) of nummer (Piper)
+    speaker = body.get("speaker")
+    if speaker is not None:
+        speaker = str(speaker)[:80]
     try:
         audio = await asyncio.to_thread(
             tts.synthesize, text,
+            speaker=speaker,
             speaker_id=spk,
             length_scale=_num("length_scale", 0.5, 2.0),
             noise_scale=_num("noise_scale", 0.0, 1.5),
