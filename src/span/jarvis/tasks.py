@@ -80,6 +80,7 @@ class TaskManager:
                 status = "interrupted"
             item = {"id": tid, "goal": r["goal"] or "", "title": r["title"] or "",
                     "status": status, "progress": r["progress"] or "",
+                    "percent": 100 if status == "done" else 0,
                     "steps": [], "result": r["result"] or "",
                     "created": r["created"] or _now(), "updated": r["updated"] or _now()}
             self._items[tid] = item
@@ -98,8 +99,8 @@ class TaskManager:
     def submit(self, goal: str, title: str = "", ctx: dict[str, Any] | None = None) -> int:
         tid = next(self._ids)
         item = {"id": tid, "goal": goal, "title": (title or goal[:60]).strip(),
-                "status": "queued", "progress": "", "steps": [], "result": "",
-                "created": _now(), "updated": _now()}
+                "status": "queued", "progress": "", "percent": 0, "steps": [],
+                "result": "", "created": _now(), "updated": _now()}
         with self._lock:
             self._items[tid] = item
             self._cancels[tid] = threading.Event()
@@ -122,30 +123,34 @@ class TaskManager:
         if snap is not None:
             self._persist(snap)
 
-    def _progress(self, tid: int, label: str) -> None:
+    def _progress(self, tid: int, label: str = "", percent: int | None = None) -> None:
         label = (label or "").strip()
-        if not label:
-            return
         with self._lock:
             it = self._items.get(tid)
-            if it:
+            if not it:
+                return
+            if label:
                 it["progress"] = label
                 it["steps"].append(label)
                 del it["steps"][:-15]
-                it["updated"] = _now()
+            if percent is not None:
+                it["percent"] = max(0, min(100, int(percent)))
+            it["updated"] = _now()
 
     def _run(self, tid: int, ctx: dict[str, Any]) -> None:
         ev = self._cancels.get(tid) or threading.Event()
-        self._update(tid, persist=True, status="running", progress="gestart")
+        self._update(tid, persist=True, status="running", progress="gestart", percent=3)
         try:
-            result = self._runner(dict(self._items[tid]),
-                                  lambda l: self._progress(tid, l), ev.is_set, ctx)
+            result = self._runner(
+                dict(self._items[tid]),
+                lambda label="", percent=None: self._progress(tid, label, percent),
+                ev.is_set, ctx)
             if ev.is_set():
                 self._update(tid, persist=True, status="cancelled",
                              result=(result or "(geannuleerd)"), progress="geannuleerd")
             else:
                 self._update(tid, persist=True, status="done",
-                             result=(result or ""), progress="klaar")
+                             result=(result or ""), progress="klaar", percent=100)
         except Exception as exc:  # nooit de worker laten crashen
             self._update(tid, persist=True, status="error",
                          result=f"{type(exc).__name__}: {exc}", progress="fout")

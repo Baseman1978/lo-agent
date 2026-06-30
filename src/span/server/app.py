@@ -141,20 +141,38 @@ async def lifespan(app: FastAPI):
         from span.memory.bootstrap import start_session
         tbrain = ctx.get("brain") or _state["brain"]
         to365 = ctx.get("o365", _state.get("o365"))
+        # zodra de sub-agent zelf een % meldt (accuraat bij batch), neemt die het
+        # over van de stapgebaseerde basisschatting
+        agent_reported = [False]
+
+        def _agent_progress(percent, label=""):
+            agent_reported[0] = True
+            set_progress(label, percent)
+
         agent = SpanAgent(
             _state["settings"], tbrain, _state["llm"], _state.get("work"),
             o365=to365, asana=_state.get("asana"), inbox=_state["inbox"],
             autonomy=_state["autonomy"], disabled_tools=_state.get("disabled_tools"),
             fireflies=_state.get("fireflies"), mcp=_state.get("mcp"),
-            shared_brain=ctx.get("shared"),
+            shared_brain=ctx.get("shared"), progress_cb=_agent_progress,
         )
         agent.begin(start_session(tbrain), task["goal"])
 
-        def on_tool(name, phase):
-            if phase == "start":
-                set_progress(_TASK_LABELS.get(name, "⚙ " + name + "…"))
+        step = [0]
 
-        result = agent.turn(task["goal"], on_tool=on_tool,
+        def on_tool(name, phase):
+            if phase != "start":
+                return
+            step[0] += 1
+            label = _TASK_LABELS.get(name, "⚙ " + name + "…")
+            if agent_reported[0]:
+                set_progress(label)  # alleen het label; de agent stuurt het %
+            else:  # vloeiende basisschatting, nooit 100 vóór klaar
+                set_progress(label, min(95, round(100 * (1 - 0.8 ** step[0]))))
+
+        goal = (task["goal"] + "\n\n[Achtergrondtaak: werk je voortgang bij met "
+                "report_progress(percent, label) terwijl je werkt, vooral bij batch-stappen.]")
+        result = agent.turn(goal, on_tool=on_tool,
                             should_cancel=should_cancel, max_steps=30)
         try:
             agent.flush_recording()

@@ -1096,6 +1096,23 @@ TOOL_SPECS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "report_progress",
+            "description": "Alleen als je ZELF een achtergrondtaak uitvoert: werk je "
+            "voortgang bij (0-100%) met een kort label. Roep dit aan tijdens het werk, "
+            "vooral bij batchstappen (bv. 'map 2 van 5'), zodat Bas de voortgangsbalk ziet.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "percent": {"type": "integer", "description": "Voortgang 0-100"},
+                    "label": {"type": "string", "description": "Kort label, bv. 'map 2 van 5 verwerkt'"},
+                },
+                "required": ["percent"],
+            },
+        },
+    },
 ]
 
 
@@ -1182,6 +1199,7 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "spawn_task": ("Achtergrondtaken", "write"),
     "task_status": ("Achtergrondtaken", "read"),
     "task_cancel": ("Achtergrondtaken", "write"),
+    "report_progress": ("Achtergrondtaken", "read"),
 }
 ASANA_TOOLS = {"asana_my_tasks", "asana_task_create", "asana_task_complete",
                "asana_search", "asana_projects"}

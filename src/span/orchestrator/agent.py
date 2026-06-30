@@ -124,7 +124,9 @@ class SpanAgent:
         mcp: Any = None,
         shared_brain: BrainDB | None = None,
         tasks: Any = None,
+        progress_cb: Any = None,
     ):
+        self._progress_cb = progress_cb  # alleen in taak-modus: report_progress -> TaskManager
         self._tasks = tasks  # TaskManager (achtergrondtaken); None = uit (geen recursie)
         self._mcp = mcp
         self._settings = settings
@@ -189,6 +191,7 @@ class SpanAgent:
             mcp=self._mcp,
             shared=self._shared,
             tasks=self._tasks,
+            progress_cb=self._progress_cb,
         )
         self._bootstrap = load_bootstrap(self._brain, self._fragments, first_message,
                                          shared=self._shared)

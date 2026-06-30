@@ -438,6 +438,8 @@ body[data-theme="warmachine"] {
   width: min(600px, 92vw); max-height: 84vh; flex: none; padding: 18px 22px;
 }
 #inbox-panel h2, #tasks-panel h2 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.taskbar { height: 6px; border-radius: 3px; background: rgba(56,225,255,.12); margin: 8px 0 4px; overflow: hidden; }
+.taskbar > span { display: block; height: 100%; background: var(--cyan); border-radius: 3px; transition: width .5s ease; }
 .inbox-card {
   border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px;
   margin-bottom: 9px; background: rgba(10,19,34,.5);
