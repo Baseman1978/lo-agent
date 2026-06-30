@@ -52,7 +52,13 @@ class Req(BaseModel):
 @app.on_event("startup")
 def _warm() -> None:
     try:
-        get_tts()
+        t = get_tts()
+        # warmup-synthese: compileert de CUDA-kernels nu i.p.v. bij de 1e echte
+        # call, zodat de eerste zin van de gebruiker niet de cold-start meeneemt
+        names = _speaker_names(t)
+        spk = DEFAULT_SPEAKER or (names[0] if names else None)
+        t.tts(text="Hallo.", speaker=spk, language=DEFAULT_LANG)
+        print("XTTS warm", flush=True)
     except Exception as exc:  # opstart mag niet hard falen; /health meldt het
         print("XTTS laad-fout:", exc, flush=True)
 
