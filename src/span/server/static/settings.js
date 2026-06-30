@@ -508,6 +508,43 @@
   }
   orbInit();
 
+  /* -- Stem (server-TTS): live tweaken, lokaal bewaard -------------------- */
+  function ttsInit() {
+    const wrap = $("tts-settings");
+    if (!wrap) return;
+    const g = (k, d) => { const v = localStorage.getItem(k); return v === null ? d : v; };
+    const set = (id, v) => { const el = $(id); if (el) el.value = v; };
+    const lbl = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+    set("tts-length", g("span_tts_length", "1.0")); lbl("tts-length-label", (+g("span_tts_length", "1.0")).toFixed(2));
+    set("tts-noise", g("span_tts_noise", "0.667")); lbl("tts-noise-label", (+g("span_tts_noise", "0.667")).toFixed(2));
+    set("tts-noisew", g("span_tts_noisew", "0.8")); lbl("tts-noisew-label", (+g("span_tts_noisew", "0.8")).toFixed(2));
+    set("tts-volume", g("span_tts_volume", "1.0")); lbl("tts-volume-label", (+g("span_tts_volume", "1.0")).toFixed(2));
+    fetch("/api/tts/status", { headers: SPAN.authHeaders() }).then((r) => r.json()).then((s) => {
+      if (!s.available) { wrap.style.display = "none"; return; }
+      const sel = $("tts-speaker");
+      if (sel && s.num_speakers > 1) {
+        sel.innerHTML = "";
+        for (let i = 0; i < s.num_speakers; i++) {
+          const o = document.createElement("option"); o.value = i; o.textContent = "stem " + i; sel.appendChild(o);
+        }
+        sel.value = g("span_tts_speaker", "0");
+      } else if (sel) { const row = sel.closest(".setrow"); if (row) row.style.display = "none"; }
+    }).catch(() => {});
+    const on = (id, fn) => { const el = $(id); if (el) el.addEventListener("input", fn); };
+    on("tts-speaker", (e) => localStorage.setItem("span_tts_speaker", e.target.value));
+    on("tts-length", (e) => { lbl("tts-length-label", (+e.target.value).toFixed(2)); localStorage.setItem("span_tts_length", e.target.value); });
+    on("tts-noise", (e) => { lbl("tts-noise-label", (+e.target.value).toFixed(2)); localStorage.setItem("span_tts_noise", e.target.value); });
+    on("tts-noisew", (e) => { lbl("tts-noisew-label", (+e.target.value).toFixed(2)); localStorage.setItem("span_tts_noisew", e.target.value); });
+    on("tts-volume", (e) => { lbl("tts-volume-label", (+e.target.value).toFixed(2)); localStorage.setItem("span_tts_volume", e.target.value); });
+    const test = $("tts-test"); if (test) test.onclick = () => { if (SPAN.ttsSample) SPAN.ttsSample(); };
+    const rst = $("tts-reset"); if (rst) rst.onclick = () => {
+      ["span_tts_speaker", "span_tts_length", "span_tts_noise", "span_tts_noisew", "span_tts_volume"]
+        .forEach((k) => localStorage.removeItem(k));
+      ttsInit();
+    };
+  }
+  ttsInit();
+
   /* statusje in settings live houden wanneer o365 net (ont)koppeld is */
   window.addEventListener("focus", () => {
     if (overlay.classList.contains("open")) load();
