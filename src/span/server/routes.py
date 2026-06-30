@@ -681,8 +681,9 @@ async def tasks_list(request: Request) -> Any:
     tm = _state.get("tasks")
     if tm is None:
         return {"tasks": [], "active": 0}
-    items = tm.list()[:25]
-    return {"active": tm.active_count(),
+    owner = getattr(_request_context(request).brain, "database", "")
+    items = tm.list(owner=owner)[:25]
+    return {"active": tm.active_count(owner=owner),
             "tasks": [{"id": t["id"], "title": t["title"], "status": t["status"],
                        "progress": t["progress"], "percent": t.get("percent", 0),
                        "team": t.get("team", False), "steps": t["steps"],
@@ -695,6 +696,10 @@ async def tasks_cancel(request: Request, tid: int) -> Any:
     tm = _state.get("tasks")
     if tm is None:
         raise HTTPException(status_code=404, detail="Geen taken.")
+    owner = getattr(_request_context(request).brain, "database", "")
+    t = tm.get(int(tid))
+    if t is None or (t.get("owner") or "") not in ("", owner):
+        raise HTTPException(status_code=404, detail="Taak niet gevonden.")
     return {"cancelled": tm.cancel(int(tid))}
 
 

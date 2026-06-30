@@ -314,8 +314,8 @@ class ToolBox:
     def _tool_spawn_task(self, goal: str, title: str = "") -> Any:
         if self._tasks is None:
             return {"error": "Achtergrondtaken niet beschikbaar."}
-        tid = self._tasks.submit(goal, title, ctx={
-            "brain": self._brain, "o365": self._o365, "shared": self._shared})
+        tid = self._tasks.submit(goal, title, owner=getattr(self._brain, "database", ""),
+                                 ctx={"brain": self._brain, "o365": self._o365, "shared": self._shared})
         return {"task": tid, "status": "gestart op de achtergrond",
                 "note": "Je kunt gewoon doorpraten; ik meld het als 'ie klaar is. "
                         "Volg de voortgang in het Taken-paneel."}
@@ -323,8 +323,8 @@ class ToolBox:
     def _tool_spawn_team(self, goal: str, title: str = "") -> Any:
         if self._tasks is None:
             return {"error": "Achtergrondtaken niet beschikbaar."}
-        tid = self._tasks.submit(goal, title, team=True, ctx={
-            "brain": self._brain, "o365": self._o365, "shared": self._shared})
+        tid = self._tasks.submit(goal, title, team=True, owner=getattr(self._brain, "database", ""),
+                                 ctx={"brain": self._brain, "o365": self._o365, "shared": self._shared})
         return {"task": tid, "status": "team gestart op de achtergrond",
                 "note": "Een coördinator splitst dit op in parallelle deeltaken en voegt het "
                         "samen. Je kunt doorpraten; volg de voortgang in het Taken-paneel."}

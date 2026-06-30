@@ -52,11 +52,13 @@ class TaskManager:
                 MERGE (t:Task {id: $id})
                 ON CREATE SET t.created = $created
                 SET t.goal=$goal, t.title=$title, t.status=$status,
-                    t.progress=$progress, t.result=$result, t.updated=$updated
+                    t.progress=$progress, t.result=$result, t.updated=$updated,
+                    t.owner=$owner, t.team=$team
                 """,
                 id=item["id"], created=item["created"], goal=item["goal"][:2000],
                 title=item["title"], status=item["status"], progress=item["progress"],
                 result=(item["result"] or "")[:6000], updated=item["updated"],
+                owner=item.get("owner", ""), team=bool(item.get("team")),
             )
         except Exception:
             pass
@@ -68,6 +70,7 @@ class TaskManager:
             rows = self._brain.run(
                 "MATCH (t:Task) RETURN t.id AS id, t.goal AS goal, t.title AS title, "
                 "t.status AS status, t.progress AS progress, t.result AS result, "
+                "t.owner AS owner, t.team AS team, "
                 "t.created AS created, t.updated AS updated ORDER BY t.id DESC LIMIT 60"
             )
         except Exception:
@@ -83,6 +86,7 @@ class TaskManager:
                     "status": status, "progress": r["progress"] or "",
                     "percent": 100 if status == "done" else 0,
                     "steps": [], "result": r["result"] or "",
+                    "owner": r.get("owner") or "", "team": bool(r.get("team")),
                     "created": r["created"] or _now(), "updated": r["updated"] or _now()}
             self._items[tid] = item
             self._cancels[tid] = threading.Event()
@@ -98,11 +102,12 @@ class TaskManager:
 
     # -- API ----------------------------------------------------------------
     def submit(self, goal: str, title: str = "", ctx: dict[str, Any] | None = None,
-               team: bool = False) -> int:
+               team: bool = False, owner: str = "") -> int:
         tid = next(self._ids)
         item = {"id": tid, "goal": goal, "title": (title or goal[:60]).strip(),
                 "status": "queued", "progress": "", "percent": 0, "steps": [],
-                "result": "", "team": bool(team), "created": _now(), "updated": _now()}
+                "result": "", "team": bool(team), "owner": owner,
+                "created": _now(), "updated": _now()}
         with self._lock:
             self._items[tid] = item
             self._cancels[tid] = threading.Event()
@@ -173,13 +178,19 @@ class TaskManager:
             it = self._items.get(tid)
             return dict(it) if it else None
 
-    def list(self) -> list[dict[str, Any]]:
-        with self._lock:
-            return [dict(v) for v in sorted(self._items.values(), key=lambda x: -x["id"])]
+    def _visible(self, v: dict[str, Any], owner: str | None) -> bool:
+        # owner=None -> alles (intern); anders alleen eigen taken (+ legacy zonder owner)
+        return owner is None or (v.get("owner") or "") in ("", owner)
 
-    def active_count(self) -> int:
+    def list(self, owner: str | None = None) -> list[dict[str, Any]]:
         with self._lock:
-            return sum(1 for v in self._items.values() if v["status"] in ACTIVE)
+            vals = sorted(self._items.values(), key=lambda x: -x["id"])
+        return [dict(v) for v in vals if self._visible(v, owner)]
+
+    def active_count(self, owner: str | None = None) -> int:
+        with self._lock:
+            return sum(1 for v in self._items.values()
+                       if v["status"] in ACTIVE and self._visible(v, owner))
 
     def shutdown(self) -> None:
         for ev in self._cancels.values():
