@@ -72,6 +72,10 @@ def voice_info() -> dict:
         import json
         cfg = json.load(open(VOICE_PATH + ".json", encoding="utf-8"))
         info["num_speakers"] = int(cfg.get("num_speakers", 1))
+        inf = cfg.get("inference", {})
+        info["model_length"] = inf.get("length_scale", 1.0)
+        info["model_noise"] = inf.get("noise_scale", 0.667)
+        info["model_noisew"] = inf.get("noise_w", 0.8)
     except Exception:
         pass
     return info
