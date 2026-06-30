@@ -63,6 +63,7 @@ class ToolBox:
         self._o365 = o365
         self._asana = asana
         self._inbox = inbox            # AgentInbox: gevoelige acties wachten op akkoord
+        self._owner = getattr(brain, "database", "")  # eigenaar-tag voor inbox-items (isolatie)
         self._autonomy = autonomy or {}  # per actie: "ask" (default) of "auto"
         self._llm = llm                # voor concept-generatie bij inbox_approve
         self._light_model = light_model
@@ -156,6 +157,7 @@ class ToolBox:
             return json.dumps({"error": "Geen MCP-servers gekoppeld."})
         if getattr(self, "_forced_approval", False) and self._inbox is not None:
             item_id = self._inbox.add(
+                owner=self._owner,
                 kind="action", action="mcp_call",
                 title=f"MCP-actie: {name}",
                 detail=json.dumps(arguments, ensure_ascii=False)[:240],
@@ -306,6 +308,7 @@ class ToolBox:
         nm = sk.normalize_name(name)
         if self._inbox is not None:
             item_id = self._inbox.add(
+                owner=self._owner,
                 kind="action", action="enable_skill",
                 title=f"Nieuwe skill: {nm}",
                 detail=f"{kind} — {description}"[:240],
@@ -381,6 +384,7 @@ class ToolBox:
         if self._inbox is not None and (self._autonomy.get("mail", "ask") != "auto"
                                         or getattr(self, "_forced_approval", False)):
             item_id = self._inbox.add(
+                owner=self._owner,
                 kind="action", action="mail_send",
                 title=f"Mail aan {', '.join(to)}",
                 detail=f"{subject} — {body[:120]}",
@@ -562,6 +566,7 @@ class ToolBox:
         if self._inbox is not None and (self._autonomy.get("event", "ask") != "auto"
                                         or getattr(self, "_forced_approval", False)):
             item_id = self._inbox.add(
+                owner=self._owner,
                 kind="action", action="event_create",
                 title=f"Afspraak: {subject}",
                 detail=f"{start} – {end}" + (f" · {len(attendees)} genodigden" if attendees else ""),
@@ -606,7 +611,7 @@ class ToolBox:
     def _tool_inbox_open(self) -> Any:
         return [
             {"id": i["id"], "kind": i["kind"], "title": i["title"], "detail": i["detail"]}
-            for i in self._inbox.snapshot() if i["status"] == "open"
+            for i in self._inbox.snapshot(self._owner) if i["status"] == "open"
         ]
 
     def _tool_inbox_approve(self, item_id: int) -> Any:
@@ -666,6 +671,7 @@ class ToolBox:
         if not str(url).startswith("http"):
             return {"error": "Geef een geldige https-URL."}
         item_id = self._inbox.add(
+                owner=self._owner,
             kind="action", action="mcp_add",
             title=f"MCP-server voorstellen: {name}",
             detail=f"{url} — {reason}"[:240],
@@ -695,6 +701,7 @@ class ToolBox:
             return {"error": f"Dit type is niet deelbaar ({', '.join(labels) or 'onbekend'})."}
         preview = (rows[0]["preview"] or "")[:160]
         item_id = self._inbox.add(
+                owner=self._owner,
             kind="action", action="share_memory",
             title=f"Delen met team voorstellen: {label}",
             detail=(f"{preview}" + (f" — reden: {reason}" if reason else ""))[:240],
