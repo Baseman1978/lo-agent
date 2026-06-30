@@ -85,7 +85,7 @@
       const res = await fetch("/api/tts", {
         method: "POST",
         headers: { ...SPAN.authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ text: item.text }),
+        body: JSON.stringify({ text: item.text, ...ttsParams() }),
         signal: ttsAbort.signal,
       });
       ttsAbort = null;
@@ -111,6 +111,23 @@
     if (t) ttsQ.push({ text: t });
     ttsPump();
   }
+  // stem-instellingen (HUD) die per call meegaan naar /api/tts
+  function ttsParams() {
+    const p = {}, g = (k) => localStorage.getItem(k);
+    const sp = g("span_tts_speaker");
+    if (sp !== null && sp !== "") p.speaker_id = parseInt(sp, 10);
+    if (g("span_tts_length")) p.length_scale = parseFloat(g("span_tts_length"));
+    if (g("span_tts_noise")) p.noise_scale = parseFloat(g("span_tts_noise"));
+    if (g("span_tts_noisew")) p.noise_w_scale = parseFloat(g("span_tts_noisew"));
+    if (g("span_tts_volume")) p.volume = parseFloat(g("span_tts_volume"));
+    return p;
+  }
+  SPAN._ttsParams = ttsParams;
+  // sample voorlezen met de huidige instellingen (testknop in instellingen)
+  SPAN.ttsSample = (text) => {
+    ttsStop(); SPAN._muteStream = false;
+    ttsEnqueue(text || "Hallo, ik ben LO, de assistent van Lomans. Zo klink ik.", true);
+  };
 
   let queueOpen = 0;        // utterances onderweg
   let spokenChars = 0;      // spraak-cap per antwoord: niet álles voorlezen

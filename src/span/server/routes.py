@@ -537,8 +537,30 @@ async def text_to_speech(request: Request) -> Any:
     if not text:
         raise HTTPException(status_code=422, detail="Lege tekst.")
     text = text[:1200]  # cap per fragment
+
+    def _num(key, lo, hi):
+        v = body.get(key)
+        if v is None:
+            return None
+        try:
+            return max(lo, min(hi, float(v)))
+        except (TypeError, ValueError):
+            return None
+
+    spk = body.get("speaker_id")
     try:
-        audio = await asyncio.to_thread(tts.synthesize, text)
+        spk = int(spk) if spk is not None else None
+    except (TypeError, ValueError):
+        spk = None
+    try:
+        audio = await asyncio.to_thread(
+            tts.synthesize, text,
+            speaker_id=spk,
+            length_scale=_num("length_scale", 0.5, 2.0),
+            noise_scale=_num("noise_scale", 0.0, 1.5),
+            noise_w_scale=_num("noise_w_scale", 0.0, 1.5),
+            volume=_num("volume", 0.1, 2.0),
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"TTS mislukt: {exc}")
     from fastapi.responses import Response
@@ -550,7 +572,10 @@ async def text_to_speech(request: Request) -> Any:
 async def tts_status(request: Request) -> dict[str, Any]:
     _require_rest_auth(request)
     from span.server import tts
-    return {"available": tts.available()}
+    info = {"available": tts.available()}
+    if info["available"]:
+        info.update(tts.voice_info())
+    return info
 
 
 @router.post("/api/fireflies/sync")
