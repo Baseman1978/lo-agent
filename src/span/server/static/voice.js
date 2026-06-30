@@ -123,10 +123,17 @@
     return p;
   }
   SPAN._ttsParams = ttsParams;
-  // sample voorlezen met de huidige instellingen (testknop in instellingen)
+  // sample voorlezen met de huidige instellingen (testknop in instellingen).
+  // Een hele alinea met variatie (begroeting, vraag, getal, doorlopende zin)
+  // zodat je intonatie, tempo en expressie goed kunt beoordelen.
+  const TTS_SAMPLE =
+    "Goedemiddag Bas. Ik ben LO, de digitale assistent van Lomans. " +
+    "Zo klink ik wanneer ik je voorlees: je agenda, je mail en de belangrijkste " +
+    "punten van de dag. Je hebt vandaag drie afspraken; de eerste begint om half tien. " +
+    "Zal ik de notulen van gisteren er even bij pakken? Laat het me weten — ik luister mee.";
   SPAN.ttsSample = (text) => {
     ttsStop(); SPAN._muteStream = false;
-    ttsEnqueue(text || "Hallo, ik ben LO, de assistent van Lomans. Zo klink ik.", true);
+    ttsEnqueue(text || TTS_SAMPLE, true);
   };
 
   let queueOpen = 0;        // utterances onderweg
