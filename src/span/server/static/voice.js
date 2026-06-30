@@ -91,46 +91,135 @@
     }
     return ttsAnalyser;
   }
+  SPAN._ttsStreaming = false;   // XTTS streamt? (gezet uit /api/tts/status)
+  let streamSources = [];
+  let ttsHead = 0, ttsFinishT = null;   // gedeelde afspeel-tijdlijn (gap-loos)
   const ttsIdleServer = () => ttsQ.length === 0 && !ttsPlaying;
   function ttsStop() {
     ttsQ = []; ttsLast = false;
+    if (ttsFinishT) { clearTimeout(ttsFinishT); ttsFinishT = null; }
     if (ttsAbort) { try { ttsAbort.abort(); } catch (e) {} ttsAbort = null; }
     if (curSrc) { try { curSrc.onended = null; curSrc.stop(); } catch (e) {} curSrc = null; }
+    streamSources.forEach((n) => { try { n.onended = null; n.stop(); } catch (e) {} });
+    streamSources = [];
+    ttsHead = 0;
     ttsPlaying = false;
+  }
+
+  // batch: hele zin als WAV ophalen, decoderen, afspelen (Piper of fallback)
+  function ttsPlayBatch(text) {
+    return new Promise((resolve, reject) => {
+      ttsAbort = new AbortController();
+      fetch("/api/tts", {
+        method: "POST",
+        headers: { ...SPAN.authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ text, ...ttsParams() }),
+        signal: ttsAbort.signal,
+      }).then((res) => {
+        ttsAbort = null;
+        if (!res.ok) throw new Error("tts " + res.status);
+        return res.arrayBuffer();
+      }).then((arr) => {
+        if (SPAN._muteStream) return resolve();
+        return audioCtx().decodeAudioData(arr).then((audio) => {
+          if (SPAN._muteStream) return resolve();
+          const src = audioCtx().createBufferSource();
+          src.buffer = audio; src.connect(ttsMonitor());
+          curSrc = src;
+          SPAN.setState("speaking");
+          src.onended = () => { curSrc = null; resolve(); };
+          src.start();
+        });
+      }).catch(reject);
+    });
+  }
+
+  // stream: ruwe PCM16 @24k binnenkrijgen en per brok inplannen -> ~0,2s tot klank
+  async function ttsPlayStream(text) {
+    ttsAbort = new AbortController();
+    const res = await fetch("/api/tts_stream", {
+      method: "POST",
+      headers: { ...SPAN.authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ text, ...ttsParams() }),
+      signal: ttsAbort.signal,
+    });
+    ttsAbort = null;
+    if (!res.ok || !res.body) throw new Error("stream " + res.status);
+    const sr = parseInt(res.headers.get("X-Sample-Rate") || "24000", 10);
+    const ax = audioCtx();
+    const reader = res.body.getReader();
+    let got = false, leftover = new Uint8Array(0);
+    while (true) {
+      let r;
+      try { r = await reader.read(); } catch (e) { break; }
+      if (r.done) break;
+      if (SPAN._muteStream) { try { reader.cancel(); } catch (e) {} break; }
+      let value = r.value; if (!value || !value.length) continue;
+      let bytes = value;
+      if (leftover.length) {
+        bytes = new Uint8Array(leftover.length + value.length);
+        bytes.set(leftover); bytes.set(value, leftover.length);
+      }
+      const n = bytes.length - (bytes.length % 2);
+      if (n < 2) { leftover = bytes.slice(0); continue; }
+      const aligned = bytes.slice(0, n);          // vers + 2-uitgelijnd
+      leftover = bytes.slice(n);
+      const samples = new Int16Array(aligned.buffer);
+      const f32 = new Float32Array(samples.length);
+      for (let i = 0; i < samples.length; i++) f32[i] = samples[i] / 32768;
+      const buf = ax.createBuffer(1, f32.length, sr);
+      buf.copyToChannel(f32, 0);
+      const node = ax.createBufferSource();
+      node.buffer = buf; node.connect(ttsMonitor());
+      // gedeelde tijdlijn: plan achteraan de vorige (zin)brokken -> gap-loos
+      if (ttsHead < ax.currentTime + 0.02) { ttsHead = ax.currentTime + 0.08; SPAN.setState("speaking"); }
+      node.start(ttsHead);
+      ttsHead += buf.duration;
+      streamSources.push(node);
+      node.onended = () => { const k = streamSources.indexOf(node); if (k >= 0) streamSources.splice(k, 1); };
+      got = true;
+    }
+    if (!got) throw new Error("lege stream");   // -> batch-fallback
+    // klaar zodra de GENERATIE klaar is (niet de weergave) zodat de volgende
+    // zin alvast rendert terwijl deze nog speelt
+  }
+
+  function ttsFinish() {
+    if (SPAN.state === "speaking") SPAN.setState("idle");
+    if (ttsLast) { ttsLast = false; openHotWindow(); }
+    ttsHead = 0;
   }
   async function ttsPump() {
     if (ttsPlaying) return;
     const item = ttsQ.shift();
     if (!item) {
-      if (SPAN.state === "speaking") SPAN.setState("idle");
-      if (ttsLast) { ttsLast = false; openHotWindow(); }
+      // streaming: de generatie is klaar maar er kan nog audio in de tijdlijn
+      // staan -> pas afronden als die is uitgespeeld
+      const ax = _ax;
+      if (ax && ttsHead > ax.currentTime + 0.02) {
+        if (ttsFinishT) clearTimeout(ttsFinishT);
+        ttsFinishT = setTimeout(() => {
+          if (ttsQ.length === 0 && !ttsPlaying) ttsFinish();
+        }, (ttsHead - ax.currentTime) * 1000 + 80);
+      } else {
+        ttsFinish();
+      }
       return;
     }
+    if (ttsFinishT) { clearTimeout(ttsFinishT); ttsFinishT = null; }
     ttsPlaying = true;
     try {
-      ttsAbort = new AbortController();
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { ...SPAN.authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ text: item.text, ...ttsParams() }),
-        signal: ttsAbort.signal,
-      });
-      ttsAbort = null;
-      if (!res.ok) throw new Error("tts " + res.status);
-      const arr = await res.arrayBuffer();
-      if (SPAN._muteStream) { ttsPlaying = false; return ttsPump(); }  // onderbroken tijdens fetch
-      const audio = await audioCtx().decodeAudioData(arr);
-      if (SPAN._muteStream) { ttsPlaying = false; return ttsPump(); }
-      const src = audioCtx().createBufferSource();
-      src.buffer = audio; src.connect(ttsMonitor());  // via analyser -> luidsprekers
-      curSrc = src;
-      SPAN.setState("speaking");
-      src.onended = () => { curSrc = null; ttsPlaying = false; ttsPump(); };
-      src.start();
+      if (SPAN.serverTTS && SPAN._ttsStreaming) await ttsPlayStream(item.text);
+      else await ttsPlayBatch(item.text);
     } catch (e) {
-      ttsPlaying = false;
-      if (e.name !== "AbortError") setTimeout(ttsPump, 0);  // volgende zin proberen
+      if (e && e.name === "AbortError") { ttsPlaying = false; return; }  // barge-in
+      // streaming faalde -> probeer dezelfde zin als batch
+      if (SPAN.serverTTS && SPAN._ttsStreaming && !SPAN._muteStream) {
+        try { await ttsPlayBatch(item.text); } catch (e2) {}
+      }
     }
+    ttsPlaying = false;
+    ttsPump();
   }
   function ttsEnqueue(text, last) {
     if (last) ttsLast = true;

@@ -573,6 +573,39 @@ async def text_to_speech(request: Request) -> Any:
                     headers={"Cache-Control": "no-store"})
 
 
+@router.post("/api/tts_stream")
+async def tts_stream(request: Request) -> Any:
+    """Streamt audio (ruwe PCM16 @ 24kHz) door van de XTTS-GPU-service terwijl die
+    genereert — eerste klank ~0,2s. Alleen bij de XTTS-backend."""
+    _require_rest_auth(request)
+    from span.server import tts as ttsmod
+    if not ttsmod.XTTS_URL:
+        raise HTTPException(status_code=501, detail="Streaming niet beschikbaar.")
+    body = await request.json()
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Lege tekst.")
+    payload: dict[str, Any] = {"text": text[:1200], "language": "nl"}
+    spk = body.get("speaker")
+    if spk:
+        payload["speaker"] = str(spk)[:80]
+    import httpx
+    from fastapi.responses import StreamingResponse
+
+    async def gen():
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            async with client.stream("POST", ttsmod.XTTS_URL + "/tts_stream",
+                                     json=payload) as r:
+                if r.status_code != 200:
+                    return
+                async for chunk in r.aiter_bytes():
+                    if chunk:
+                        yield chunk
+
+    return StreamingResponse(gen(), media_type="application/octet-stream",
+                             headers={"X-Sample-Rate": "24000", "Cache-Control": "no-store"})
+
+
 @router.get("/api/tts/status")
 async def tts_status(request: Request) -> dict[str, Any]:
     _require_rest_auth(request)
@@ -580,6 +613,7 @@ async def tts_status(request: Request) -> dict[str, Any]:
     info = {"available": tts.available()}
     if info["available"]:
         info.update(tts.voice_info())
+        info["streaming"] = bool(tts.XTTS_URL)
     return info
 
 

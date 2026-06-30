@@ -11,20 +11,23 @@ from __future__ import annotations
 
 import io
 import os
+import threading
 import wave
 
 import numpy as np
 import torch
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 MODEL = os.environ.get("XTTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2")
 DEFAULT_SPEAKER = os.environ.get("XTTS_SPEAKER", "").strip()
 DEFAULT_LANG = os.environ.get("XTTS_LANG", "nl").strip() or "nl"
+SR = 24000  # XTTS-uitvoer-samplerate
 
 app = FastAPI(title="LO XTTS")
 _tts = None
+_gpu_lock = threading.Lock()  # serialiseert GPU-synthese (batch + stream)
 
 
 def get_tts():
@@ -88,8 +91,9 @@ def tts(req: Req) -> Response:
         wav = t.tts(text=text, speaker=spk, language=lang)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"synthese mislukt: {exc}")
-    sr = int(getattr(t.synthesizer, "output_sample_rate", 24000))
-    pcm = (np.clip(np.asarray(wav, dtype=np.float32), -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+    sr = int(getattr(t.synthesizer, "output_sample_rate", SR))
+    with _gpu_lock:
+        pcm = (np.clip(np.asarray(wav, dtype=np.float32), -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
         wf.setnchannels(1)
@@ -98,3 +102,40 @@ def tts(req: Req) -> Response:
         wf.writeframes(pcm)
     return Response(content=buf.getvalue(), media_type="audio/wav",
                     headers={"Cache-Control": "no-store"})
+
+
+def _speaker_latents(model, name):
+    """gpt_cond_latent + speaker_embedding voor een ingebouwde spreker."""
+    sp = model.speaker_manager.speakers[name]
+    return sp["gpt_cond_latent"], sp["speaker_embedding"]
+
+
+@app.post("/tts_stream")
+def tts_stream(req: Req) -> StreamingResponse:
+    """Streamt ruwe PCM (16-bit mono @ 24kHz) terwijl XTTS genereert -> de eerste
+    klank komt in ~0,2s i.p.v. te wachten op de hele zin."""
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="lege tekst")
+    t = get_tts()
+    model = t.synthesizer.tts_model
+    names = _speaker_names(t)
+    spk = (req.speaker or DEFAULT_SPEAKER or (names[0] if names else None))
+    if spk and names and spk not in names:
+        spk = names[0]
+    lang = (req.language or DEFAULT_LANG)
+    try:
+        gpt, emb = _speaker_latents(model, spk)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"spreker-latents: {exc}")
+
+    def gen():
+        with _gpu_lock:
+            for chunk in model.inference_stream(
+                    text, lang, gpt, emb,
+                    stream_chunk_size=20, enable_text_splitting=True):
+                arr = chunk.detach().cpu().numpy()
+                yield (np.clip(arr, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+
+    return StreamingResponse(gen(), media_type="application/octet-stream",
+                             headers={"X-Sample-Rate": str(SR), "Cache-Control": "no-store"})
