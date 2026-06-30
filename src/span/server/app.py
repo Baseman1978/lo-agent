@@ -180,7 +180,104 @@ async def lifespan(app: FastAPI):
             pass
         return result
 
-    _state["tasks"] = TaskManager(_task_runner, brain=brain, max_workers=2)
+    def _team_runner(task, set_progress, should_cancel, ctx):
+        """Coördinator: splitst het doel op in 2-4 deeltaken, draait die PARALLEL
+        als sub-agents en voegt de resultaten samen tot één eindantwoord."""
+        import concurrent.futures
+        import json as _json
+        import re as _re
+        import threading as _threading
+        from span.orchestrator.agent import SpanAgent
+        from span.memory.bootstrap import start_session
+
+        tbrain = ctx.get("brain") or _state["brain"]
+        to365 = ctx.get("o365", _state.get("o365"))
+        llm = _state["llm"]
+        model = _state["settings"].model_main
+
+        def _json_obj(text):
+            t = (text or "").strip()
+            t = _re.sub(r"^```(?:json)?|```$", "", t, flags=_re.MULTILINE).strip()
+            try:
+                return _json.loads(t)
+            except Exception:
+                m = _re.search(r'\{[\s\S]*"subtasks"[\s\S]*\}', t)
+                if m:
+                    try:
+                        return _json.loads(m.group(0))
+                    except Exception:
+                        return {}
+            return {}
+
+        def _sub_agent():
+            return SpanAgent(
+                _state["settings"], tbrain, llm, _state.get("work"), o365=to365,
+                asana=_state.get("asana"), inbox=_state["inbox"], autonomy=_state["autonomy"],
+                disabled_tools=_state.get("disabled_tools"), fireflies=_state.get("fireflies"),
+                mcp=_state.get("mcp"), shared_brain=ctx.get("shared"))
+
+        # 1) DECOMPOSE
+        set_progress("plan maken…", 6)
+        plan_sys = (
+            "Je bent een coördinator. Splits het doel op in 2 tot 4 ONAFHANKELIJKE "
+            "deeltaken die parallel kunnen draaien, elk met een rol en een concreet, "
+            "zelfstandig uitvoerbaar doel (geen deeltaak die op een andere wacht). "
+            "Antwoord met UITSLUITEND geldige JSON, zonder uitleg eromheen, exact in de vorm: "
+            '{"subtasks":[{"role":"korte rol","goal":"concreet doel"}]}')
+        try:
+            msg = llm.chat([{"role": "system", "content": plan_sys},
+                            {"role": "user", "content": "Doel:\n" + task["goal"]}], model=model)
+            subtasks = (_json_obj(msg.content or "").get("subtasks") or [])
+        except Exception:
+            subtasks = []
+        subtasks = [s for s in subtasks if s.get("goal")][:4]
+        if not subtasks:  # fallback: één agent doet alles
+            subtasks = [{"role": "uitvoerder", "goal": task["goal"]}]
+        n = len(subtasks)
+        set_progress(f"{n} deeltaken parallel…", 12)
+
+        # 2) PARALLELLE SUB-AGENTS
+        results: list = [None] * n
+        done = [0]
+        lock = _threading.Lock()
+
+        def run_sub(i, st):
+            if should_cancel():
+                return
+            agent = _sub_agent()
+            agent.begin(start_session(tbrain), st["goal"])
+            ans = agent.turn(f"[Deeltaak — rol: {st.get('role', 'uitvoerder')}] {st['goal']}",
+                             should_cancel=should_cancel, max_steps=20)
+            try:
+                agent.flush_recording()
+            except Exception:
+                pass
+            results[i] = {"role": st.get("role", ""), "result": ans}
+            with lock:
+                done[0] += 1
+                set_progress(f"deeltaak {done[0]}/{n} klaar", 12 + round(68 * done[0] / n))
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, n)) as ex:
+            list(ex.map(lambda p: run_sub(*p), list(enumerate(subtasks))))
+        if should_cancel():
+            return "(geannuleerd)"
+
+        # 3) SYNTHESE
+        set_progress("samenvoegen…", 88)
+        parts = "\n\n".join(f"## {r['role']}\n{r['result']}" for r in results if r)
+        syn_sys = ("Je bent de coördinator. Voeg de deelresultaten samen tot één helder, "
+                   "samenhangend eindantwoord op het oorspronkelijke doel.")
+        try:
+            msg = llm.chat([{"role": "system", "content": syn_sys},
+                            {"role": "user", "content": "Doel: " + task["goal"]
+                             + "\n\nDeelresultaten:\n" + parts}], model=model)
+            final = (msg.content or "").strip()
+        except Exception as exc:
+            final = parts + f"\n\n(samenvoegen mislukt: {exc})"
+        return final or parts
+
+    _state["tasks"] = TaskManager(_task_runner, brain=brain, max_workers=2,
+                                  team_runner=_team_runner)
     if not _auth_token():
         print("WAARSCHUWING: SPAN_AUTH_TOKEN niet gezet — alleen localhost toegestaan.")
     scheduler = asyncio.create_task(daily_scheduler(_state))

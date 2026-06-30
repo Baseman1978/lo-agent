@@ -81,7 +81,7 @@ class ToolBox:
         if self._shared is None or self._inbox is None:
             hidden.add("propose_share")  # delen kan alleen in multi-user mét inbox
         if self._tasks is None:  # sub-agents krijgen geen taken -> geen recursie
-            hidden |= {"spawn_task", "task_status", "task_cancel"}
+            hidden |= {"spawn_task", "spawn_team", "task_status", "task_cancel"}
         if self._progress_cb is None:  # alleen zinvol als deze agent een taak ís
             hidden.add("report_progress")
         if self._fireflies is None:
@@ -319,6 +319,15 @@ class ToolBox:
         return {"task": tid, "status": "gestart op de achtergrond",
                 "note": "Je kunt gewoon doorpraten; ik meld het als 'ie klaar is. "
                         "Volg de voortgang in het Taken-paneel."}
+
+    def _tool_spawn_team(self, goal: str, title: str = "") -> Any:
+        if self._tasks is None:
+            return {"error": "Achtergrondtaken niet beschikbaar."}
+        tid = self._tasks.submit(goal, title, team=True, ctx={
+            "brain": self._brain, "o365": self._o365, "shared": self._shared})
+        return {"task": tid, "status": "team gestart op de achtergrond",
+                "note": "Een coördinator splitst dit op in parallelle deeltaken en voegt het "
+                        "samen. Je kunt doorpraten; volg de voortgang in het Taken-paneel."}
 
     def _tool_task_status(self, id: int = 0) -> Any:
         if self._tasks is None:
