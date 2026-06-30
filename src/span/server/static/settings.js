@@ -525,15 +525,19 @@
   function ttsInit() {
     const wrap = $("tts-settings");
     if (!wrap) return;
-    const g = (k, d) => { const v = localStorage.getItem(k); return v === null ? d : v; };
+    const g = (k, d) => { const v = localStorage.getItem(k); return v === null ? String(d) : v; };
     const set = (id, v) => { const el = $(id); if (el) el.value = v; };
-    const lbl = (id, v) => { const el = $(id); if (el) el.textContent = v; };
-    set("tts-length", g("span_tts_length", "1.0")); lbl("tts-length-label", (+g("span_tts_length", "1.0")).toFixed(2));
-    set("tts-noise", g("span_tts_noise", "0.667")); lbl("tts-noise-label", (+g("span_tts_noise", "0.667")).toFixed(2));
-    set("tts-noisew", g("span_tts_noisew", "0.8")); lbl("tts-noisew-label", (+g("span_tts_noisew", "0.8")).toFixed(2));
-    set("tts-volume", g("span_tts_volume", "1.0")); lbl("tts-volume-label", (+g("span_tts_volume", "1.0")).toFixed(2));
+    const lbl = (id, v) => { const el = $(id); if (el) el.textContent = (+v).toFixed(2); };
     fetch("/api/tts/status", { headers: SPAN.authHeaders() }).then((r) => r.json()).then((s) => {
       if (!s.available) { wrap.style.display = "none"; return; }
+      // schuiven op de opgeslagen waarde, anders de ÉCHTE modelstandaard
+      const dLen = s.model_length != null ? s.model_length : 1.0;
+      const dNoise = s.model_noise != null ? s.model_noise : 0.667;
+      const dNoiseW = s.model_noisew != null ? s.model_noisew : 0.8;
+      set("tts-length", g("span_tts_length", dLen)); lbl("tts-length-label", g("span_tts_length", dLen));
+      set("tts-noise", g("span_tts_noise", dNoise)); lbl("tts-noise-label", g("span_tts_noise", dNoise));
+      set("tts-noisew", g("span_tts_noisew", dNoiseW)); lbl("tts-noisew-label", g("span_tts_noisew", dNoiseW));
+      set("tts-volume", g("span_tts_volume", 1.0)); lbl("tts-volume-label", g("span_tts_volume", 1.0));
       const sel = $("tts-speaker");
       if (sel && s.num_speakers > 1) {
         sel.innerHTML = "";
