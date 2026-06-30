@@ -122,13 +122,12 @@
     try {
       const res = await fetch("/api/health", { headers: SPAN.authHeaders() });
       const h = res.ok ? await res.json() : { brain: false };
-      const dot = $("health-dot");
-      dot.className = h.brain ? "ok" : "down";
-      dot.title = `brein: ${h.brain ? "online" : "OFFLINE"} · o365: ${h.o365 ? "gekoppeld" : "—"}` +
-        ` · asana: ${h.asana ? "gekoppeld" : "—"}`;
+      SPAN._health = h;
+      if (SPAN._applyDot) SPAN._applyDot();  // gecombineerd met de WS-status
       if (!h.brain && SPAN.glitch) SPAN.glitch();
     } catch (e) {
-      $("health-dot").className = "down";
+      SPAN._health = { brain: false };
+      if (SPAN._applyDot) SPAN._applyDot();
     }
   }
   setInterval(healthPoll, 60000);
