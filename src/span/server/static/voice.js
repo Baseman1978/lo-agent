@@ -236,9 +236,13 @@
       src.connect(analyser);   // analyser hoeft niet naar destination (MDN)
       micData = new Uint8Array(analyser.frequencyBinCount);
       timeData = new Uint8Array(analyser.fftSize);
-      const BARGE_THR = 0.10;   // boven rest-echo (met echoCancellation aan)
-      const BARGE_FRAMES = 8;   // ~130 ms aanhoudende stem vóór we onderbreken
+      const BARGE_FRAMES = 12;  // ~200 ms aanhoudende, duidelijke stem
       let bargeFrames = 0;
+      let noiseFloor = 0.02;    // lopende schatting van de omgevingsruis
+      SPAN._recentPeak = 0;     // vervalt in ~0,5s: "was er net nabije stem?"
+      // spraakdrempel = duidelijk bóven de ruisvloer (relatief, niet vast) zodat
+      // achtergrondgepraat de mic niet activeert/onderbreekt
+      SPAN._speechThr = () => Math.max(0.06, noiseFloor * 2.2 + 0.03);
       const loop = () => {
         analyser.getByteFrequencyData(micData);
         let sum = 0;
@@ -247,9 +251,17 @@
         const speaking = SPAN.state === "speaking";
         const active = mode !== "off" && !speaking;
         SPAN.micLevel += ((active ? raw : 0) - SPAN.micLevel) * 0.25; // smoothing
-        // barge-in alleen relevant als de agent praat of nadenkt
+        // ruisvloer alleen bijwerken als het rustig is en de agent niet praat,
+        // zodat 'ie de achtergrond volgt — niet jouw stem of de eigen TTS
+        if (!speaking && raw < noiseFloor * 1.6 + 0.05) {
+          noiseFloor += (raw - noiseFloor) * 0.05;
+          noiseFloor = Math.min(0.35, Math.max(0.005, noiseFloor));
+        }
+        SPAN._recentPeak = Math.max(raw, SPAN._recentPeak * 0.92);
+        // barge-in: duidelijk boven de ruisvloer én een absolute bodem, aanhoudend
+        const bargeThr = Math.max(0.16, SPAN._speechThr() * 1.7);
         if (mode !== "off" && (speaking || SPAN.busy)) {
-          if (raw > BARGE_THR) {
+          if (raw > bargeThr) {
             if (++bargeFrames >= BARGE_FRAMES && !barged) { barged = true; onBargeIn(); }
           } else if (bargeFrames > 0) { bargeFrames--; }
         } else { bargeFrames = 0; barged = false; }  // beurt klaar -> reset
@@ -371,6 +383,14 @@
       return;
     }
     if (similarity(text, lastTTS.slice(0, text.length + 30)) >= 0.7) return; // echo
+    // achtergrond-filter: alleen reageren als er net duidelijke (nabije) stem
+    // was. Stil/ver achtergrondgepraat dat de browser tóch transcribeert blijft
+    // onder de ruisdrempel en wordt genegeerd. (In wake-modus regelt het
+    // wake-woord dit al; daar slaan we de gate over.)
+    if (mode === "open" && SPAN._recentPeak !== undefined && SPAN._speechThr
+        && SPAN._recentPeak < SPAN._speechThr()) {
+      return;
+    }
     if (mode === "open") {
       // beurt loopt nog (we onderbraken net): bewaar de zin en stuur 'm zodra de
       // afgebroken beurt is afgerond — zo gaat je aanvulling niet verloren.
@@ -474,7 +494,9 @@
       if (mode === "off") { stopSegment(true); return; }
       if (!micStream) return;
       const level = SPAN.micLevel;
-      const talking = level > 0.055;
+      // relatieve drempel: duidelijk boven de omgevingsruis (anti-achtergrond)
+      const thr = SPAN._speechThr ? SPAN._speechThr() : 0.06;
+      const talking = level > thr;
       if (!recorder && talking && SPAN.state !== "speaking" && (!SPAN.busy || barged)) {
         startSegment();
       } else if (recorder) {
