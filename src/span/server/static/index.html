@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LO · Lomans</title>
-<link rel="stylesheet" href="/static/jarvis.css?v=30">
-<link rel="stylesheet" href="/static/effects.css?v=30">
+<link rel="stylesheet" href="/static/jarvis.css?v=31">
+<link rel="stylesheet" href="/static/effects.css?v=31">
 </head>
 <body>
 
@@ -99,6 +99,15 @@
   <div id="settings-panel" class="panel">
     <h2>⟢ Instellingen <button id="settings-close" class="iconbtn">✕</button></h2>
 
+    <div class="settabs">
+      <button class="settab-btn active" data-tab="verbindingen">Verbindingen</button>
+      <button class="settab-btn" data-tab="agent">Agent</button>
+      <button class="settab-btn" data-tab="stem">Stem</button>
+      <button class="settab-btn" data-tab="uiterlijk">Uiterlijk</button>
+      <button class="settab-btn" data-tab="systeem">Systeem</button>
+    </div>
+
+    <div class="settab active" data-tab="verbindingen">
     <h3>Microsoft 365</h3>
     <div class="setrow"><span id="set-o365-status" class="m">…</span></div>
     <div class="setrow"><span id="set-o365-code" class="m"></span></div>
@@ -116,6 +125,19 @@
     <h3>Fireflies</h3>
     <div class="setrow"><span id="set-fireflies-status" class="m">…</span></div>
 
+    <h3>MCP-servers</h3>
+    <div class="m" style="margin-bottom:6px">Koppel externe Model Context Protocol-servers
+      (bv. de zakelijke server met O365). Hun tools komen erbij; output wordt
+      gecontroleerd behandeld. Inloggen gaat via OAuth in je browser.</div>
+    <div id="mcp-list" class="m"></div>
+    <div class="setrow">
+      <input type="text" id="mcp-name" placeholder="naam (bv. lomans)" style="width:30%">
+      <input type="text" id="mcp-url" placeholder="https://…/mcp" style="width:55%">
+      <button id="mcp-add" class="ghost">toevoegen</button>
+    </div>
+    </div><!-- /verbindingen -->
+
+    <div class="settab" data-tab="agent">
     <h3>Autonomie</h3>
     <div class="setrow">
       <label>Mail versturen</label>
@@ -132,17 +154,6 @@
       </select>
     </div>
     <div class="setrow"><button id="set-auto-save" class="ghost">autonomie opslaan</button></div>
-
-    <h3>MCP-servers</h3>
-    <div class="m" style="margin-bottom:6px">Koppel externe Model Context Protocol-servers
-      (bv. de zakelijke server met O365). Hun tools komen erbij; output wordt
-      gecontroleerd behandeld. Inloggen gaat via OAuth in je browser.</div>
-    <div id="mcp-list" class="m"></div>
-    <div class="setrow">
-      <input type="text" id="mcp-name" placeholder="naam (bv. lomans)" style="width:30%">
-      <input type="text" id="mcp-url" placeholder="https://…/mcp" style="width:55%">
-      <button id="mcp-add" class="ghost">toevoegen</button>
-    </div>
 
     <h3>Beveiliging</h3>
     <div class="m" style="margin-bottom:6px">Bescherming tegen misleiding (prompt-injectie),
@@ -174,7 +185,9 @@
     <div class="m" style="margin-bottom:6px">Wat LO mag lezen (R) en schrijven (W). Uitgevinkt = tool volledig geblokkeerd.</div>
     <div id="tool-perms"></div>
     <div class="setrow"><button id="set-tools-save" class="ghost">permissies opslaan</button></div>
+    </div><!-- /agent -->
 
+    <div class="settab" data-tab="uiterlijk">
     <h3>Orb (centrale visual)</h3>
     <div class="m" style="margin-bottom:6px">De ronde visual die reageert als LO praat/luistert/nadenkt.
       Wijzigingen zijn meteen zichtbaar en worden lokaal bewaard.</div>
@@ -236,7 +249,9 @@
       <input type="range" id="orb-bloom" min="0" max="3.5" step="0.1" value="1.6">
     </div>
     <div class="setrow"><button id="orb-reset" class="ghost">standaard herstellen</button></div>
+    </div><!-- /uiterlijk -->
 
+    <div class="settab" data-tab="stem">
     <h3>Stem (spraak)</h3>
     <div id="tts-settings">
       <div class="m" style="margin-bottom:6px">De server-stem (Piper) van LO. Pas aan en
@@ -266,7 +281,9 @@
         <button id="tts-reset" class="ghost">standaard herstellen</button>
       </div>
     </div>
+    </div><!-- /stem -->
 
+    <div class="settab" data-tab="uiterlijk">
     <h3>Effecten</h3>
     <div class="setrow">
       <label>Ambient-intensiteit</label>
@@ -285,8 +302,12 @@
         <option value="warmachine">War Machine — gunmetal</option>
       </select>
     </div>
+    </div><!-- /uiterlijk -->
 
-    <h3>Stem</h3>
+    <div class="settab" data-tab="stem">
+    <h3>Stem — browser-fallback</h3>
+    <div class="m" style="margin-bottom:6px">Alleen gebruikt als de server-stem (hierboven) uit staat
+      (localStorage <code>span_tts=browser</code>).</div>
     <div class="setrow">
       <label>Stem (Nederlands)</label>
       <select id="set-voice"></select>
@@ -295,7 +316,9 @@
       <label>Tempo: <span id="set-rate-label">1.04</span></label>
       <input type="range" id="set-rate" min="0.8" max="1.4" step="0.02" value="1.04">
     </div>
+    </div><!-- /stem -->
 
+    <div class="settab" data-tab="agent">
     <h3>Mail-triage regels</h3>
     <div class="setrow">
       <label>Eigen regels voor de ambient watcher (vrije tekst)</label>
@@ -303,7 +326,9 @@
         placeholder="bv. Mails van facturen@... altijd negeren. Alles van Martijn is urgent."></textarea>
     </div>
     <div class="setrow"><button id="set-triage-save" class="ghost">regels opslaan</button></div>
+    </div><!-- /agent -->
 
+    <div class="settab" data-tab="systeem">
     <h3>Beheer</h3>
     <div class="setrow"><button id="set-backup" class="ghost">brein-backup downloaden (JSON)</button></div>
 
@@ -325,7 +350,9 @@
     <div class="setrow"><button id="set-qr-make" class="ghost">toon QR-code</button></div>
     <div id="qr-box" class="hidden"></div>
     <div class="m" id="qr-note"></div>
+    </div><!-- /systeem -->
 
+    <div class="settab" data-tab="agent">
     <h3>Systeemprompt</h3>
     <div class="setrow">
       <label>Spans karakter en werkafspraken — leeg = ingebouwde standaard.
@@ -351,6 +378,7 @@
       <button id="set-reset" class="ghost">terug naar standaard</button>
     </div>
     <div class="m" id="set-note">Modelwijziging geldt voor nieuwe sessies (herlaad de pagina).</div>
+    </div><!-- /agent -->
   </div>
 </div>
 
@@ -371,13 +399,13 @@
 <script src="/static/vendor/postprocessing__EffectComposer.js"></script>
 <script src="/static/vendor/postprocessing__UnrealBloomPass.js"></script>
 <script src="/static/vendor/qrcode.js"></script>
-<script src="/static/jarvis.js?v=30"></script>
-<script src="/static/fx.js?v=30"></script>
-<script src="/static/effects.js?v=30"></script>
-<script src="/static/orb.js?v=30"></script>
-<script src="/static/voice.js?v=30"></script>
-<script src="/static/hologram.js?v=30"></script>
-<script src="/static/settings.js?v=30"></script>
-<script src="/static/ambient.js?v=30"></script>
+<script src="/static/jarvis.js?v=31"></script>
+<script src="/static/fx.js?v=31"></script>
+<script src="/static/effects.js?v=31"></script>
+<script src="/static/orb.js?v=31"></script>
+<script src="/static/voice.js?v=31"></script>
+<script src="/static/hologram.js?v=31"></script>
+<script src="/static/settings.js?v=31"></script>
+<script src="/static/ambient.js?v=31"></script>
 </body>
 </html>

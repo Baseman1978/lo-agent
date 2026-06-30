@@ -508,6 +508,19 @@
   }
   orbInit();
 
+  /* -- sub-tabs in het instellingen-paneel -------------------------------- */
+  (function tabsInit() {
+    const btns = document.querySelectorAll(".settab-btn");
+    const panes = document.querySelectorAll(".settab");
+    if (!btns.length) return;
+    const show = (name) => {
+      btns.forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+      panes.forEach((p) => p.classList.toggle("active", p.dataset.tab === name));
+      const panel = $("settings-panel"); if (panel) panel.scrollTop = 0;
+    };
+    btns.forEach((b) => b.addEventListener("click", () => show(b.dataset.tab)));
+  })();
+
   /* -- Stem (server-TTS): live tweaken, lokaal bewaard -------------------- */
   function ttsInit() {
     const wrap = $("tts-settings");
