@@ -539,10 +539,13 @@
     if (similarity(text, lastTTS.slice(0, text.length + 30)) >= 0.7) return; // echo
     // achtergrond-filter: alleen reageren als er net duidelijke (nabije) stem
     // was. Stil/ver achtergrondgepraat dat de browser tóch transcribeert blijft
-    // onder de ruisdrempel en wordt genegeerd. (In wake-modus regelt het
-    // wake-woord dit al; daar slaan we de gate over.)
-    if (mode === "open" && SPAN._recentPeak !== undefined && SPAN._speechThr
-        && SPAN._recentPeak < SPAN._speechThr()) {
+    // onder de ruisdrempel en wordt genegeerd. ALLEEN voor browser-spraak: die
+    // levert direct een final. Bij server-Whisper draait handleFinal pas ~1s ná
+    // de spraak (transcriptie-roundtrip) -> recentPeak is dan al weggezakt, dus
+    // daar zou de gate de zin onterecht droppen. Server-STT gate't toch al op
+    // energie bij de opname-START. (Wake-modus regelt dit via het wake-woord.)
+    if (mode === "open" && !serverSTT && SPAN._recentPeak !== undefined
+        && SPAN._speechThr && SPAN._recentPeak < SPAN._speechThr()) {
       return;
     }
     if (mode === "open") {
