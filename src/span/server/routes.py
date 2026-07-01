@@ -427,6 +427,17 @@ async def integrations_catalog(request: Request, category: str = Query(""),
     ctx = _request_context(request)
     items = broker.catalog(ctx, category=category or None,
                            capability=capability or None, query=q or None)
+    # mcp-connectors: markeer 'connected' als er een ingelogde MCP-server met
+    # dezelfde URL gekoppeld is (unificatie met de bestaande MCP-koppeling)
+    try:
+        from span.integrations.mcp_client import load_servers
+        servers = await asyncio.to_thread(load_servers, _state["brain"])
+        logged = {(s.get("url") or "").rstrip("/") for s in servers if s.get("token")}
+        for c in items:
+            if c.get("provider") == "mcp" and (c.get("mcp_url") or "").rstrip("/") in logged:
+                c["connected"] = True
+    except Exception:
+        pass
     return {"connectors": items}
 
 
@@ -1077,6 +1088,20 @@ async def mcp_connect(request: Request, name: str) -> dict[str, Any]:
     try:
         return await asyncio.to_thread(prep)
     except Exception as exc:
+        resp = getattr(exc, "response", None)
+        body = ""
+        if resp is not None:
+            try:
+                body = resp.text
+            except Exception:
+                body = ""
+        if "invalid_redirect_uri" in body:
+            # loopback-only DCR (bv. Asana): server accepteert geen publieke
+            # callback -> een gehoste app als LO kan hier niet via MCP-login koppelen
+            raise HTTPException(status_code=422, detail=(
+                f"'{name}' accepteert alleen lokale (localhost) redirect-URI's voor "
+                "dynamische registratie. Een gehoste app als LO kan hier niet via "
+                "MCP-login koppelen — gebruik een eigen OAuth-app of een API-sleutel."))
         raise HTTPException(status_code=502, detail=f"OAuth-start mislukt: {exc}")
 
 

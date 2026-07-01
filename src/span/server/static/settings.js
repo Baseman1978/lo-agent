@@ -698,7 +698,7 @@
       }).join("") || '<div class="m" style="opacity:.7">nog geen acties gedefinieerd</div>';
       let connect = "";
       if (!c.connected) {
-        if (c.provider === "mcp" && c.mcp_url) connect = `<button class="ghost" id="int-connect">Koppelen via MCP-servers</button>`;
+        if (c.provider === "mcp" && c.mcp_url) connect = `<button class="ghost" id="int-connect">Koppelen (login)</button>`;
         else if (c.status === "needs_config") connect = `<div class="m" style="opacity:.7">Deze koppeling vereist nog configuratie.</div>`;
       }
       detailEl.innerHTML =
@@ -707,11 +707,24 @@
          ${connect}<div class="int-acts">${rows}</div>`;
       $("int-detail-close").onclick = () => detailEl.classList.add("hidden");
       const cbtn = $("int-connect");
-      if (cbtn) cbtn.onclick = () => {
-        const nm = $("mcp-name"), url = $("mcp-url");
-        if (nm) nm.value = c.id; if (url) url.value = c.mcp_url;
-        const vb = document.querySelector('.settab-btn[data-tab="verbindingen"]'); if (vb) vb.click();
-        SPAN.sys(`Klik in 'MCP-servers' op toevoegen en daarna inloggen om ${c.name} te koppelen.`);
+      if (cbtn) cbtn.onclick = async () => {
+        const reset = () => { cbtn.disabled = false; cbtn.textContent = "Koppelen (login)"; };
+        cbtn.disabled = true; cbtn.textContent = "koppelen…";
+        try {
+          // 1) registreer de MCP-server (idempotent) 2) start OAuth 3) open login
+          const add = await fetch("/api/mcp", { method: "POST",
+            headers: { ...SPAN.authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ name: c.id, url: c.mcp_url }) });
+          if (!add.ok) { const d = await add.json().catch(() => ({})); SPAN.sys(d.detail || "Toevoegen mislukt", "warn"); return reset(); }
+          const res = await fetch(`/api/mcp/${encodeURIComponent(c.id)}/connect`, { method: "POST", headers: SPAN.authHeaders() });
+          const d = await res.json().catch(() => ({}));
+          if (!res.ok) { SPAN.sys(d.detail || "Koppelen mislukt", "warn"); return reset(); }
+          let u; try { u = new URL(d.authorize_url); } catch (e) { u = null; }
+          if (!u || u.protocol !== "https:") { SPAN.sys("Login-URL geweigerd (geen https).", "warn"); return reset(); }
+          SPAN.sys(`Open de login voor ${c.name} in je browser…`);
+          window.open(u.href, "_blank", "noopener,noreferrer");
+          reset();
+        } catch (e) { SPAN.sys("Koppelen mislukt", "warn"); reset(); }
       };
       detailEl.querySelectorAll(".int-run").forEach((b) => b.onclick = async () => {
         b.disabled = true; b.textContent = "…";
@@ -736,6 +749,8 @@
     }
     searchEl.addEventListener("input", render);
     catSel.addEventListener("change", render);
+    const intTab = document.querySelector('.settab-btn[data-tab="integraties"]');
+    if (intTab) intTab.addEventListener("click", load);   // ververs status na login
     load();
   }
   integrationsInit();
