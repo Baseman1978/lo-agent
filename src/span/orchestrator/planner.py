@@ -14,7 +14,9 @@ import json
 from typing import Any
 from uuid import uuid4
 
-PLANNER_SYSTEM = """Je bent de PLANNER van AI-agent Span. Je hebt GEEN tools en
+from span import AGENT_NAME
+
+PLANNER_SYSTEM = "Je bent de PLANNER van AI-agent " + AGENT_NAME + """. Je hebt GEEN tools en
 voert niets uit — je maakt alleen een plan. Decomponeer het doel van Bas in 2 tot
 7 concrete, uitvoerbare stappen. Elke stap heeft een korte titel en een
 verifieerbaar 'klaar als'-criterium (hoe weet je dat de stap af is).

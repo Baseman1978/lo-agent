@@ -13,6 +13,8 @@ from typing import Any
 
 import requests
 
+from span import AGENT_NAME
+
 
 class TelegramBridge:
     def __init__(self, token: str, state: dict[str, Any]):
@@ -167,11 +169,11 @@ class TelegramBridge:
                 supplied = text.removeprefix("/koppel").strip()
                 if hmac.compare_digest(supplied, expected):
                     self._save_chat_id(chat_id)
-                    self.send("Gekoppeld. Ik ben er, waar je ook bent. — Span", chat_id)
+                    self.send("Gekoppeld. Ik ben er, waar je ook bent. — " + AGENT_NAME, chat_id)
                 else:
                     self.send("Onjuiste code. Gebruik: /koppel <SPAN_AUTH_TOKEN>", chat_id)
             else:
-                self.send("Span hier. Koppel eerst: /koppel <SPAN_AUTH_TOKEN>", chat_id)
+                self.send(AGENT_NAME + " hier. Koppel eerst: /koppel <SPAN_AUTH_TOKEN>", chat_id)
             return
 
         if chat_id != self._chat_id:

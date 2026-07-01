@@ -16,9 +16,10 @@ import threading
 from datetime import datetime
 from typing import Any
 
+from span import AGENT_NAME
 from span.jarvis.daily import now_local
 
-TRIAGE_PROMPT = """Je bent het triage-subsysteem van Span, de JARVIS van Bas Spaan
+TRIAGE_PROMPT = "Je bent het triage-subsysteem van " + AGENT_NAME + """, de JARVIS van Bas Spaan
 (installatietechniek, Lomans). Hieronder één nieuwe e-mail. Classificeer:
 
 - "needs_reply": vraagt om een antwoord van Bas (vraag, verzoek, actie)
@@ -126,7 +127,7 @@ class AgentInbox:
                        if i["status"] == "open" and self._visible(i, owner))
 
 
-DRAFT_PROMPT = """Je bent Span, de JARVIS van Bas Spaan (Lomans, installatietechniek).
+DRAFT_PROMPT = "Je bent " + AGENT_NAME + """, de JARVIS van Bas Spaan (Lomans, installatietechniek).
 Schrijf een kort, zakelijk Nederlands antwoord-CONCEPT op onderstaande mail,
 in de toon van Bas: direct, vriendelijk, geen wollige taal. Onderteken met 'Bas'.
 Antwoord met uitsluitend de concepttekst."""
