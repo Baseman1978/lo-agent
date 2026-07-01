@@ -33,14 +33,6 @@
       $("o365-login").classList.toggle("hidden", SPAN.sso || s.o365.authenticated || !s.o365.configured);
       $("o365-logout").classList.toggle("hidden", SPAN.sso || !s.o365.authenticated);
 
-      $("set-asana-status").textContent = s.asana.configured
-        ? "gekoppeld (token in .env)"
-        : "niet geconfigureerd — zet ASANA_TOKEN in .env";
-
-      $("set-fireflies-status").textContent = s.fireflies && s.fireflies.configured
-        ? "gekoppeld — meetings gaan elke 30 min het geheugen in, actiepunten naar de Agent Inbox"
-        : "niet geconfigureerd — zet FIREFLIES_API_KEY in .env (Fireflies → Integrations → API)";
-
       $("set-telegram-status").textContent = !s.telegram || !s.telegram.configured
         ? "niet geconfigureerd — zet TELEGRAM_BOT_TOKEN in .env (bot via @BotFather)"
         : (s.telegram.linked
