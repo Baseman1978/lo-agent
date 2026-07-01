@@ -438,6 +438,10 @@ async def integrations_catalog(request: Request, category: str = Query(""),
                 c["connected"] = True
     except Exception:
         pass
+    # api_key-connectors: connected = de bijbehorende client bestaat (sleutel gezet)
+    for c in items:
+        if c.get("auth") == "api_key" and _state.get(c.get("id")) is not None:
+            c["connected"] = True
     return {"connectors": items}
 
 
@@ -519,6 +523,62 @@ async def integrations_run(request: Request, cid: str, aid: str) -> dict[str, An
         broker.run, cid, aid, payload, ctx,
         inbox=_state.get("inbox"), owner=owner, audit=_audit,
         dispatch=_broker_dispatch(ctx))
+
+
+_APIKEY_CONNECTORS = ("asana", "fireflies")
+
+
+def _rebuild_apikey(cid: str) -> bool:
+    """(Her)bouw een api_key-integratie uit de opgeslagen sleutel (of env-fallback)."""
+    from span.integrations.credentials import get_key
+    brain = _state["brain"]
+    settings = _state["settings"]
+    key = get_key(brain, cid)
+    try:
+        if cid == "asana":
+            from span.integrations.asana import AsanaClient
+            tok = key or settings.jarvis.asana_token
+            _state["asana"] = (AsanaClient(
+                token=tok, workspace_gid=getattr(settings.jarvis, "asana_workspace", ""))
+                if tok else None)
+            return _state["asana"] is not None
+        if cid == "fireflies":
+            from span.integrations.fireflies import FirefliesClient
+            k = key or settings.jarvis.fireflies_api_key
+            _state["fireflies"] = FirefliesClient(k) if k else None
+            return _state["fireflies"] is not None
+    except Exception:
+        _state[cid] = None
+        return False
+    return False
+
+
+@router.post("/api/integrations/{cid}/key")
+async def integrations_set_key(request: Request, cid: str) -> dict[str, Any]:
+    """Sla een API-sleutel op (in het brein) en bouw de client meteen — geen
+    .env of herstart nodig. De sleutel gaat nooit terug naar de frontend."""
+    _require_rest_auth(request)
+    if cid not in _APIKEY_CONNECTORS:
+        raise HTTPException(status_code=400, detail="Deze integratie gebruikt geen API-sleutel.")
+    key = (await _json_body(request)).get("key") or ""
+    if not str(key).strip():
+        raise HTTPException(status_code=422, detail="Geen sleutel opgegeven.")
+    from span.integrations.credentials import save_key
+    await asyncio.to_thread(save_key, _state["brain"], cid, str(key).strip())
+    ok = await asyncio.to_thread(_rebuild_apikey, cid)
+    await asyncio.to_thread(_audit, f"integration_key:{cid}", "API-sleutel opgeslagen via UI")
+    return {"saved": True, "connected": ok}
+
+
+@router.delete("/api/integrations/{cid}/key")
+async def integrations_delete_key(request: Request, cid: str) -> dict[str, Any]:
+    _require_rest_auth(request)
+    if cid not in _APIKEY_CONNECTORS:
+        raise HTTPException(status_code=400, detail="Deze integratie gebruikt geen API-sleutel.")
+    from span.integrations.credentials import delete_key
+    await asyncio.to_thread(delete_key, _state["brain"], cid)
+    ok = await asyncio.to_thread(_rebuild_apikey, cid)  # val terug op env of None
+    return {"deleted": True, "connected": ok}
 
 
 async def _json_body(request: Request) -> dict[str, Any]:

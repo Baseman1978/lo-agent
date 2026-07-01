@@ -689,7 +689,16 @@
                 <span class="int-desc">${a.description || ""}</span></div>${runBtn}</div>`;
       }).join("") || '<div class="m" style="opacity:.7">nog geen acties gedefinieerd</div>';
       let connect = "";
-      if (!c.connected) {
+      if (c.auth === "api_key") {
+        const link = c.key_url ? ` · <a href="${c.key_url}" target="_blank" rel="noopener">sleutel ophalen</a>` : "";
+        connect = `<div class="int-key">
+          <input type="password" id="int-key-input" autocomplete="off" spellcheck="false"
+            placeholder="${c.connected ? "nieuwe sleutel (leeg = ongewijzigd)" : "plak je API-sleutel"}">
+          <button class="ghost" id="int-key-save">${c.connected ? "vervangen" : "opslaan"}</button>
+          ${c.connected ? '<button class="ghost" id="int-key-remove">verwijderen</button>' : ""}
+          <div class="m" style="opacity:.7;margin-top:4px">${c.connected ? "✓ sleutel ingesteld" : "De sleutel wordt server-side bewaard — nooit in de frontend of de prompt."}${link}</div>
+        </div>`;
+      } else if (!c.connected) {
         if (c.provider === "mcp" && c.mcp_url) connect = `<button class="ghost" id="int-connect">Koppelen (login)</button>`;
         else if (c.status === "needs_config") connect = `<div class="m" style="opacity:.7">Deze koppeling vereist nog configuratie.</div>`;
       }
@@ -717,6 +726,30 @@
           window.open(u.href, "_blank", "noopener,noreferrer");
           reset();
         } catch (e) { SPAN.sys("Koppelen mislukt", "warn"); reset(); }
+      };
+      const ksave = $("int-key-save");
+      if (ksave) ksave.onclick = async () => {
+        const val = (($("int-key-input") || {}).value || "").trim();
+        if (!val) { SPAN.sys("Vul een sleutel in.", "warn"); return; }
+        ksave.disabled = true; ksave.textContent = "…";
+        try {
+          const r = await fetch(`/api/integrations/${encodeURIComponent(c.id)}/key`, {
+            method: "POST", headers: { ...SPAN.authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ key: val }) });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) { SPAN.sys(d.detail || "Opslaan mislukt", "warn"); ksave.disabled = false; ksave.textContent = c.connected ? "vervangen" : "opslaan"; return; }
+          SPAN.sys(`${c.name} ${d.connected ? "gekoppeld" : "sleutel opgeslagen"}.`);
+          load(); openDetail({ ...c, connected: d.connected });
+        } catch (e) { SPAN.sys("Opslaan mislukt", "warn"); ksave.disabled = false; }
+      };
+      const krem = $("int-key-remove");
+      if (krem) krem.onclick = async () => {
+        if (!confirm(`Sleutel van ${c.name} verwijderen?`)) return;
+        try {
+          await fetch(`/api/integrations/${encodeURIComponent(c.id)}/key`, { method: "DELETE", headers: SPAN.authHeaders() });
+          SPAN.sys(`Sleutel van ${c.name} verwijderd.`);
+          load(); openDetail({ ...c, connected: false });
+        } catch (e) { SPAN.sys("Verwijderen mislukt", "warn"); }
       };
       detailEl.querySelectorAll(".int-run").forEach((b) => b.onclick = async () => {
         b.disabled = true; b.textContent = "…";

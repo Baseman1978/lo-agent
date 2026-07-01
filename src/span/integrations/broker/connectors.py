@@ -52,6 +52,7 @@ class Connector:
     risk: str = "low"
     scopes: list[str] = field(default_factory=list)
     docs_url: str = ""
+    key_url: str = ""                 # api_key: waar haal je de sleutel (link in de UI)
     # provider-config
     base_url: str = ""                # native (HTTP)
     mcp_url: str = ""                 # mcp
@@ -187,9 +188,36 @@ SEED: list[Connector] = [
     # eigen Asana-OAuth-app of een API-sleutel (Fase 4).
     Connector(
         id="asana", name="Asana", provider="native", category="project",
-        auth="oauth2", capabilities=["read", "write"], risk="medium",
-        status="needs_config", docs_url="https://developers.asana.com/",
-        summary="MCP staat alleen lokale clients toe → eigen OAuth-app of API-sleutel nodig."),
+        auth="api_key", capabilities=["read", "write"], risk="medium",
+        status="available", docs_url="https://developers.asana.com/",
+        key_url="https://app.asana.com/0/my-apps",
+        summary="Koppel met een Asana Personal Access Token (voer 'm hieronder in).",
+        actions=[
+            Action(id="my_tasks", name="Mijn taken", capability="read", approval="never",
+                   risk="low", tool="asana_my_tasks", description="Je openstaande taken.",
+                   input_schema={"type": "object"}),
+            Action(id="projects", name="Projecten", capability="read", approval="never",
+                   risk="low", tool="asana_projects", description="Projecten opsommen.",
+                   input_schema={"type": "object"}),
+            Action(id="search", name="Zoeken", capability="read", approval="never",
+                   risk="low", tool="asana_search", description="Taken zoeken op trefwoord.",
+                   input_schema={"type": "object",
+                                 "properties": {"query": {"type": "string"}},
+                                 "required": ["query"]}),
+            Action(id="task_create", name="Taak aanmaken", capability="write",
+                   approval="on_write", risk="medium", tool="asana_task_create",
+                   description="Nieuwe taak (gaat via de Agent Inbox).",
+                   input_schema={"type": "object",
+                                 "properties": {"name": {"type": "string"},
+                                                "notes": {"type": "string"}},
+                                 "required": ["name"]}),
+            Action(id="task_complete", name="Taak afronden", capability="write",
+                   approval="on_write", risk="medium", tool="asana_task_complete",
+                   description="Taak als klaar markeren (gaat via de Agent Inbox).",
+                   input_schema={"type": "object",
+                                 "properties": {"task_id": {"type": "string"}},
+                                 "required": ["task_id"]}),
+        ]),
     # Voorbeeld van een nango-connector: breedte via een self-host Nango-instance
     # (OAuth-lifecycle + proxy op eigen EU-infra). Werkt zodra NANGO_HOST +
     # NANGO_SECRET_KEY gezet zijn en de 'github'-integratie in Nango staat.

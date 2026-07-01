@@ -514,3 +514,7 @@ body[data-theme="warmachine"] {
 .int-cap { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .03em; }
 .int-desc { font-size: 11px; color: var(--dim); }
 .int-run { flex-shrink: 0; }
+
+/* -- API-sleutel-invoer in de Integraties-catalogus --------------------- */
+.int-key { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 8px; }
+.int-key input { flex: 1; min-width: 180px; }
