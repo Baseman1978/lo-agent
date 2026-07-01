@@ -11,13 +11,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from span import AGENT_NAME
 from span.config import Settings
 from span.db.brain import BrainDB
 from span.llm.client import LLMClient
 from span.memory.bootstrap import end_session
 from span.memory.fragments import FragmentStore
 
-REFLECT_PROMPT = """Je bent het evaluatie-subsysteem van AI-agent Span.
+REFLECT_PROMPT = "Je bent het evaluatie-subsysteem van AI-agent " + AGENT_NAME + """.
 Hieronder de MemoryFragments van één sessie, plus bestaande skills en protocollen.
 
 Destilleer formele kennis. Wees streng: alleen wat toekomstige sessies echt

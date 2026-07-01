@@ -1194,7 +1194,7 @@ async def mcp_oauth_callback(code: str = Query(""), state: str = Query("")) -> A
         return PlainTextResponse(f"Token-uitwisseling mislukt: {exc}", status_code=502)
     return PlainTextResponse(
         f"MCP-server '{name}' is gekoppeld. Je kunt dit tabblad sluiten en terug "
-        "naar Span — de tools verschijnen bij een nieuwe sessie.")
+        f"naar {AGENT_NAME} — de tools verschijnen bij een nieuwe sessie.")
 
 
 @router.post("/api/inbound")
