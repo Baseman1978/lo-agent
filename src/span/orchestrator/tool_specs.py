@@ -540,6 +540,41 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "o365_powerbi_tables",
+            "description": "Toon de tabellen + kolommen van een Power BI-dataset, zodat je "
+            "weet waarover je een DAX-query kunt schrijven. Gebruik dataset_id uit "
+            "o365_powerbi_datasets/o365_powerbi_reports.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dataset_id": {"type": "string", "description": "id van de dataset"},
+                },
+                "required": ["dataset_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_powerbi_query",
+            "description": "Voer een DAX-query (begin met EVALUATE) uit op een Power BI-dataset "
+            "en krijg de rijen terug — zo lees je ECHTE cijfers uit een rapport/dataset. "
+            "Alleen-lezen (DAX wijzigt niets). Vraag eerst o365_powerbi_tables voor de "
+            "tabel-/kolomnamen. Voorbeeld: EVALUATE TOPN(10, 'Verkoop').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dataset_id": {"type": "string", "description": "id van de dataset"},
+                    "dax": {"type": "string", "description": "DAX, begint met EVALUATE"},
+                    "top": {"type": "integer", "description": "Max rijen (default 100, max 500)"},
+                },
+                "required": ["dataset_id", "dax"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "o365_mail_attachments",
             "description": "Lijst de bijlagen van een mail (naam, type, grootte). Gebruik de "
             "graph_id uit o365_mail_search/o365_mail_inbox als message_id.",
@@ -1188,7 +1223,8 @@ O365_TOOLS = {"o365_mail_inbox", "o365_mail_send", "o365_calendar", "o365_event_
               "o365_mail_delete", "o365_mail_forward_draft", "o365_mail_reply_all_draft",
               "o365_excel_write", "o365_file_create", "o365_event_respond",
               "o365_doc_generate", "o365_unanswered_sent", "o365_enrich_archive",
-              "o365_powerbi_reports", "o365_powerbi_dashboards", "o365_powerbi_datasets"}
+              "o365_powerbi_reports", "o365_powerbi_dashboards", "o365_powerbi_datasets",
+              "o365_powerbi_tables", "o365_powerbi_query"}
 
 # Permissie-registry: groep + lezen/schrijven, voor de instellingenpagina.
 TOOL_META: dict[str, tuple[str, str]] = {
@@ -1230,6 +1266,8 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "o365_powerbi_reports": ("Power BI", "read"),
     "o365_powerbi_dashboards": ("Power BI", "read"),
     "o365_powerbi_datasets": ("Power BI", "read"),
+    "o365_powerbi_tables": ("Power BI", "read"),
+    "o365_powerbi_query": ("Power BI", "read"),
     "o365_people_search": ("O365 Personen", "read"),
     "o365_todo_list": ("O365 To Do", "read"),
     "o365_todo_create": ("O365 To Do", "write"),
