@@ -26,7 +26,8 @@ from span.orchestrator.tool_specs import (  # noqa: F401  (re-export)
 _UNTRUSTED_OUTPUT_TOOLS = {"o365_mail_inbox", "o365_thread_summary", "fireflies_meetings",
                            "o365_mail_search", "o365_file_read", "o365_sharepoint_search",
                            "o365_teams_search", "o365_attachment_read", "o365_excel_read",
-                           "o365_unanswered_sent"}
+                           "o365_unanswered_sent", "o365_powerbi_reports",
+                           "o365_powerbi_dashboards", "o365_powerbi_datasets"}
 
 
 class ToolBox:
@@ -528,6 +529,22 @@ class ToolBox:
 
     def _tool_o365_people_search(self, query: str, top: int = 10) -> Any:
         return self._require_o365().search_people(query=query, top=top)
+
+    # -- Power BI (alleen-lezen, aparte resource op hetzelfde login) ---------
+    def _tool_o365_powerbi_reports(self, top: int = 50) -> Any:
+        rows = self._require_o365().powerbi_get("reports").get("value", [])
+        return [{"name": r.get("name"), "id": r.get("id"), "webUrl": r.get("webUrl"),
+                 "datasetId": r.get("datasetId")} for r in rows[:min(int(top), 200)]]
+
+    def _tool_o365_powerbi_dashboards(self, top: int = 50) -> Any:
+        rows = self._require_o365().powerbi_get("dashboards").get("value", [])
+        return [{"displayName": r.get("displayName"), "id": r.get("id"),
+                 "webUrl": r.get("webUrl")} for r in rows[:min(int(top), 200)]]
+
+    def _tool_o365_powerbi_datasets(self, top: int = 50) -> Any:
+        rows = self._require_o365().powerbi_get("datasets").get("value", [])
+        return [{"name": r.get("name"), "id": r.get("id"),
+                 "configuredBy": r.get("configuredBy")} for r in rows[:min(int(top), 200)]]
 
     def _tool_o365_mail_attachments(self, message_id: str) -> Any:
         return self._require_o365().list_attachments(message_id)

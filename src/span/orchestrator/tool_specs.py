@@ -500,6 +500,46 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "o365_powerbi_reports",
+            "description": "Lijst Power BI-rapporten (naam, id, webUrl) waar de gebruiker "
+            "toegang toe heeft. Alleen-lezen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "top": {"type": "integer", "description": "Aantal (default 50, max 200)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_powerbi_dashboards",
+            "description": "Lijst Power BI-dashboards (displayName, id, webUrl). Alleen-lezen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "top": {"type": "integer", "description": "Aantal (default 50, max 200)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_powerbi_datasets",
+            "description": "Lijst Power BI-datasets (naam, id, configuredBy). Alleen-lezen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "top": {"type": "integer", "description": "Aantal (default 50, max 200)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "o365_mail_attachments",
             "description": "Lijst de bijlagen van een mail (naam, type, grootte). Gebruik de "
             "graph_id uit o365_mail_search/o365_mail_inbox als message_id.",
@@ -1147,7 +1187,8 @@ O365_TOOLS = {"o365_mail_inbox", "o365_mail_send", "o365_calendar", "o365_event_
               "o365_mail_mark_read", "o365_mail_flag", "o365_mail_move",
               "o365_mail_delete", "o365_mail_forward_draft", "o365_mail_reply_all_draft",
               "o365_excel_write", "o365_file_create", "o365_event_respond",
-              "o365_doc_generate", "o365_unanswered_sent", "o365_enrich_archive"}
+              "o365_doc_generate", "o365_unanswered_sent", "o365_enrich_archive",
+              "o365_powerbi_reports", "o365_powerbi_dashboards", "o365_powerbi_datasets"}
 
 # Permissie-registry: groep + lezen/schrijven, voor de instellingenpagina.
 TOOL_META: dict[str, tuple[str, str]] = {
@@ -1186,6 +1227,9 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "o365_event_respond": ("O365 Agenda", "write"),
     "o365_sharepoint_search": ("O365 SharePoint", "read"),
     "o365_teams_search": ("O365 Teams", "read"),
+    "o365_powerbi_reports": ("Power BI", "read"),
+    "o365_powerbi_dashboards": ("Power BI", "read"),
+    "o365_powerbi_datasets": ("Power BI", "read"),
     "o365_people_search": ("O365 Personen", "read"),
     "o365_todo_list": ("O365 To Do", "read"),
     "o365_todo_create": ("O365 To Do", "write"),

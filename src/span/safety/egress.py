@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 _ALLOWED = {
     "api.orq.ai",
     "graph.microsoft.com", "login.microsoftonline.com",
+    "api.powerbi.com",
     "app.asana.com",
     "api.fireflies.ai",
     "api.open-meteo.com", "geocoding-api.open-meteo.com",
