@@ -55,6 +55,7 @@ class Connector:
     # provider-config
     base_url: str = ""                # native (HTTP)
     mcp_url: str = ""                 # mcp
+    nango_key: str = ""               # nango: provider-config-key van de integratie
     actions: list[Action] = field(default_factory=list)
     # status in de catalogus
     status: str = "available"         # available | needs_config | beta | planned
@@ -158,6 +159,21 @@ SEED: list[Connector] = [
         auth="oauth2", capabilities=["read", "write"], risk="medium",
         status="needs_config", docs_url="https://developers.asana.com/",
         summary="MCP staat alleen lokale clients toe → eigen OAuth-app of API-sleutel nodig."),
+    # Voorbeeld van een nango-connector: breedte via een self-host Nango-instance
+    # (OAuth-lifecycle + proxy op eigen EU-infra). Werkt zodra NANGO_HOST +
+    # NANGO_SECRET_KEY gezet zijn en de 'github'-integratie in Nango staat.
+    Connector(
+        id="github", name="GitHub", provider="nango", category="dev",
+        auth="oauth2", capabilities=["read", "write"], risk="medium",
+        nango_key="github", status="needs_config",
+        docs_url="https://docs.nango.dev/integrations/all/github",
+        summary="Via Nango self-host (OAuth). Vereist een draaiende Nango-instance.",
+        actions=[
+            Action(id="list_repos", name="Repos opsommen", capability="read",
+                   approval="never", risk="low", method="GET", path="user/repos",
+                   description="Repositories van de gekoppelde gebruiker.",
+                   input_schema={"type": "object"}),
+        ]),
 ]
 
 # valideer de seed bij import (faalt hard bij een fout in een entry)
