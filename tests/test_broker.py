@@ -12,6 +12,8 @@ from span.integrations.broker.connectors import (
 )
 from span.integrations.broker.adapters.native import NativeAdapter
 from span.integrations.broker.adapters.mcp import MCPAdapter
+from span.integrations.broker.adapters.nango import NangoAdapter
+import span.integrations.broker.adapters.nango as nango_mod
 from span.jarvis.ambient import AgentInbox
 
 
@@ -136,3 +138,49 @@ class TestAdapters:
         with pytest.raises(NotImplementedError):
             a.run(c, c.actions[0] if c.actions else Action(id="x", name="x"),
                   {}, ctx=None)
+
+
+class TestNangoAdapter:
+    def test_uit_zonder_env(self):
+        a = NangoAdapter(host="", secret="")
+        assert a.enabled is False
+        c = get_connector("github")
+        assert a.is_connected(c, None) is False
+        assert "error" in a.run(c, c.actions[0], {}, ctx=None)   # nette melding, geen crash
+
+    def test_is_connected_bevraagt_nango(self, monkeypatch):
+        a = NangoAdapter(host="http://nango:3003", secret="s")
+        cap = {}
+
+        def fake_get(url, **kw):
+            cap["url"] = url; cap["kw"] = kw
+            return SimpleNamespace(status_code=200)
+
+        monkeypatch.setattr(nango_mod, "requests", SimpleNamespace(get=fake_get))
+        c = get_connector("github")
+        assert a.is_connected(c, SimpleNamespace(oid="u1", brain=None)) is True
+        assert cap["url"].endswith("/connection/u1")
+        assert cap["kw"]["params"]["provider_config_key"] == "github"
+        assert cap["kw"]["headers"]["Authorization"] == "Bearer s"
+
+    def test_run_proxyt_via_nango(self, monkeypatch):
+        a = NangoAdapter(host="http://nango:3003", secret="s")
+        cap = {}
+
+        class R:
+            status_code = 200
+            def json(self): return {"repos": [1, 2]}
+            def raise_for_status(self): pass
+
+        def fake_request(method, url, **kw):
+            cap.update(method=method, url=url, kw=kw); return R()
+
+        monkeypatch.setattr(nango_mod, "requests", SimpleNamespace(request=fake_request))
+        c = get_connector("github")
+        out = a.run(c, c.actions[0], {"per_page": 5}, ctx=SimpleNamespace(oid="u1", brain=None))
+        assert cap["method"] == "GET"
+        assert cap["url"].endswith("/proxy/user/repos")
+        assert cap["kw"]["headers"]["Connection-Id"] == "u1"
+        assert cap["kw"]["headers"]["Provider-Config-Key"] == "github"
+        assert cap["kw"]["params"] == {"per_page": 5}
+        assert out["data"] == {"repos": [1, 2]}

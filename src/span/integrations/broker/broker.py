@@ -17,6 +17,7 @@ from typing import Any, Callable
 from span.integrations.broker.adapters.base import Adapter
 from span.integrations.broker.adapters.mcp import MCPAdapter
 from span.integrations.broker.adapters.mock import MockAdapter
+from span.integrations.broker.adapters.nango import NangoAdapter
 from span.integrations.broker.adapters.native import NativeAdapter
 from span.integrations.broker.connectors import (
     Action, Connector, connector_dict, get_action, get_connector,
@@ -120,5 +121,6 @@ class IntegrationBroker:
 
 
 def build_broker() -> IntegrationBroker:
-    """Standaard-broker met de ingebouwde adapters."""
-    return IntegrationBroker([MockAdapter(), NativeAdapter(), MCPAdapter()])
+    """Standaard-broker met de ingebouwde adapters. NangoAdapter activeert alleen
+    als NANGO_HOST + NANGO_SECRET_KEY gezet zijn."""
+    return IntegrationBroker([MockAdapter(), NativeAdapter(), MCPAdapter(), NangoAdapter()])
