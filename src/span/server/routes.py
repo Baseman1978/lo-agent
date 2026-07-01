@@ -441,6 +441,10 @@ async def integrations_catalog(request: Request, category: str = Query(""),
     return {"connectors": items}
 
 
+_MCP_WRITE_HINTS = ("create", "update", "delete", "move", "share", "revoke",
+                    "duplicate", "write", "add", "set", "send", "post")
+
+
 @router.get("/api/integrations/{cid}/actions")
 async def integrations_actions(request: Request, cid: str) -> dict[str, Any]:
     _require_rest_auth(request)
@@ -448,7 +452,31 @@ async def integrations_actions(request: Request, cid: str) -> dict[str, Any]:
     detail = broker.connector(cid, _request_context(request)) if broker else None
     if detail is None:
         raise HTTPException(status_code=404, detail="Connector niet gevonden.")
-    return {"connector": detail, "actions": broker.actions(cid) or []}
+    actions = broker.actions(cid) or []
+    # MCP-connector: toon de LIVE tools van de gekoppelde server (die zitten niet
+    # in de statische spec — ze komen van de server ná login). De agent heeft ze al.
+    if detail.get("provider") == "mcp":
+        reg = _state.get("mcp")
+        prefix = f"mcp__{cid}__"
+        live: list[dict[str, Any]] = []
+        try:
+            for spec in (reg.tool_specs() if reg is not None else []):
+                fn = spec.get("function", {})
+                name = fn.get("name", "")
+                if not name.startswith(prefix):
+                    continue
+                short = name[len(prefix):]
+                write = any(k in short.lower() for k in _MCP_WRITE_HINTS)
+                live.append({"id": name, "name": short,
+                             "description": (fn.get("description") or "")[:200],
+                             "capability": "write" if write else "read",
+                             "approval": "on_write", "risk": detail.get("risk", "medium")})
+        except Exception:
+            live = []
+        if live:
+            actions = sorted(live, key=lambda a: a["name"])
+            detail["connected"] = True
+    return {"connector": detail, "actions": actions}
 
 
 @router.post("/api/integrations/{cid}/{aid}/preview")
