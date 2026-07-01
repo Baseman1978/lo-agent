@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LO · Lomans</title>
-<link rel="stylesheet" href="/static/jarvis.css?v=45">
-<link rel="stylesheet" href="/static/effects.css?v=45">
+<link rel="stylesheet" href="/static/jarvis.css?v=46">
+<link rel="stylesheet" href="/static/effects.css?v=46">
 </head>
 <body>
 
@@ -108,10 +108,9 @@
     <h2>⟢ Instellingen <button id="settings-close" class="iconbtn">✕</button></h2>
 
     <div class="settabs">
-      <button class="settab-btn active" data-tab="verbindingen">Verbindingen</button>
+      <button class="settab-btn active" data-tab="integraties">Integraties</button>
       <button class="settab-btn" data-tab="agent">Agent</button>
       <button class="settab-btn" data-tab="skills">Skills</button>
-      <button class="settab-btn" data-tab="integraties">Integraties</button>
       <button class="settab-btn" data-tab="stem">Stem</button>
       <button class="settab-btn" data-tab="uiterlijk">Uiterlijk</button>
       <button class="settab-btn" data-tab="systeem">Systeem</button>
@@ -164,40 +163,31 @@
     </div>
     </div><!-- /skills -->
 
-    <div class="settab" data-tab="integraties">
-    <h3>Integraties</h3>
-    <div class="m" style="margin-bottom:8px">Catalogus van externe apps die LO kan
-      koppelen. Schrijfacties gaan altijd langs de Agent Inbox. Koppelen van
-      MCP-apps gebeurt via de sectie MCP-servers (tab Verbindingen).</div>
-    <div class="setrow" style="gap:8px">
-      <input type="text" id="int-search" placeholder="zoek app…" style="flex:1">
-      <select id="int-category"><option value="">alle categorieën</option></select>
-    </div>
-    <div id="int-catalog" class="m">laden…</div>
-    <div id="int-detail" class="int-detail hidden"></div>
-    </div><!-- /integraties -->
-
-    <div class="settab active" data-tab="verbindingen">
-    <h3>Microsoft 365</h3>
+    <div class="settab active" data-tab="integraties">
+    <h3>Account · Microsoft 365</h3>
     <div class="setrow"><span id="set-o365-status" class="m">…</span></div>
     <div class="setrow"><span id="set-o365-code" class="m"></span></div>
     <div class="setrow">
       <button id="o365-login" class="ghost hidden">verbind Microsoft 365</button>
       <button id="o365-logout" class="ghost hidden">ontkoppel Microsoft 365</button>
     </div>
+    <div class="m" style="margin:2px 0 12px;opacity:.7">Je Microsoft-login ontsluit
+      mail, agenda, bestanden, Teams en Power BI.</div>
 
-    <h3>Asana</h3>
-    <div class="setrow"><span id="set-asana-status" class="m">…</span></div>
+    <h3>Integraties</h3>
+    <div class="m" style="margin-bottom:8px">Catalogus van externe apps die LO kan
+      koppelen. Schrijfacties gaan altijd langs de Agent Inbox. Koppel een app via de
+      knop 'Koppelen (login)' in de detailweergave.</div>
+    <div class="setrow" style="gap:8px">
+      <input type="text" id="int-search" placeholder="zoek app…" style="flex:1">
+      <select id="int-category"><option value="">alle categorieën</option></select>
+    </div>
+    <div id="int-catalog" class="m">laden…</div>
+    <div id="int-detail" class="int-detail hidden"></div>
 
-    <h3>Telegram</h3>
-    <div class="setrow"><span id="set-telegram-status" class="m">…</span></div>
-
-    <h3>Fireflies</h3>
-    <div class="setrow"><span id="set-fireflies-status" class="m">…</span></div>
-
-    <h3>MCP-servers</h3>
-    <div class="m" style="margin-bottom:6px">Koppel externe Model Context Protocol-servers
-      (bv. de zakelijke server met O365). Hun tools komen erbij; output wordt
+    <h3>Eigen MCP-server</h3>
+    <div class="m" style="margin-bottom:6px">Koppel handmatig een externe Model Context
+      Protocol-server (bv. een zakelijke server). Hun tools komen erbij; output wordt
       gecontroleerd behandeld. Inloggen gaat via OAuth in je browser.</div>
     <div id="mcp-list" class="m"></div>
     <div class="setrow">
@@ -205,7 +195,7 @@
       <input type="text" id="mcp-url" placeholder="https://…/mcp" style="width:55%">
       <button id="mcp-add" class="ghost">toevoegen</button>
     </div>
-    </div><!-- /verbindingen -->
+    </div><!-- /integraties -->
 
     <div class="settab" data-tab="agent">
     <h3>Autonomie</h3>
@@ -420,12 +410,15 @@
     <div class="setrow"><button id="set-qr-make" class="ghost">toon QR-code</button></div>
     <div id="qr-box" class="hidden"></div>
     <div class="m" id="qr-note"></div>
+
+    <h3>Telegram</h3>
+    <div class="setrow"><span id="set-telegram-status" class="m">…</span></div>
     </div><!-- /systeem -->
 
     <div class="settab" data-tab="agent">
     <h3>Systeemprompt</h3>
     <div class="setrow">
-      <label>Spans karakter en werkafspraken — leeg = ingebouwde standaard.
+      <label>Karakter en werkafspraken van de agent — leeg = ingebouwde standaard.
         Plekhouders: {name}, {owner}, {bootstrap} (geheugen-context, laten staan!)</label>
       <textarea id="set-sysprompt" rows="14" spellcheck="false"></textarea>
     </div>
@@ -469,13 +462,13 @@
 <script src="/static/vendor/postprocessing__EffectComposer.js"></script>
 <script src="/static/vendor/postprocessing__UnrealBloomPass.js"></script>
 <script src="/static/vendor/qrcode.js"></script>
-<script src="/static/jarvis.js?v=45"></script>
-<script src="/static/fx.js?v=45"></script>
-<script src="/static/effects.js?v=45"></script>
-<script src="/static/orb.js?v=45"></script>
-<script src="/static/voice.js?v=45"></script>
-<script src="/static/hologram.js?v=45"></script>
-<script src="/static/settings.js?v=45"></script>
-<script src="/static/ambient.js?v=45"></script>
+<script src="/static/jarvis.js?v=46"></script>
+<script src="/static/fx.js?v=46"></script>
+<script src="/static/effects.js?v=46"></script>
+<script src="/static/orb.js?v=46"></script>
+<script src="/static/voice.js?v=46"></script>
+<script src="/static/hologram.js?v=46"></script>
+<script src="/static/settings.js?v=46"></script>
+<script src="/static/ambient.js?v=46"></script>
 </body>
 </html>
