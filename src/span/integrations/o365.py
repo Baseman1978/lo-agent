@@ -190,6 +190,17 @@ class O365Client:
         resp.raise_for_status()
         return resp.json()
 
+    def powerbi_post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """POST op de Power BI-API. Voor executeQueries (DAX) — dat is een
+        alleen-lezen query, wijzigt niets aan de dataset."""
+        from span.integrations.http import request_with_retry
+        tok = self._token_for(POWERBI_SCOPES)
+        resp = request_with_retry(lambda: requests.post(
+            f"{POWERBI}/{path.lstrip('/')}", json=payload,
+            headers={"Authorization": f"Bearer {tok}"}, timeout=60))
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+
     # -- graph helpers ----------------------------------------------------
 
     def _headers(self) -> dict[str, str]:

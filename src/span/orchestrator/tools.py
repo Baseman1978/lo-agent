@@ -27,7 +27,8 @@ _UNTRUSTED_OUTPUT_TOOLS = {"o365_mail_inbox", "o365_thread_summary", "fireflies_
                            "o365_mail_search", "o365_file_read", "o365_sharepoint_search",
                            "o365_teams_search", "o365_attachment_read", "o365_excel_read",
                            "o365_unanswered_sent", "o365_powerbi_reports",
-                           "o365_powerbi_dashboards", "o365_powerbi_datasets"}
+                           "o365_powerbi_dashboards", "o365_powerbi_datasets",
+                           "o365_powerbi_tables", "o365_powerbi_query"}
 
 
 class ToolBox:
@@ -545,6 +546,41 @@ class ToolBox:
         rows = self._require_o365().powerbi_get("datasets").get("value", [])
         return [{"name": r.get("name"), "id": r.get("id"),
                  "configuredBy": r.get("configuredBy")} for r in rows[:min(int(top), 200)]]
+
+    def _tool_o365_powerbi_tables(self, dataset_id: str) -> Any:
+        """Tabellen (+ kolommen) van een dataset, zodat je weet waarover je DAX
+        kunt schrijven. Vereist dat de dataset executeQueries toestaat."""
+        payload = {"queries": [{"query": "EVALUATE INFO.VIEW.COLUMNS()"}]}
+        try:
+            data = self._require_o365().powerbi_post(
+                f"datasets/{dataset_id}/executeQueries", payload)
+            rows = data["results"][0]["tables"][0]["rows"]
+        except Exception as exc:
+            return {"error": f"Kon het schema niet ophalen (executeQueries): {exc}"}
+        # groepeer kolommen per tabel; sleutels komen van INFO.VIEW.COLUMNS()
+        tables: dict[str, list[str]] = {}
+        for r in rows[:2000]:
+            t = r.get("Table") or r.get("[Table]") or "?"
+            c = r.get("Name") or r.get("[Name]") or ""
+            tables.setdefault(t, [])
+            if c and c not in tables[t]:
+                tables[t].append(c)
+        return [{"table": t, "columns": cols[:60]} for t, cols in list(tables.items())[:60]]
+
+    def _tool_o365_powerbi_query(self, dataset_id: str, dax: str, top: int = 100) -> Any:
+        """Voer een DAX-query (EVALUATE …) uit op een dataset en geef de rijen
+        terug. Alleen-lezen — DAX kan niets aan de dataset wijzigen."""
+        payload = {"queries": [{"query": dax}],
+                   "serializerSettings": {"includeNulls": True}}
+        data = self._require_o365().powerbi_post(
+            f"datasets/{dataset_id}/executeQueries", payload)
+        results = data.get("results") or []
+        rows: list[Any] = []
+        if results:
+            tbls = results[0].get("tables") or []
+            if tbls:
+                rows = tbls[0].get("rows") or []
+        return rows[:min(int(top), 500)]
 
     def _tool_o365_mail_attachments(self, message_id: str) -> Any:
         return self._require_o365().list_attachments(message_id)
