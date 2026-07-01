@@ -462,6 +462,22 @@ async def integrations_preview(request: Request, cid: str, aid: str) -> dict[str
     return prev
 
 
+def _broker_dispatch(ctx: Any):
+    """Bouw een dispatch (LO's gegatete tool-uitvoerder) voor een broker-actie,
+    zodat een native/tool-gebonden actie via de bestaande risico-poort loopt."""
+    from span.orchestrator.tools import ToolBox
+    brain = ctx.brain
+    tb = ToolBox(
+        brain, FragmentStore(brain, _state["llm"]), "broker", _state.get("work"),
+        o365=getattr(ctx, "o365", None), asana=_state.get("asana"),
+        inbox=_state.get("inbox"), autonomy=_state.get("autonomy") or {},
+        llm=_state["llm"], light_model=_effective_settings().model_light,
+        disabled=_state.get("disabled_tools"), fireflies=_state.get("fireflies"),
+        security=_state.get("security"), mcp=_state.get("mcp"),
+        shared=getattr(ctx, "shared", None))
+    return tb.dispatch
+
+
 @router.post("/api/integrations/{cid}/{aid}/run")
 async def integrations_run(request: Request, cid: str, aid: str) -> dict[str, Any]:
     _require_rest_auth(request)
@@ -473,7 +489,8 @@ async def integrations_run(request: Request, cid: str, aid: str) -> dict[str, An
     payload = await _json_body(request)
     return await asyncio.to_thread(
         broker.run, cid, aid, payload, ctx,
-        inbox=_state.get("inbox"), owner=owner, audit=_audit)
+        inbox=_state.get("inbox"), owner=owner, audit=_audit,
+        dispatch=_broker_dispatch(ctx))
 
 
 async def _json_body(request: Request) -> dict[str, Any]:
