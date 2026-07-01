@@ -111,7 +111,12 @@ class IntegrationBroker:
         adapter = self._adapter(c)
         if adapter is None:
             return {"error": f"Geen adapter voor provider {c.provider!r}."}
-        return adapter.run(c, a, payload, ctx, dispatch=dispatch)
+        try:
+            return adapter.run(c, a, payload, ctx, dispatch=dispatch)
+        except NotImplementedError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:  # adapterfout -> nette melding, geen 500
+            return {"error": f"{type(exc).__name__}: {exc}"}
 
 
 def build_broker() -> IntegrationBroker:

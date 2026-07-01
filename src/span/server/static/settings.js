@@ -655,6 +655,91 @@
   }
   skillsInit();
 
+  /* -- Integraties: catalogus (Integration Broker) ------------------------ */
+  function integrationsInit() {
+    const catEl = $("int-catalog"); if (!catEl) return;
+    const detailEl = $("int-detail"), searchEl = $("int-search"), catSel = $("int-category");
+    let all = [];
+    const STATUS = { available: "beschikbaar", needs_config: "config nodig", beta: "beta", planned: "gepland" };
+    const badge = (t, c) => `<span class="int-badge ${c || ""}">${t}</span>`;
+
+    function render() {
+      const q = (searchEl.value || "").toLowerCase().trim(), cat = catSel.value;
+      const items = all.filter((c) => (!cat || c.category === cat) &&
+        (!q || (c.name + " " + c.id + " " + (c.summary || "")).toLowerCase().includes(q)));
+      if (!items.length) { catEl.innerHTML = '<div class="empty">geen apps</div>'; return; }
+      catEl.innerHTML = "";
+      items.forEach((c) => {
+        const card = document.createElement("div"); card.className = "int-card";
+        const conn = c.connected ? badge("✓ gekoppeld", "ok") : "";
+        const st = c.status !== "available"
+          ? badge(STATUS[c.status] || c.status, c.status === "needs_config" ? "warn" : "") : "";
+        card.innerHTML =
+          `<div class="int-head"><b>${c.name}</b> <span class="int-cat">${c.category}</span></div>
+           <div class="int-sum">${c.summary || ""}</div>
+           <div class="int-meta">${conn}${st}${badge("risk: " + c.risk, c.risk === "high" ? "warn" : "")}${badge(c.action_count + " acties")}</div>`;
+        card.onclick = () => openDetail(c);
+        catEl.appendChild(card);
+      });
+    }
+
+    async function openDetail(c) {
+      detailEl.classList.remove("hidden"); detailEl.innerHTML = "laden…";
+      let d = {};
+      try { d = await (await fetch("/api/integrations/" + encodeURIComponent(c.id) + "/actions", { headers: SPAN.authHeaders() })).json(); }
+      catch (e) { detailEl.textContent = "kon acties niet laden"; return; }
+      const acts = d.actions || [];
+      const rows = acts.map((a) => {
+        const ap = a.approval === "never" ? "direct" : "goedkeuring";
+        const runBtn = (c.provider === "mock" && a.approval === "never")
+          ? `<button class="ghost int-run" data-c="${c.id}" data-a="${a.id}">uitvoeren</button>` : "";
+        return `<div class="int-act"><div><b>${a.name}</b> <span class="int-cap">${a.capability} · ${ap}</span><br>
+                <span class="int-desc">${a.description || ""}</span></div>${runBtn}</div>`;
+      }).join("") || '<div class="m" style="opacity:.7">nog geen acties gedefinieerd</div>';
+      let connect = "";
+      if (!c.connected) {
+        if (c.provider === "mcp" && c.mcp_url) connect = `<button class="ghost" id="int-connect">Koppelen via MCP-servers</button>`;
+        else if (c.status === "needs_config") connect = `<div class="m" style="opacity:.7">Deze koppeling vereist nog configuratie.</div>`;
+      }
+      detailEl.innerHTML =
+        `<div class="int-detail-head"><b>${c.name}</b> <button class="iconbtn" id="int-detail-close">✕</button></div>
+         <div class="m" style="opacity:.7;margin-bottom:6px">${c.summary || ""}${c.docs_url ? ` · <a href="${c.docs_url}" target="_blank" rel="noopener">docs</a>` : ""}</div>
+         ${connect}<div class="int-acts">${rows}</div>`;
+      $("int-detail-close").onclick = () => detailEl.classList.add("hidden");
+      const cbtn = $("int-connect");
+      if (cbtn) cbtn.onclick = () => {
+        const nm = $("mcp-name"), url = $("mcp-url");
+        if (nm) nm.value = c.id; if (url) url.value = c.mcp_url;
+        const vb = document.querySelector('.settab-btn[data-tab="verbindingen"]'); if (vb) vb.click();
+        SPAN.sys(`Klik in 'MCP-servers' op toevoegen en daarna inloggen om ${c.name} te koppelen.`);
+      };
+      detailEl.querySelectorAll(".int-run").forEach((b) => b.onclick = async () => {
+        b.disabled = true; b.textContent = "…";
+        try {
+          const r = await (await fetch(`/api/integrations/${encodeURIComponent(b.dataset.c)}/${encodeURIComponent(b.dataset.a)}/run`,
+            { method: "POST", headers: { ...SPAN.authHeaders(), "Content-Type": "application/json" }, body: "{}" })).json();
+          SPAN.sys("Resultaat: " + JSON.stringify(r.result != null ? r.result : r));
+        } catch (e) { SPAN.sys("Uitvoeren mislukt", "warn"); }
+        b.disabled = false; b.textContent = "uitvoeren";
+      });
+    }
+
+    async function load() {
+      try {
+        const d = await (await fetch("/api/integrations/catalog", { headers: SPAN.authHeaders() })).json();
+        all = d.connectors || [];
+        const cats = [...new Set(all.map((c) => c.category))].sort();
+        catSel.innerHTML = '<option value="">alle categorieën</option>' +
+          cats.map((c) => `<option value="${c}">${c}</option>`).join("");
+        render();
+      } catch (e) { catEl.textContent = "kon catalogus niet laden"; }
+    }
+    searchEl.addEventListener("input", render);
+    catSel.addEventListener("change", render);
+    load();
+  }
+  integrationsInit();
+
   /* statusje in settings live houden wanneer o365 net (ont)koppeld is */
   window.addEventListener("focus", () => {
     if (overlay.classList.contains("open")) load();

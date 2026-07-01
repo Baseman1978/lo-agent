@@ -494,3 +494,23 @@ body[data-theme="warmachine"] {
   width: fit-content;
 }
 #qr-box img { display: block; width: 196px; height: 196px; image-rendering: pixelated; }
+
+/* -- Integraties-catalogus (Integration Broker) ------------------------- */
+#int-catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 8px; }
+.int-card { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; cursor: pointer;
+  background: rgba(255,255,255,.02); transition: border-color .15s, background .15s; }
+.int-card:hover { border-color: var(--cyan); background: rgba(0,224,255,.05); }
+.int-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.int-cat { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; }
+.int-sum { font-size: 11px; color: var(--dim); margin: 4px 0 6px; line-height: 1.3; }
+.int-meta { display: flex; flex-wrap: wrap; gap: 4px; }
+.int-badge { font-size: 10px; padding: 1px 6px; border-radius: 10px; border: 1px solid var(--line); color: var(--dim); }
+.int-badge.ok { color: var(--cyan); border-color: var(--cyan-dim); }
+.int-badge.warn { color: var(--gold); border-color: var(--gold); }
+.int-detail { margin-top: 10px; border: 1px solid var(--cyan-dim); border-radius: 8px; padding: 10px 12px; background: rgba(0,224,255,.03); }
+.int-detail-head { display: flex; justify-content: space-between; align-items: center; }
+.int-acts { margin-top: 6px; }
+.int-act { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+.int-cap { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .03em; }
+.int-desc { font-size: 11px; color: var(--dim); }
+.int-run { flex-shrink: 0; }
