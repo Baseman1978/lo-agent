@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LO · Lomans</title>
-<link rel="stylesheet" href="/static/jarvis.css?v=43">
-<link rel="stylesheet" href="/static/effects.css?v=43">
+<link rel="stylesheet" href="/static/jarvis.css?v=44">
+<link rel="stylesheet" href="/static/effects.css?v=44">
 </head>
 <body>
 
@@ -111,6 +111,7 @@
       <button class="settab-btn active" data-tab="verbindingen">Verbindingen</button>
       <button class="settab-btn" data-tab="agent">Agent</button>
       <button class="settab-btn" data-tab="skills">Skills</button>
+      <button class="settab-btn" data-tab="integraties">Integraties</button>
       <button class="settab-btn" data-tab="stem">Stem</button>
       <button class="settab-btn" data-tab="uiterlijk">Uiterlijk</button>
       <button class="settab-btn" data-tab="systeem">Systeem</button>
@@ -162,6 +163,19 @@
       <button id="sk-clear" class="ghost">leegmaken</button>
     </div>
     </div><!-- /skills -->
+
+    <div class="settab" data-tab="integraties">
+    <h3>Integraties</h3>
+    <div class="m" style="margin-bottom:8px">Catalogus van externe apps die LO kan
+      koppelen. Schrijfacties gaan altijd langs de Agent Inbox. Koppelen van
+      MCP-apps gebeurt via de sectie MCP-servers (tab Verbindingen).</div>
+    <div class="setrow" style="gap:8px">
+      <input type="text" id="int-search" placeholder="zoek app…" style="flex:1">
+      <select id="int-category"><option value="">alle categorieën</option></select>
+    </div>
+    <div id="int-catalog" class="m">laden…</div>
+    <div id="int-detail" class="int-detail hidden"></div>
+    </div><!-- /integraties -->
 
     <div class="settab active" data-tab="verbindingen">
     <h3>Microsoft 365</h3>
@@ -455,13 +469,13 @@
 <script src="/static/vendor/postprocessing__EffectComposer.js"></script>
 <script src="/static/vendor/postprocessing__UnrealBloomPass.js"></script>
 <script src="/static/vendor/qrcode.js"></script>
-<script src="/static/jarvis.js?v=43"></script>
-<script src="/static/fx.js?v=43"></script>
-<script src="/static/effects.js?v=43"></script>
-<script src="/static/orb.js?v=43"></script>
-<script src="/static/voice.js?v=43"></script>
-<script src="/static/hologram.js?v=43"></script>
-<script src="/static/settings.js?v=43"></script>
-<script src="/static/ambient.js?v=43"></script>
+<script src="/static/jarvis.js?v=44"></script>
+<script src="/static/fx.js?v=44"></script>
+<script src="/static/effects.js?v=44"></script>
+<script src="/static/orb.js?v=44"></script>
+<script src="/static/voice.js?v=44"></script>
+<script src="/static/hologram.js?v=44"></script>
+<script src="/static/settings.js?v=44"></script>
+<script src="/static/ambient.js?v=44"></script>
 </body>
 </html>
