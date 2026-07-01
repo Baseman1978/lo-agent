@@ -140,10 +140,27 @@ SEED: list[Connector] = [
     # Power BI via het bestaande Microsoft-token (extra Power BI-scopes nodig).
     Connector(
         id="power_bi", name="Power BI", provider="native", category="analytics",
-        auth="graph", capabilities=["read"], risk="low", status="needs_config",
+        auth="graph", capabilities=["read"], risk="low", status="available",
         scopes=["https://analysis.windows.net/powerbi/api/.default"],
         docs_url="https://learn.microsoft.com/rest/api/power-bi/",
-        summary="Rapporten/dashboards lezen (extra Power BI-scope nodig).",
+        summary="Rapporten, dashboards en datasets lezen (bestaand Microsoft-login).",
+        actions=[
+            Action(id="reports", name="Rapporten", capability="read", approval="never",
+                   risk="low", tool="o365_powerbi_reports",
+                   description="Power BI-rapporten opsommen.",
+                   input_schema={"type": "object",
+                                 "properties": {"top": {"type": "integer"}}}),
+            Action(id="dashboards", name="Dashboards", capability="read", approval="never",
+                   risk="low", tool="o365_powerbi_dashboards",
+                   description="Power BI-dashboards opsommen.",
+                   input_schema={"type": "object",
+                                 "properties": {"top": {"type": "integer"}}}),
+            Action(id="datasets", name="Datasets", capability="read", approval="never",
+                   risk="low", tool="o365_powerbi_datasets",
+                   description="Power BI-datasets opsommen.",
+                   input_schema={"type": "object",
+                                 "properties": {"top": {"type": "integer"}}}),
+        ],
     ),
     # Fireflies: login-only via z'n MCP-server (DCR met publieke redirect = OK).
     Connector(

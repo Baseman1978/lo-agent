@@ -31,6 +31,12 @@ SCOPES = [
 ]
 TIMEZONE = "W. Europe Standard Time"
 
+# Power BI is een APARTE resource (eigen audience) — een eigen token via hetzelfde
+# ingelogde account. De scopes (Report/Dashboard/Dataset/Workspace.Read.All) zijn
+# tenant-breed geconsent; .default vraagt precies die toegekende scopes.
+POWERBI = "https://api.powerbi.com/v1.0/myorg"
+POWERBI_SCOPES = ["https://analysis.windows.net/powerbi/api/.default"]
+
 
 def odata_quote(value: str) -> str:
     """OData string-literal: enkele quotes verdubbelen en omsluiten (M10).
@@ -159,10 +165,10 @@ class O365Client:
             self._cache_path.unlink()
         return name
 
-    def _token(self) -> str:
+    def _token_for(self, scopes: list[str]) -> str:
         accounts = self._app.get_accounts()
         if accounts:
-            result = self._app.acquire_token_silent(SCOPES, account=accounts[0])
+            result = self._app.acquire_token_silent(scopes, account=accounts[0])
             if result and "access_token" in result:
                 self._persist_cache()
                 return result["access_token"]
@@ -170,6 +176,19 @@ class O365Client:
             "Niet ingelogd bij Microsoft 365. Draai `span o365-login` of gebruik "
             "de login-knop in de web-UI."
         )
+
+    def _token(self) -> str:
+        return self._token_for(SCOPES)
+
+    # -- Power BI (aparte resource, alleen-lezen) ---------------------------
+    def powerbi_get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        from span.integrations.http import request_with_retry
+        tok = self._token_for(POWERBI_SCOPES)
+        resp = request_with_retry(lambda: requests.get(
+            f"{POWERBI}/{path.lstrip('/')}", params=params,
+            headers={"Authorization": f"Bearer {tok}"}, timeout=30))
+        resp.raise_for_status()
+        return resp.json()
 
     # -- graph helpers ----------------------------------------------------
 
