@@ -144,12 +144,20 @@ SEED: list[Connector] = [
         docs_url="https://learn.microsoft.com/rest/api/power-bi/",
         summary="Rapporten/dashboards lezen (extra Power BI-scope nodig).",
     ),
-    # Fireflies: 'login' i.p.v. API-key nog te verifiëren (mogelijk MCP/OAuth).
+    # Fireflies: login-only via z'n MCP-server (DCR met publieke redirect = OK).
     Connector(
         id="fireflies", name="Fireflies", provider="mcp", category="meetings",
         auth="mcp_oauth", capabilities=["read"], risk="medium",
-        mcp_url="https://api.fireflies.ai/mcp", status="beta",
-        docs_url="https://docs.fireflies.ai/", summary="Meeting-notulen via MCP (te verifiëren)."),
+        mcp_url="https://api.fireflies.ai/mcp", status="available",
+        docs_url="https://docs.fireflies.ai/", summary="Meeting-notulen via MCP (login)."),
+    # Asana: z'n MCP-server accepteert bij DCR alléén localhost-redirects (lokale
+    # clients) -> niet koppelbaar aan een gehoste LO via MCP-login. Route =
+    # eigen Asana-OAuth-app of een API-sleutel (Fase 4).
+    Connector(
+        id="asana", name="Asana", provider="native", category="project",
+        auth="oauth2", capabilities=["read", "write"], risk="medium",
+        status="needs_config", docs_url="https://developers.asana.com/",
+        summary="MCP staat alleen lokale clients toe → eigen OAuth-app of API-sleutel nodig."),
 ]
 
 # valideer de seed bij import (faalt hard bij een fout in een entry)
