@@ -970,8 +970,15 @@ async def mcp_delete(request: Request, name: str) -> dict[str, Any]:
 
 
 def _callback_uri(request: Request) -> str:
-    # redirect terug naar deze server; host uit de request (browser van Bas)
-    return str(request.base_url).rstrip("/") + "/api/mcp/oauth/callback"
+    # De OAuth-redirect moet een stabiele, publieke https-URL zijn. Achter een
+    # reverse proxy (Cosmos/Cloudflare) is request.base_url onbetrouwbaar: uvicorn
+    # vertrouwt de X-Forwarded-headers niet, dus scheme wordt 'http'. Bovendien is
+    # een redirect_uri uit de Host-header afleiden een host-header-injection-risico.
+    # Daarom expliciet via SPAN_PUBLIC_URL; alleen lokaal terugvallen op de request.
+    base = os.environ.get("SPAN_PUBLIC_URL", "").strip().rstrip("/")
+    if not base:
+        base = str(request.base_url).rstrip("/")
+    return base + "/api/mcp/oauth/callback"
 
 
 @router.post("/api/mcp/{name}/connect")
