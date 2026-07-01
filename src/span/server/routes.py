@@ -416,6 +416,63 @@ async def inbox_reject(request: Request, item_id: int) -> dict[str, Any]:
     return {"rejected": True}
 
 
+# -- Integration Broker: catalogus + acties (onder LO's governance) ---------
+@router.get("/api/integrations/catalog")
+async def integrations_catalog(request: Request, category: str = Query(""),
+                               capability: str = Query(""), q: str = Query("")) -> dict[str, Any]:
+    _require_rest_auth(request)
+    broker = _state.get("broker")
+    if broker is None:
+        return {"connectors": []}
+    ctx = _request_context(request)
+    items = broker.catalog(ctx, category=category or None,
+                           capability=capability or None, query=q or None)
+    return {"connectors": items}
+
+
+@router.get("/api/integrations/{cid}/actions")
+async def integrations_actions(request: Request, cid: str) -> dict[str, Any]:
+    _require_rest_auth(request)
+    broker = _state.get("broker")
+    detail = broker.connector(cid, _request_context(request)) if broker else None
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Connector niet gevonden.")
+    return {"connector": detail, "actions": broker.actions(cid) or []}
+
+
+@router.post("/api/integrations/{cid}/{aid}/preview")
+async def integrations_preview(request: Request, cid: str, aid: str) -> dict[str, Any]:
+    _require_rest_auth(request)
+    broker = _state.get("broker")
+    payload = await _json_body(request)
+    prev = broker.preview(cid, aid, payload) if broker else None
+    if prev is None:
+        raise HTTPException(status_code=404, detail="Connector of actie niet gevonden.")
+    return prev
+
+
+@router.post("/api/integrations/{cid}/{aid}/run")
+async def integrations_run(request: Request, cid: str, aid: str) -> dict[str, Any]:
+    _require_rest_auth(request)
+    broker = _state.get("broker")
+    if broker is None:
+        raise HTTPException(status_code=503, detail="Broker niet beschikbaar.")
+    ctx = _request_context(request)
+    owner = getattr(ctx.brain, "database", "")
+    payload = await _json_body(request)
+    return await asyncio.to_thread(
+        broker.run, cid, aid, payload, ctx,
+        inbox=_state.get("inbox"), owner=owner, audit=_audit)
+
+
+async def _json_body(request: Request) -> dict[str, Any]:
+    try:
+        body = await request.json()
+        return body if isinstance(body, dict) else {}
+    except Exception:
+        return {}
+
+
 @router.get("/api/provenance/{key}")
 async def provenance(request: Request, key: str) -> dict[str, Any]:
     """F3.5 — 'waarom weet je dit?': de bron-keten van een formele node of

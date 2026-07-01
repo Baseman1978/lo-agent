@@ -139,6 +139,13 @@ def execute_approval(item: dict[str, Any], o365: Any, llm: Any = None,
     """Voer een goedgekeurd Agent Inbox-item uit. Gedeeld door de HUD-API
     en de inbox_approve-tool (stembediening)."""
     payload = item["payload"]
+    if item["action"] == "integration_run":
+        # door de broker klaargezette actie, nu goedgekeurd -> uitvoeren
+        from span.server.state import _state, _audit
+        broker = _state.get("broker")
+        if broker is None:
+            return {"error": "Integration Broker niet beschikbaar."}
+        return broker.run_approved(payload, audit=_audit)
     if item["action"] == "share_memory":
         # door Span voorgesteld delen (WP-3): kopieer privé-knoop naar brain-shared
         if brain is None or shared is None:
