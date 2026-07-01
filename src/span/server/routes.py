@@ -1174,6 +1174,18 @@ async def mcp_oauth_callback(code: str = Query(""), state: str = Query("")) -> A
                 s["token_endpoint"] = pending["meta"].get("token_endpoint", "")
         save_servers(_state["brain"], servers)
         _rebuild_mcp()
+        # auto-skill: maak een werkwijze-skill uit de tools van deze server, zodat
+        # de integratie meteen 'actief' is bij het opstarten (best effort)
+        try:
+            from span.integrations.broker.autoskill import sync_mcp_skill
+            from span.integrations.broker.connectors import get_connector
+            reg = _state.get("mcp")
+            conn = get_connector(pending["name"])
+            dn = conn.name if conn is not None else pending["name"]
+            if reg is not None:
+                sync_mcp_skill(_state["brain"], pending["name"], dn, reg.tool_specs())
+        except Exception:
+            pass
         return pending["name"]
 
     try:

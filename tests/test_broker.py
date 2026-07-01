@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -138,6 +139,32 @@ class TestAdapters:
         with pytest.raises(NotImplementedError):
             a.run(c, c.actions[0] if c.actions else Action(id="x", name="x"),
                   {}, ctx=None)
+
+
+class TestAutoSkill:
+    def test_build_body_splitst_read_write_en_filtert_server(self):
+        from span.integrations.broker.autoskill import build_body
+        specs = [
+            {"function": {"name": "mcp__fireflies__fireflies_search", "description": "Zoek meetings"}},
+            {"function": {"name": "mcp__fireflies__fireflies_update_meeting_title", "description": "Wijzig titel"}},
+            {"function": {"name": "mcp__other__x", "description": "andere server"}},
+        ]
+        body = build_body("Fireflies", "fireflies", specs)
+        assert "fireflies_search" in body and "Lezen" in body
+        assert "fireflies_update_meeting_title" in body and "Schrijven" in body
+        assert "mcp__other" not in body and "andere server" not in body
+        assert build_body("X", "leeg", []) is None   # geen tools -> geen skill
+
+    def test_sync_mcp_skill_upsert_met_body(self):
+        from span.integrations.broker import autoskill
+        cap = {}
+        brain = MagicMock()
+        brain.run.side_effect = lambda q, **kw: cap.update(kw) or []
+        specs = [{"function": {"name": "mcp__notion__notion-search", "description": "Zoek"}}]
+        out = autoskill.sync_mcp_skill(brain, "notion", "Notion", specs)
+        assert out == "notion"
+        assert "notion-search" in cap.get("body", "")
+        assert cap.get("enabled") is True and cap.get("author") == "agent"
 
 
 class TestNangoAdapter:
