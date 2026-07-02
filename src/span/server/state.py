@@ -153,6 +153,27 @@ def _require_rest_auth(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Ongeldige of ontbrekende token.")
 
 
+def _require_owner(request: Request) -> None:
+    """Autorisatie-tier bovenop authenticatie: alleen de beheerder (owner) mag
+    globale config/veiligheid/secrets wijzigen. Fail-closed in multi-user.
+
+    - Niet ingelogd -> 401 (via _require_rest_auth).
+    - Single-user (geen contexts) -> de enige gebruiker ís de owner.
+    - Bearer-token (API/cron, geen sessie) -> geldt als beheerder.
+    - Microsoft-sessie -> oid moet gelijk zijn aan SPAN_OWNER_OID.
+    """
+    _require_rest_auth(request)
+    if _state.get("contexts") is None:
+        return  # single-user: enige gebruiker = owner
+    user = _session_user(request)
+    if user is None:
+        return  # geauthenticeerd zonder sessie = bearer-token (beheerder)
+    owner = os.environ.get("SPAN_OWNER_OID", "").strip()
+    if not owner or user.get("oid") != owner:
+        raise HTTPException(status_code=403,
+                            detail="Alleen de beheerder mag deze instelling wijzigen.")
+
+
 # -- afgeleide config / audit ----------------------------------------------
 
 def _effective_settings() -> Settings:

@@ -32,7 +32,7 @@ from span.llm.client import LLMClient
 from span.memory.fragments import FragmentStore
 from span.server.state import (
     GRAPH_LABELS, STATIC_DIR, _audit, _effective_settings, _request_context,
-    _require_rest_auth, _state, _tools_overview,
+    _require_owner, _require_rest_auth, _state, _tools_overview,
 )
 
 router = APIRouter()
@@ -165,7 +165,7 @@ async def save_settings(request: Request) -> dict[str, Any]:
     """Instellingen opslaan. Elke key wordt onafhankelijk verwerkt; alleen
     keys die in de body staan worden aangeraakt (een autonomy-POST kan dus
     nooit per ongeluk de model-overrides wissen)."""
-    _require_rest_auth(request)
+    _require_owner(request)
     body = await request.json()
     result: dict[str, Any] = {"saved": True}
 
@@ -557,7 +557,7 @@ def _rebuild_apikey(cid: str) -> bool:
 async def integrations_set_key(request: Request, cid: str) -> dict[str, Any]:
     """Sla een API-sleutel op (in het brein) en bouw de client meteen — geen
     .env of herstart nodig. De sleutel gaat nooit terug naar de frontend."""
-    _require_rest_auth(request)
+    _require_owner(request)
     if cid not in _APIKEY_CONNECTORS:
         raise HTTPException(status_code=400, detail="Deze integratie gebruikt geen API-sleutel.")
     key = (await _json_body(request)).get("key") or ""
@@ -572,7 +572,7 @@ async def integrations_set_key(request: Request, cid: str) -> dict[str, Any]:
 
 @router.delete("/api/integrations/{cid}/key")
 async def integrations_delete_key(request: Request, cid: str) -> dict[str, Any]:
-    _require_rest_auth(request)
+    _require_owner(request)
     if cid not in _APIKEY_CONNECTORS:
         raise HTTPException(status_code=400, detail="Deze integratie gebruikt geen API-sleutel.")
     from span.integrations.credentials import delete_key
@@ -654,7 +654,7 @@ async def upload_document(request: Request, filename: str = Query(...),
                           scope: str = Query("algemeen")) -> dict[str, Any]:
     """Document (pdf/docx/txt/md) het geheugen in: chunks + samenvatting.
     scope (algemeen|werk|prive) scheidt werk- van privé-kennis (M18)."""
-    _require_rest_auth(request)
+    _require_owner(request)
     raw = await request.body()
     if not raw:
         raise HTTPException(status_code=422, detail="Leeg bestand.")
@@ -1118,7 +1118,7 @@ async def mcp_list(request: Request) -> dict[str, Any]:
 @router.post("/api/mcp")
 async def mcp_add(request: Request) -> dict[str, Any]:
     """Voeg een MCP-server toe (naam + url). Inloggen gaat via /connect."""
-    _require_rest_auth(request)
+    _require_owner(request)
     from span.integrations.mcp_client import load_servers, save_servers
     body = await request.json()
     name = (body.get("name") or "").strip()
@@ -1133,7 +1133,7 @@ async def mcp_add(request: Request) -> dict[str, Any]:
 
 @router.delete("/api/mcp/{name}")
 async def mcp_delete(request: Request, name: str) -> dict[str, Any]:
-    _require_rest_auth(request)
+    _require_owner(request)
     from span.integrations.mcp_client import load_servers, save_servers
     servers = [s for s in await asyncio.to_thread(load_servers, _state["brain"])
                if s["name"] != name]
@@ -1158,7 +1158,7 @@ def _callback_uri(request: Request) -> str:
 async def mcp_connect(request: Request, name: str) -> dict[str, Any]:
     """Start de OAuth-login: discover + dynamische registratie + PKCE.
     Geeft de authorize-URL terug; Bas opent die en logt in."""
-    _require_rest_auth(request)
+    _require_owner(request)
     from span.integrations import mcp_oauth as ox
     from span.integrations.mcp_client import load_servers
     servers = await asyncio.to_thread(load_servers, _state["brain"])
