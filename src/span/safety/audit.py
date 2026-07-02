@@ -78,17 +78,25 @@ def ensure_audit_key(brain: Any) -> str:
 
 
 def _digest(prev_hash: str, seq: int, action: str, detail: str, at: str,
-            algo: str = "") -> str:
+            algo: str = "", actor: str = "") -> str:
     key = _audit_key()
-    raw = f"{prev_hash}|{seq}|{action}|{detail}|{at}".encode("utf-8")
-    use_hmac = (algo == "hmac") or (algo == "" and bool(key))
+    # actor-versie (algo eindigt op '-a') neemt de actor mee in de hash; oude
+    # records (zonder '-a') houden het oude formaat -> keten blijft verifieerbaar.
+    with_actor = algo.endswith("-a")
+    base = algo[:-2] if with_actor else algo
+    if with_actor:
+        raw = f"{prev_hash}|{seq}|{action}|{detail}|{at}|{actor}".encode("utf-8")
+    else:
+        raw = f"{prev_hash}|{seq}|{action}|{detail}|{at}".encode("utf-8")
+    use_hmac = (base == "hmac") or (base == "" and bool(key))
     if use_hmac and key:
         return hmac.new(key, raw, hashlib.sha256).hexdigest()
     return hashlib.sha256(raw).hexdigest()
 
 
-def record_action(brain: Any, action: str, detail: str) -> None:
-    """Voeg een actie toe aan de hash-keten. Zacht falend, en atomair (lock)."""
+def record_action(brain: Any, action: str, detail: str, actor: str = "") -> None:
+    """Voeg een actie toe aan de hash-keten. Zacht falend, en atomair (lock).
+    `actor` = UPN/oid van wie de actie deed (multi-user: 'wie deed dit?')."""
     try:
         with _LOCK:
             rows = brain.run(
@@ -102,16 +110,17 @@ def record_action(brain: Any, action: str, detail: str) -> None:
             else:
                 seq, prev = 1, GENESIS
             detail = (detail or "")[:300]
+            actor = (actor or "")[:120]
             # at deterministisch vastleggen zodat de hash herberekenbaar is
             at_rows = brain.run("RETURN toString(datetime()) AS now")
             at = at_rows[0]["now"] if at_rows else ""
-            algo = "hmac" if _audit_key() else "sha256"
-            h = _digest(prev, seq, action, detail, at, algo)
+            algo = ("hmac-a" if _audit_key() else "sha256-a")  # -a: actor in de hash
+            h = _digest(prev, seq, action, detail, at, algo, actor)
             brain.run(
-                "CREATE (:Action {type:$type, detail:$detail, at:$at, "
-                "seq:$seq, prev_hash:$prev, hash:$hash, algo:$algo})",
+                "CREATE (:Action {type:$type, detail:$detail, at:$at, seq:$seq, "
+                "prev_hash:$prev, hash:$hash, algo:$algo, actor:$actor})",
                 type=action, detail=detail, at=at, seq=seq, prev=prev, hash=h,
-                algo=algo,
+                algo=algo, actor=actor,
             )
     except Exception as exc:
         print(f"[audit] vastleggen mislukt: {exc}", flush=True)
@@ -122,7 +131,7 @@ def verify_chain(brain: Any) -> dict[str, Any]:
     regel). Retourneert {ok, count, broken_at?}."""
     rows = brain.run(
         "MATCH (a:Action) WHERE a.seq IS NOT NULL "
-        "RETURN a.seq AS seq, a.type AS type, a.detail AS detail, "
+        "RETURN a.seq AS seq, a.type AS type, a.detail AS detail, a.actor AS actor, "
         "a.at AS at, a.prev_hash AS prev, a.hash AS hash, a.algo AS algo ORDER BY a.seq"
     )
     prev = GENESIS
@@ -134,10 +143,10 @@ def verify_chain(brain: Any) -> dict[str, Any]:
         if r["prev"] != prev:
             return {"ok": False, "count": len(rows),
                     "broken_at": r["seq"], "reason": "prev_hash klopt niet"}
-        # per-node algo: oude entries (geen algo) zijn sha256, nieuwe hmac ->
-        # de bestaande keten blijft verifieerbaar na het inschakelen van HMAC
+        # per-node algo: oude entries (geen algo/'-a') = oud formaat; '-a' neemt
+        # de actor mee -> de bestaande keten blijft verifieerbaar
         h = _digest(prev, r["seq"], r["type"], r["detail"] or "", r["at"] or "",
-                    r.get("algo") or "sha256")
+                    r.get("algo") or "sha256", r.get("actor") or "")
         if h != r["hash"]:
             return {"ok": False, "count": len(rows),
                     "broken_at": r["seq"], "reason": "hash gewijzigd (tampering)"}
