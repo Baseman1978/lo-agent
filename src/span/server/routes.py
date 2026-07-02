@@ -446,10 +446,6 @@ async def integrations_catalog(request: Request, category: str = Query(""),
     return {"connectors": items}
 
 
-_MCP_WRITE_HINTS = ("create", "update", "delete", "move", "share", "revoke",
-                    "duplicate", "write", "add", "set", "send", "post")
-
-
 @router.get("/api/integrations/{cid}/actions")
 async def integrations_actions(request: Request, cid: str) -> dict[str, Any]:
     _require_rest_auth(request)
@@ -471,11 +467,13 @@ async def integrations_actions(request: Request, cid: str) -> dict[str, Any]:
                 if not name.startswith(prefix):
                     continue
                 short = name[len(prefix):]
-                write = any(k in short.lower() for k in _MCP_WRITE_HINTS)
+                from span.safety.risk import mcp_capability
+                cap = mcp_capability(short)   # zelfde read/write-bron als de risico-poort
                 live.append({"id": name, "name": short,
                              "description": (fn.get("description") or "")[:200],
-                             "capability": "write" if write else "read",
-                             "approval": "on_write", "risk": detail.get("risk", "medium")})
+                             "capability": cap,
+                             "approval": "never" if cap == "read" else "on_write",
+                             "risk": detail.get("risk", "medium")})
         except Exception:
             live = []
         if live:
