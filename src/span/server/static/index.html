@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LO · Lomans</title>
-<link rel="stylesheet" href="/static/jarvis.css?v=49">
-<link rel="stylesheet" href="/static/effects.css?v=49">
+<link rel="stylesheet" href="/static/jarvis.css?v=50">
+<link rel="stylesheet" href="/static/effects.css?v=50">
 </head>
 <body>
 
@@ -125,36 +125,36 @@
 
     <h3>Skill toevoegen / bewerken</h3>
     <div class="setrow">
-      <label>Naam (kebab-case)</label>
+      <label for="sk-name">Naam (kebab-case)</label>
       <input type="text" id="sk-name" placeholder="bv. wekelijkse-mailsamenvatting">
     </div>
     <div class="setrow">
-      <label>Beschrijving</label>
+      <label for="sk-desc">Beschrijving</label>
       <input type="text" id="sk-desc" placeholder="waarvoor is deze skill">
     </div>
     <div class="setrow">
-      <label>Wanneer gebruiken (trigger, optioneel)</label>
+      <label for="sk-trigger">Wanneer gebruiken (trigger, optioneel)</label>
       <input type="text" id="sk-trigger" placeholder="bv. als ik om een mail-samenvatting vraag">
     </div>
     <div class="setrow">
-      <label>Soort</label>
+      <label for="sk-kind">Soort</label>
       <select id="sk-kind">
         <option value="workflow">Werkwijze (instructie die LO volgt)</option>
         <option value="macro">Macro (uitvoerbare reeks tool-stappen)</option>
       </select>
     </div>
     <div class="setrow" id="sk-body-row">
-      <label>Werkwijze (instructie)</label>
+      <label for="sk-body">Werkwijze (instructie)</label>
       <textarea id="sk-body" rows="5" placeholder="Beschrijf stap voor stap wat LO moet doen…"></textarea>
     </div>
     <div class="setrow hidden" id="sk-steps-row">
-      <label>Stappen (JSON-lijst) — params met {{params.naam}}</label>
+      <label for="sk-steps">Stappen (JSON-lijst) — params met {{params.naam}}</label>
       <textarea id="sk-steps" rows="6" spellcheck="false"
         placeholder='[{"tool":"o365_mail_search","args":{"query":"{{params.afzender}}"}}]'></textarea>
       <div class="m" id="sk-tools" style="opacity:.7"></div>
     </div>
     <div class="setrow hidden" id="sk-params-row">
-      <label>Parameters (komma-gescheiden, optioneel)</label>
+      <label for="sk-params">Parameters (komma-gescheiden, optioneel)</label>
       <input type="text" id="sk-params" placeholder="bv. afzender, dagen">
     </div>
     <div class="setrow">
@@ -200,14 +200,14 @@
     <div class="settab" data-tab="agent">
     <h3>Autonomie</h3>
     <div class="setrow">
-      <label>Mail versturen</label>
+      <label for="set-auto-mail">Mail versturen</label>
       <select id="set-auto-mail">
         <option value="ask">eerst goedkeuren (Agent Inbox)</option>
         <option value="auto">autonoom versturen</option>
       </select>
     </div>
     <div class="setrow">
-      <label>Afspraken maken</label>
+      <label for="set-auto-event">Afspraken maken</label>
       <select id="set-auto-event">
         <option value="ask">eerst goedkeuren (Agent Inbox)</option>
         <option value="auto">autonoom inplannen</option>
@@ -225,7 +225,7 @@
       <label><input type="checkbox" id="sec-exfil"> Lek-vangnet (extern mailen → altijd goedkeuren)</label>
     </div>
     <div class="setrow">
-      <label>Geheugen-verval</label>
+      <label for="sec-decay">Geheugen-verval</label>
       <select id="sec-decay">
         <option value="off">uit (standaard)</option>
         <option value="soft">zacht herordenen</option>
@@ -233,7 +233,7 @@
       </select>
     </div>
     <div class="setrow">
-      <label>Max stappen per beurt: <span id="sec-budget-label">12</span></label>
+      <label for="sec-budget">Max stappen per beurt: <span id="sec-budget-label">12</span></label>
       <input type="range" id="sec-budget" min="3" max="40" step="1" value="12">
     </div>
     <div class="setrow"><button id="sec-save" class="ghost">beveiliging opslaan</button></div>
@@ -252,14 +252,14 @@
     <div class="m" style="margin-bottom:6px">De ronde visual die reageert als LO praat/luistert/nadenkt.
       Wijzigingen zijn meteen zichtbaar en worden lokaal bewaard.</div>
     <div class="setrow">
-      <label>Stijl</label>
+      <label for="orb-style">Stijl</label>
       <select id="orb-style">
         <option value="orb">bol (kubussen, modern)</option>
         <option value="classic">klassieke arc-reactor</option>
       </select>
     </div>
     <div class="setrow">
-      <label>Vorm</label>
+      <label for="orb-shape">Vorm</label>
       <select id="orb-shape">
         <option value="bol">bol (Fibonacci-sphere)</option>
         <option value="ring">ring (diffuus)</option>
@@ -270,7 +270,7 @@
       </select>
     </div>
     <div class="setrow">
-      <label>Kleurpalet</label>
+      <label for="orb-palette">Kleurpalet</label>
       <select id="orb-palette">
         <option value="span">LO (cyaan→warm)</option>
         <option value="cyaan">cyaan</option>
@@ -285,27 +285,27 @@
       </select>
     </div>
     <div class="setrow">
-      <label>Aantal kubussen: <span id="orb-cubes-label">1200</span></label>
+      <label for="orb-cubes">Aantal kubussen: <span id="orb-cubes-label">1200</span></label>
       <input type="range" id="orb-cubes" min="150" max="2500" step="50" value="1200">
     </div>
     <div class="setrow">
-      <label>Pulskracht: <span id="orb-pulse-label">1.0</span></label>
+      <label for="orb-pulse">Pulskracht: <span id="orb-pulse-label">1.0</span></label>
       <input type="range" id="orb-pulse" min="0" max="3" step="0.1" value="1">
     </div>
     <div class="setrow">
-      <label>Rotatiesnelheid: <span id="orb-rot-label">1.0</span></label>
+      <label for="orb-rot">Rotatiesnelheid: <span id="orb-rot-label">1.0</span></label>
       <input type="range" id="orb-rot" min="0" max="3" step="0.1" value="1">
     </div>
     <div class="setrow">
-      <label>Kubusgrootte: <span id="orb-size-label">0.05</span></label>
+      <label for="orb-size">Kubusgrootte: <span id="orb-size-label">0.05</span></label>
       <input type="range" id="orb-size" min="0.02" max="0.12" step="0.005" value="0.05">
     </div>
     <div class="setrow">
-      <label>Gevoeligheid: <span id="orb-smooth-label">0.25</span></label>
+      <label for="orb-smooth">Gevoeligheid: <span id="orb-smooth-label">0.25</span></label>
       <input type="range" id="orb-smooth" min="0.05" max="0.6" step="0.05" value="0.25">
     </div>
     <div class="setrow">
-      <label>Gloed (bloom): <span id="orb-bloom-label">1.6</span></label>
+      <label for="orb-bloom">Gloed (bloom): <span id="orb-bloom-label">1.6</span></label>
       <input type="range" id="orb-bloom" min="0" max="3.5" step="0.1" value="1.6">
     </div>
     <div class="setrow"><button id="orb-reset" class="ghost">standaard herstellen</button></div>
@@ -317,23 +317,23 @@
       <div class="m" style="margin-bottom:6px">De server-stem (Piper) van LO. Pas aan en
         klik op testen om te horen. Lokaal bewaard.</div>
       <div class="setrow">
-        <label>Stem</label>
+        <label for="tts-speaker">Stem</label>
         <select id="tts-speaker"><option value="0">stem 0</option></select>
       </div>
       <div class="setrow">
-        <label>Tempo (hoger = langzamer): <span id="tts-length-label">1.00</span></label>
+        <label for="tts-length">Tempo (hoger = langzamer): <span id="tts-length-label">1.00</span></label>
         <input type="range" id="tts-length" min="0.7" max="1.5" step="0.05" value="1.0">
       </div>
       <div class="setrow">
-        <label>Expressie: <span id="tts-noise-label">0.33</span></label>
+        <label for="tts-noise">Expressie: <span id="tts-noise-label">0.33</span></label>
         <input type="range" id="tts-noise" min="0.0" max="1.0" step="0.01" value="0.333">
       </div>
       <div class="setrow">
-        <label>Variatie: <span id="tts-noisew-label">0.33</span></label>
+        <label for="tts-noisew">Variatie: <span id="tts-noisew-label">0.33</span></label>
         <input type="range" id="tts-noisew" min="0.0" max="1.0" step="0.01" value="0.333">
       </div>
       <div class="setrow">
-        <label>Volume: <span id="tts-volume-label">1.00</span></label>
+        <label for="tts-volume">Volume: <span id="tts-volume-label">1.00</span></label>
         <input type="range" id="tts-volume" min="0.4" max="1.6" step="0.05" value="1.0">
       </div>
       <div class="setrow">
@@ -346,7 +346,7 @@
     <div class="settab" data-tab="uiterlijk">
     <h3>Effecten</h3>
     <div class="setrow">
-      <label>Ambient-intensiteit</label>
+      <label for="set-fx">Ambient-intensiteit</label>
       <select id="set-fx">
         <option value="2">vol — alle effecten</option>
         <option value="1">subtiel — kerneffecten</option>
@@ -369,11 +369,11 @@
     <div class="m" style="margin-bottom:6px">Alleen gebruikt als de server-stem (hierboven) uit staat
       (localStorage <code>span_tts=browser</code>).</div>
     <div class="setrow">
-      <label>Stem (Nederlands)</label>
+      <label for="set-voice">Stem (Nederlands)</label>
       <select id="set-voice"></select>
     </div>
     <div class="setrow">
-      <label>Tempo: <span id="set-rate-label">1.04</span></label>
+      <label for="set-rate">Tempo: <span id="set-rate-label">1.04</span></label>
       <input type="range" id="set-rate" min="0.8" max="1.4" step="0.02" value="1.04">
     </div>
     </div><!-- /stem -->
@@ -381,7 +381,7 @@
     <div class="settab" data-tab="agent">
     <h3>Mail-triage regels</h3>
     <div class="setrow">
-      <label>Eigen regels voor de ambient watcher (vrije tekst)</label>
+      <label for="set-triage">Eigen regels voor de ambient watcher (vrije tekst)</label>
       <textarea id="set-triage" rows="3"
         placeholder="bv. Mails van facturen@... altijd negeren. Alles van Martijn is urgent."></textarea>
     </div>
@@ -394,7 +394,7 @@
 
     <h3>Dagstart</h3>
     <div class="setrow">
-      <label>Tijdstip automatische ochtendbriefing</label>
+      <label for="set-briefing-time">Tijdstip automatische ochtendbriefing</label>
       <input type="time" id="set-briefing-time" value="07:00">
     </div>
     <div class="setrow">
@@ -404,7 +404,7 @@
 
     <h3>Telefoon (zelfde wifi)</h3>
     <div class="setrow">
-      <label>LAN-IP van deze pc (voor de QR)</label>
+      <label for="set-lan-ip">LAN-IP van deze pc (voor de QR)</label>
       <input type="text" id="set-lan-ip" placeholder="bv. 192.168.1.23">
     </div>
     <div class="setrow"><button id="set-qr-make" class="ghost">toon QR-code</button></div>
@@ -418,7 +418,7 @@
     <div class="settab" data-tab="agent">
     <h3>Systeemprompt</h3>
     <div class="setrow">
-      <label>Karakter en werkafspraken van de agent — leeg = ingebouwde standaard.
+      <label for="set-sysprompt">Karakter en werkafspraken van de agent — leeg = ingebouwde standaard.
         Plekhouders: {name}, {owner}, {bootstrap} (geheugen-context, laten staan!)</label>
       <textarea id="set-sysprompt" rows="14" spellcheck="false"></textarea>
     </div>
@@ -429,11 +429,11 @@
 
     <h3>Modellen (ORQ)</h3>
     <div class="setrow">
-      <label>Hoofdmodel (redeneren + tools)</label>
+      <label for="set-model-main">Hoofdmodel (redeneren + tools)</label>
       <select id="set-model-main"></select>
     </div>
     <div class="setrow">
-      <label>Licht model (recording + evaluatie)</label>
+      <label for="set-model-light">Licht model (recording + evaluatie)</label>
       <select id="set-model-light"></select>
     </div>
     <div class="setrow">
@@ -477,13 +477,13 @@
 <script src="/static/vendor/postprocessing__EffectComposer.js"></script>
 <script src="/static/vendor/postprocessing__UnrealBloomPass.js"></script>
 <script src="/static/vendor/qrcode.js"></script>
-<script src="/static/jarvis.js?v=49"></script>
-<script src="/static/fx.js?v=49"></script>
-<script src="/static/effects.js?v=49"></script>
-<script src="/static/orb.js?v=49"></script>
-<script src="/static/voice.js?v=49"></script>
-<script src="/static/hologram.js?v=49"></script>
-<script src="/static/settings.js?v=49"></script>
-<script src="/static/ambient.js?v=49"></script>
+<script src="/static/jarvis.js?v=50"></script>
+<script src="/static/fx.js?v=50"></script>
+<script src="/static/effects.js?v=50"></script>
+<script src="/static/orb.js?v=50"></script>
+<script src="/static/voice.js?v=50"></script>
+<script src="/static/hologram.js?v=50"></script>
+<script src="/static/settings.js?v=50"></script>
+<script src="/static/ambient.js?v=50"></script>
 </body>
 </html>
