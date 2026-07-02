@@ -598,13 +598,17 @@ addEventListener("drop", async (e) => {
 });
 
 /* -- Escape sluit de bovenste open overlay ---------------------------------- */
+const OVERLAY_IDS = ["onboard-overlay", "holo-overlay", "settings-overlay",
+                     "inbox-overlay", "tasks-overlay"];
 addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  for (const id of ["holo-overlay", "settings-overlay", "inbox-overlay", "tasks-overlay"]) {
+  for (const id of OVERLAY_IDS) {
     const ov = $(id);
     if (ov && ov.classList.contains("open")) {
       if (id === "holo-overlay") {
         $("holo-close").click();  // verhuist de 3D-scene netjes terug
+      } else if (id === "onboard-overlay") {
+        $("onboard-start").click();  // via de knop, zodat de gezien-vlag gezet wordt
       } else {
         ov.classList.remove("open");
       }
@@ -613,6 +617,52 @@ addEventListener("keydown", (e) => {
     }
   }
 });
+
+/* -- C7: focus-trap — Tab blijft binnen de open dialog; focus gaat bij openen
+   naar binnen en keert bij sluiten terug naar de knop die hem opende. De
+   open/close-paden zitten verspreid (settings.js, ambient.js), dus we kijken
+   naar de class-wijziging zelf i.p.v. elk pad aan te passen. */
+(function focusTrap() {
+  const SEL = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), '
+            + 'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  const visible = (n) => n.offsetParent !== null;
+  const topOpen = () => {
+    for (const id of OVERLAY_IDS) {
+      const ov = $(id);
+      if (ov && ov.classList.contains("open")) return ov;
+    }
+    return null;
+  };
+  let restore = null;
+  OVERLAY_IDS.forEach((id) => {
+    const ov = $(id); if (!ov) return;
+    let wasOpen = false;
+    new MutationObserver(() => {
+      const open = ov.classList.contains("open");
+      if (open && !wasOpen) {
+        restore = document.activeElement;
+        if (!ov.contains(document.activeElement)) {
+          const f = Array.from(ov.querySelectorAll(SEL)).filter(visible);
+          if (f.length) f[0].focus();
+        }
+      } else if (!open && wasOpen && !topOpen()) {
+        if (restore && document.body.contains(restore)) restore.focus();
+        restore = null;
+      }
+      wasOpen = open;
+    }).observe(ov, { attributes: true, attributeFilter: ["class"] });
+  });
+  addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const ov = topOpen(); if (!ov) return;
+    const f = Array.from(ov.querySelectorAll(SEL)).filter(visible);
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (!ov.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }, true);
+})();
 
 /* -- invoer ----------------------------------------------------------------- */
 input.addEventListener("keydown", (e) => {
