@@ -95,3 +95,48 @@ def test_registry_invalidate_rebuilds():
     assert a.brain.closed is True       # oude context netjes gesloten
     b = reg.get("user-x")
     assert b is not a                   # opnieuw opgebouwd
+
+
+# -- ensure_database: community-bestendig (licentie-migratie) ----------------
+
+from span.db.brain import BrainDB
+
+
+class _StubBrain(BrainDB):
+    """BrainDB zonder driver: alleen ensure_database-gedrag testen."""
+    def __init__(self, db, show_rows=None, create_fails=False):
+        self.database = db
+        self._show_rows = show_rows          # None = SHOW faalt
+        self._create_fails = create_fails
+        self.created = []
+
+    def run_system(self, query, **params):
+        if query.lstrip().startswith("SHOW"):
+            if self._show_rows is None:
+                raise RuntimeError("SHOW niet beschikbaar")
+            return self._show_rows
+        if self._create_fails:
+            raise RuntimeError("UnsupportedAdministrationCommand")
+        self.created.append(query)
+        return []
+
+
+def test_ensure_database_bestaande_db_op_community():
+    # db bestaat al (bv. hernoemde default op community) -> geen CREATE nodig
+    b = _StubBrain("span-brain", show_rows=[{"name": "span-brain"}],
+                   create_fails=True)
+    b.ensure_database()   # geen exception
+    assert b.created == []
+
+
+def test_ensure_database_maakt_aan_wanneer_mogelijk():
+    b = _StubBrain("brain-x", show_rows=[])
+    b.ensure_database()
+    assert any("CREATE DATABASE" in q for q in b.created)
+
+
+def test_ensure_database_faalt_helder_op_community_zonder_db():
+    import pytest
+    b = _StubBrain("brain-x", show_rows=[], create_fails=True)
+    with pytest.raises(RuntimeError, match="community"):
+        b.ensure_database()
