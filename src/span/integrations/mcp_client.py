@@ -126,6 +126,23 @@ def save_servers(brain: Any, servers: list[dict[str, Any]]) -> None:
               s=json.dumps(servers))
 
 
+def _sanitize_schema(node: Any) -> Any:
+    """Grens-sanering van MCP-inputschema's vóór ze naar het model gaan.
+
+    ORQ/Bedrock wijst de hele request af (400 Invalid request body) zodra een
+    tool-schema `additionalProperties` als OBJECT bevat — de remote Notion-MCP
+    levert dat sinds kort in al z'n tools, waardoor elke chatbeurt stierf.
+    De object-vorm betekent 'extra properties toegestaan (met dit schema)';
+    de sleutel weglaten is functioneel gelijkwaardig — de MCP-server valideert
+    de argumenten zelf toch. Booleans (true/false) blijven staan."""
+    if isinstance(node, dict):
+        return {k: _sanitize_schema(v) for k, v in node.items()
+                if not (k == "additionalProperties" and isinstance(v, dict))}
+    if isinstance(node, list):
+        return [_sanitize_schema(v) for v in node]
+    return node
+
+
 class MCPRegistry:
     """Beheert de verbonden MCP-servers en levert hun tools als Span-tools.
 
@@ -177,7 +194,8 @@ class MCPRegistry:
                     "function": {
                         "name": full,
                         "description": f"[{name}] " + (t.get("description") or t.get("name") or ""),
-                        "parameters": t.get("inputSchema") or {"type": "object", "properties": {}},
+                        "parameters": _sanitize_schema(
+                            t.get("inputSchema") or {"type": "object", "properties": {}}),
                     },
                 })
 
