@@ -193,6 +193,13 @@ class TestAutoSkill:
 
 
 class TestNangoAdapter:
+    def test_conn_id_geen_owner_collisie(self):
+        # WP-B3: geen literal 'owner'-fallback -> gebruikers delen nooit één connectie
+        a = NangoAdapter(host="h", secret="s")
+        assert a._conn_id(SimpleNamespace(oid="u1", brain=None)) == "u1"
+        assert a._conn_id(SimpleNamespace(oid="", brain=SimpleNamespace(database="brain-x"))) == "brain-x"
+        assert a._conn_id(SimpleNamespace(oid="", brain=None)) == ""
+
     def test_uit_zonder_env(self):
         a = NangoAdapter(host="", secret="")
         assert a.enabled is False

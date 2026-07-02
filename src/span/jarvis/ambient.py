@@ -295,6 +295,9 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
         try:
             o365 = state.get("o365")
             inbox: AgentInbox = state["inbox"]
+            # watcher draait op de eigenaar-mailbox/-brein -> meldingen alleen voor
+            # de eigenaar (niet als owner="" naar álle gebruikers lekken, audit H-1)
+            owner_db = getattr(state["brain"], "database", "")
             # regels live uit het brein: Span kan ze zelf bijwerken via tools
             try:
                 rows = state["brain"].run(
@@ -312,7 +315,7 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
                     detail="Lomans vraagt elke 8 uur een nieuwe login (conditional "
                            "access). Koppel opnieuw via ⚙ in de HUD, of stuur "
                            "/login via Telegram.",
-                    urgency="high",
+                    urgency="high", owner=owner_db,
                 )
                 tg = state.get("telegram")
                 if tg is not None and tg.linked:
@@ -341,7 +344,7 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
                         prepped[key] = True
                         detail = await asyncio.to_thread(build_meeting_prep, state, event)
                         inbox.add(kind="notify", title="Meeting prep", detail=detail,
-                                  urgency="high")
+                                  urgency="high", owner=owner_db)
                         tg = state.get("telegram")
                         if tg is not None and tg.linked:
                             await asyncio.to_thread(tg.send, "📋 MEETING PREP\n" + detail)
@@ -374,7 +377,7 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
                             "link": mail.get("link"),
                             "preview": mail.get("preview"),
                         },
-                        urgency=triage["urgency"],
+                        urgency=triage["urgency"], owner=owner_db,
                     )
                 while len(seen) > 500:  # oudste eruit, niet willekeurig
                     seen.pop(next(iter(seen)))

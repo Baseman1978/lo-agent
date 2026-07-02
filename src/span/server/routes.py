@@ -707,7 +707,7 @@ async def speech_to_text(request: Request) -> dict[str, Any]:
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Transcriptie mislukt: {exc}")
     import logging
-    logging.getLogger("uvicorn.error").info("STT transcript: %r", text)
+    logging.getLogger("uvicorn.error").info("STT transcript ontvangen (%d tekens)", len(text))
     return {"text": text}
 
 

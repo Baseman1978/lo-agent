@@ -47,8 +47,9 @@ class NangoAdapter(Adapter):
 
     def _conn_id(self, ctx: Any) -> str:
         # per-user connectie-id: eigen oid, anders de brein-db, anders 'owner'
-        return (getattr(ctx, "oid", "") or getattr(getattr(ctx, "brain", None), "database", "")
-                or "owner")
+        # per-context id: eigen oid, anders de (per-user) brein-db. GEEN literal
+        # "owner"-fallback -> verschillende gebruikers delen nooit één connectie (H1).
+        return getattr(ctx, "oid", "") or getattr(getattr(ctx, "brain", None), "database", "")
 
     def is_connected(self, connector: Connector, ctx: Any) -> bool:
         if not self.enabled or not connector.nango_key:
