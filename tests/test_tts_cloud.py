@@ -79,3 +79,30 @@ def test_voice_info_vorm_gelijk_aan_xtts(monkeypatch):
     assert info["named_speakers"] is True       # HUD-dropdown werkt ongewijzigd
     assert info["speakers"] == ["Daniel", "Rachel"]
     assert info["default_speaker"] == "Rachel"
+
+
+# -- keuzemenu: beheerder-override van de spraakbron -------------------------
+
+def test_engine_override_dwingt_lokaal_af(monkeypatch):
+    monkeypatch.setattr(tts, "ELEVEN_KEY", "sk-x")
+    monkeypatch.setattr(tts, "XTTS_URL", "http://xtts:8001")
+    monkeypatch.setattr(tts, "_ENGINE_OVERRIDE", "xtts")
+    assert tts.engine() == "xtts"            # cloud-key aanwezig, maar keuze wint
+    seen = {}
+    monkeypatch.setattr(tts, "_synth_xtts", lambda t, s: seen.update(t=t) or b"X")
+    monkeypatch.setattr(tts, "_synth_elevenlabs",
+                        lambda *a: (_ for _ in ()).throw(AssertionError("cloud aangeroepen")))
+    assert tts.synthesize("hoi") == b"X"
+
+
+def test_engine_override_valt_terug_als_bron_ontbreekt(monkeypatch):
+    monkeypatch.setattr(tts, "ELEVEN_KEY", "sk-x")
+    monkeypatch.setattr(tts, "_ENGINE_OVERRIDE", "xtts")   # geen XTTS_URL gezet
+    assert tts.engine() == "elevenlabs"      # onbruikbare keuze -> automatisch
+
+
+def test_engines_available_vorm(monkeypatch):
+    monkeypatch.setattr(tts, "ELEVEN_KEY", "sk-x")
+    engines = {e["id"]: e["available"] for e in tts.engines_available()}
+    assert engines["elevenlabs"] is True
+    assert set(engines) == {"elevenlabs", "xtts", "piper"}

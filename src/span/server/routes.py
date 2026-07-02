@@ -203,6 +203,20 @@ async def save_settings(request: Request) -> dict[str, Any]:
         )
         result["disabled_tools"] = disabled
 
+    if "tts_engine" in body:
+        from span.server import tts
+        eng = str(body["tts_engine"] or "").strip().lower()
+        if eng not in ("", "elevenlabs", "xtts", "piper"):
+            raise HTTPException(status_code=422, detail="Onbekende spraakbron.")
+        tts.set_engine_override(eng)
+        await asyncio.to_thread(
+            _state["brain"].run,
+            "MERGE (c:Config {id:'runtime'}) SET c.tts_engine = $e", e=eng,
+        )
+        await asyncio.to_thread(_audit, "settings_tts_engine", eng or "auto",
+                                getattr(_request_context(request), "upn", ""))
+        result["tts_engine"] = eng
+
     if "system_prompt" in body:
         sp = str(body["system_prompt"])[:8000].strip()
         if sp and "{bootstrap}" not in sp:
@@ -814,7 +828,12 @@ async def tts_status(request: Request) -> dict[str, Any]:
     info = {"available": tts.available()}
     if info["available"]:
         info.update(tts.voice_info())
-        info["streaming"] = bool(tts.XTTS_URL)
+        # streamen kan alleen via XTTS; alleen relevant als die ook actief is
+        info["streaming"] = bool(tts.XTTS_URL) and tts.engine() == "xtts"
+        # keuzemenu: welke bronnen zijn er + wat is de beheerder-keuze
+        info["engines"] = tts.engines_available()
+        info["engine_override"] = tts._ENGINE_OVERRIDE
+        info["is_owner"] = _is_owner(request)   # engine-keuze is server-breed
     return info
 
 

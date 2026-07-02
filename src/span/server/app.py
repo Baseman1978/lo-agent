@@ -65,9 +65,12 @@ async def lifespan(app: FastAPI):
         "MATCH (c:Config {id:'runtime'}) "
         "RETURN c.model_main AS model_main, c.model_light AS model_light, "
         "       c.autonomy_mail AS autonomy_mail, c.autonomy_event AS autonomy_event, "
-        "       c.triage_rules AS triage_rules, c.disabled_tools AS disabled_tools"
+        "       c.triage_rules AS triage_rules, c.disabled_tools AS disabled_tools, "
+        "       c.tts_engine AS tts_engine"
     )
     cfg = overrides[0] if overrides else {}
+    from span.server import tts
+    tts.set_engine_override(cfg.get("tts_engine") or "")  # spraakbron-keuze UI
     _state.update(
         settings=settings,
         brain=brain,

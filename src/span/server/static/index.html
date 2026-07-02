@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LO · Lomans</title>
-<link rel="stylesheet" href="/static/jarvis.css?v=50">
-<link rel="stylesheet" href="/static/effects.css?v=50">
+<link rel="stylesheet" href="/static/jarvis.css?v=51">
+<link rel="stylesheet" href="/static/effects.css?v=51">
 </head>
 <body>
 
@@ -314,8 +314,13 @@
     <div class="settab" data-tab="stem">
     <h3>Stem (spraak)</h3>
     <div id="tts-settings">
-      <div class="m" style="margin-bottom:6px">De server-stem (Piper) van LO. Pas aan en
-        klik op testen om te horen. Lokaal bewaard.</div>
+      <div class="m" style="margin-bottom:6px">De stem van LO. Kies de spraakbron en
+        stem, en klik op testen om te horen.</div>
+      <div class="setrow" id="tts-engine-row">
+        <label for="tts-engine">Spraakbron (voor iedereen)</label>
+        <select id="tts-engine"><option value="">Automatisch</option></select>
+        <div class="m" id="tts-engine-note" style="opacity:.7"></div>
+      </div>
       <div class="setrow">
         <label for="tts-speaker">Stem</label>
         <select id="tts-speaker"><option value="0">stem 0</option></select>
@@ -477,13 +482,13 @@
 <script src="/static/vendor/postprocessing__EffectComposer.js"></script>
 <script src="/static/vendor/postprocessing__UnrealBloomPass.js"></script>
 <script src="/static/vendor/qrcode.js"></script>
-<script src="/static/jarvis.js?v=50"></script>
-<script src="/static/fx.js?v=50"></script>
-<script src="/static/effects.js?v=50"></script>
-<script src="/static/orb.js?v=50"></script>
-<script src="/static/voice.js?v=50"></script>
-<script src="/static/hologram.js?v=50"></script>
-<script src="/static/settings.js?v=50"></script>
-<script src="/static/ambient.js?v=50"></script>
+<script src="/static/jarvis.js?v=51"></script>
+<script src="/static/fx.js?v=51"></script>
+<script src="/static/effects.js?v=51"></script>
+<script src="/static/orb.js?v=51"></script>
+<script src="/static/voice.js?v=51"></script>
+<script src="/static/hologram.js?v=51"></script>
+<script src="/static/settings.js?v=51"></script>
+<script src="/static/ambient.js?v=51"></script>
 </body>
 </html>
