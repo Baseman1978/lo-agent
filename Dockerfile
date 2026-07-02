@@ -10,6 +10,11 @@ RUN apt-get update \
     && npm cache clean --force \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# D: reproduceerbare builds — alle pip-installs volgen de exacte versies uit
+# constraints.txt (bewezen werkend in productie) i.p.v. "nieuwste die past".
+COPY constraints.txt ./
+ENV PIP_CONSTRAINT=/app/constraints.txt
+
 # Zware, zelden-wijzigende deps + Piper-stem vóór COPY src, zodat een
 # src-wijziging (bv. een HUD-bestand) ze niet invalideert -> snelle rebuilds.
 RUN pip install --no-cache-dir \
