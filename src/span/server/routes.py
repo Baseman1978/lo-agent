@@ -915,6 +915,32 @@ async def fireflies_sync(request: Request, deep: bool = Query(False)) -> dict[st
     return await asyncio.to_thread(sync_meetings, _state, 8, deep)
 
 
+# C3: procesbegin voor uptime; module-import valt samen met serverstart.
+_STARTED = time.monotonic()
+
+
+@router.get("/livez")
+async def livez() -> dict[str, Any]:
+    """Liveness-probe (bewust zonder auth en zonder DB): de container-healthcheck
+    en een load-balancer dragen geen token; 'het proces draait' is hier genoeg.
+    Minimale payload — geen versie of details op de unauth-surface."""
+    return {"status": "ok", "uptime_s": int(time.monotonic() - _STARTED)}
+
+
+@router.get("/readyz")
+async def readyz() -> Any:
+    """Readiness-probe (zonder auth): 503 zolang het brein niet bereikbaar is,
+    zodat een proxy/orchestrator verkeer kan wegleiden i.p.v. 500's serveren."""
+    brain = _state.get("brain")
+    try:
+        if brain is None:
+            raise RuntimeError("brein nog niet geladen")
+        await asyncio.to_thread(brain.run, "RETURN 1 AS ok")
+    except Exception:
+        return JSONResponse({"status": "not_ready"}, status_code=503)
+    return {"status": "ready"}
+
+
 @router.get("/api/health")
 async def health(request: Request) -> dict[str, Any]:
     _require_rest_auth(request)
@@ -930,6 +956,8 @@ async def health(request: Request) -> dict[str, Any]:
         "o365": bool(o365) and await asyncio.to_thread(o365.is_authenticated),
         "asana": _state.get("asana") is not None,
         "inbox_open": _state["inbox"].open_count(getattr(ctx.brain, "database", "")),
+        "version": __version__,
+        "uptime_s": int(time.monotonic() - _STARTED),
     }
 
 
