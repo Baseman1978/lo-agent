@@ -141,6 +141,31 @@ class TestAdapters:
                   {}, ctx=None)
 
 
+class TestApprovedWrite:
+    """WP-A3: goedgekeurde native writes moeten écht uitvoeren + eerlijke status."""
+
+    def test_run_approved_met_dispatch_voert_uit(self):
+        b = build_broker()
+        cap = {}
+
+        def dispatch(tool, args):
+            cap["tool"] = tool; cap["args"] = args
+            return '{"created": true}'
+
+        r = b.run_approved({"connector": "asana", "action": "task_create",
+                            "payload": {"name": "Nieuwe taak"}}, dispatch=dispatch)
+        assert r["status"] == "succeeded"
+        assert cap["tool"] == "asana_task_create"
+        assert cap["args"] == {"name": "Nieuwe taak"}
+
+    def test_run_approved_zonder_dispatch_meldt_failed(self):
+        b = build_broker()
+        r = b.run_approved({"connector": "asana", "action": "task_create",
+                            "payload": {"name": "X"}})
+        assert r["status"] == "failed"          # geen valse 'succeeded' meer
+        assert "error" in r["result"]
+
+
 class TestAutoSkill:
     def test_build_body_splitst_read_write_en_filtert_server(self):
         from span.integrations.broker.autoskill import build_body

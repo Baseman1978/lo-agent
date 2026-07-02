@@ -680,7 +680,8 @@ class ToolBox:
             return {"error": "Item niet gevonden of al afgehandeld."}
         try:
             result = execute_approval(item, self._o365, self._llm, self._light_model,
-                                      asana=self._asana, mcp=self._mcp, brain=self._brain)
+                                      asana=self._asana, mcp=self._mcp, brain=self._brain,
+                                      dispatch=self.dispatch)
         except Exception:
             self._inbox.release(int(item_id))
             raise
