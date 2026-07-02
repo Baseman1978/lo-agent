@@ -174,6 +174,17 @@ def _require_owner(request: Request) -> None:
                             detail="Alleen de beheerder mag deze instelling wijzigen.")
 
 
+def _is_owner(request: Request) -> bool:
+    """Niet-werpende variant van _require_owner: voor UI-schakels (welke
+    instellingen-tabs iemand ziet), niet voor autorisatie — schrijfroutes
+    blijven op _require_owner zelf zitten."""
+    try:
+        _require_owner(request)
+        return True
+    except HTTPException:
+        return False
+
+
 # -- afgeleide config / audit ----------------------------------------------
 
 def _effective_settings() -> Settings:

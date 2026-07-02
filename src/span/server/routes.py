@@ -32,7 +32,7 @@ from span.llm.client import LLMClient
 from span.memory.fragments import FragmentStore
 from span.server.state import (
     GRAPH_LABELS, STATIC_DIR, _audit, _effective_settings, _request_context,
-    _require_owner, _require_rest_auth, _state, _tools_overview,
+    _is_owner, _require_owner, _require_rest_auth, _state, _tools_overview,
 )
 
 router = APIRouter()
@@ -159,6 +159,9 @@ async def get_settings(request: Request) -> dict[str, Any]:
         "system_prompt_default": __import__(
             "span.orchestrator.agent", fromlist=["BASE_PROMPT"]).BASE_PROMPT,
         "security": _state.get("security") or {},
+        # C6: de HUD toont beheer-tabs alleen aan de owner; de schrijfroutes
+        # zelf blijven server-side op _require_owner zitten
+        "is_owner": _is_owner(request),
     }
 
 
