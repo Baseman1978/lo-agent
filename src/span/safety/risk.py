@@ -67,19 +67,40 @@ def _default_tier(name: str) -> str:
     return "med"
 
 
-# MCP-toolnamen met deze werkwoorden doen iets onomkeerbaars / naar buiten en
-# horen via de goedkeuringspoort, ook al draaien ze op een vertrouwde server.
+# Read-only-ALLOWLIST voor MCP-tools: een tool telt alleen als 'lezen' als de naam
+# duidelijk een lees-werkwoord bevat. Al het andere = schrijven -> goedkeuringspoort.
+# Fail-closed: een onbekend/ambigu werkwoord (bv. merge/archive/revoke/purge/deploy)
+# wordt NOOIT stilzwijgend als lezen behandeld. (audit C2/B1)
+_MCP_READ_VERBS = ("search", "get", "list", "read", "find", "query", "fetch",
+                   "lookup", "describe", "count", "view", "show", "summar",
+                   "recent", "history", "retrieve", "preview")
+# Sterke schrijf-indicatoren die, ook als er een lees-woord in de naam staat,
+# altijd naar schrijven moeten kantelen (bv. 'get_and_delete').
 _MCP_WRITE_VERBS = ("send", "forward", "reply", "delete", "remove", "move",
-                    "create", "update", "add", "post", "write", "flag",
-                    "complete", "share")
+                    "create", "update", "add", "post", "write", "flag", "complete",
+                    "share", "archive", "merge", "close", "cancel", "revoke",
+                    "resolve", "assign", "decline", "restore", "rename", "duplicate",
+                    "set", "trash", "purge", "empty", "deploy", "publish", "approve",
+                    "disable", "enable", "block", "grant", "transfer", "execute",
+                    "run", "trigger", "upload", "import", "invite", "reopen", "lock")
+
+
+def mcp_capability(name: str) -> str:
+    """'read' of 'write' voor een MCP-toolnaam (of z'n staart). Eén bron voor de
+    risico-poort én de UI/skill-labels. Fail-closed: schrijf-verb of onbekend = write."""
+    tail = name.split("__")[-1].lower()
+    if any(w in tail for w in _MCP_WRITE_VERBS):
+        return "write"
+    if any(r in tail for r in _MCP_READ_VERBS):
+        return "read"
+    return "write"   # onbekend/ambigu -> behandel als schrijven (approval)
 
 
 def risk_for(name: str) -> str:
-    # MCP-tools: de externe server doet zijn eigen autorisatie (bv. O365-scopes)
-    # en Bas heeft hem bewust gekoppeld; Span quarantained de output. LEES-tools
-    # = 'med' (mogen draaien, uit te vinken). SCHRIJF-tools (mail sturen/wissen,
-    # bestanden wijzigen) = 'high' -> via de Agent Inbox-poort, nooit ongezien.
+    # MCP-tools: de externe server doet zijn eigen autorisatie en Bas heeft hem
+    # bewust gekoppeld; Span quarantined de output. LEES-tools = 'med' (mogen
+    # draaien, uit te vinken). Al het andere (schrijven/onbekend) = 'high' ->
+    # via de Agent Inbox-poort, nooit ongezien.
     if name.startswith("mcp__"):
-        tail = name.split("__")[-1].lower()
-        return "high" if any(v in tail for v in _MCP_WRITE_VERBS) else "med"
+        return "med" if mcp_capability(name) == "read" else "high"
     return TOOL_RISK.get(name) or _default_tier(name)

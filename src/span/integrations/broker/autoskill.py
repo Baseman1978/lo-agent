@@ -10,13 +10,12 @@ from __future__ import annotations
 
 from typing import Any
 
-_WRITE_HINTS = ("create", "update", "delete", "move", "share", "revoke",
-                "duplicate", "write", "add", "set", "send", "post", "remove")
+from span.safety.risk import mcp_capability
 
 
 def _is_write(short: str) -> bool:
-    s = short.lower()
-    return any(k in s for k in _WRITE_HINTS)
+    # één gedeelde read/write-classificatie met de risico-poort (fail-closed)
+    return mcp_capability(short) == "write"
 
 
 def build_body(display_name: str, server_name: str, tool_specs: list[dict[str, Any]]) -> str | None:
