@@ -618,10 +618,22 @@ async def provenance(request: Request, key: str) -> dict[str, Any]:
     return await asyncio.to_thread(fetch)
 
 
+# Property-namen die NOOIT in een export mogen (secrets + embeddings). De
+# Config-node bewaart integratie-sleutels + MCP OAuth-tokens; een backup is
+# platte JSON en mag die niet lekken (audit P0-2).
+_SECRET_PROP_HINTS = ("token", "refresh", "secret", "password", "api_key", "apikey", "_key")
+_SECRET_PROP_EXACT = {"embedding", "integration_keys", "mcp_servers"}
+
+
+def _is_secret_prop(key: str) -> bool:
+    k = (key or "").lower()
+    return key in _SECRET_PROP_EXACT or any(h in k for h in _SECRET_PROP_HINTS)
+
+
 @router.get("/api/backup")
 async def backup(request: Request) -> Any:
-    """Brein-export als JSON-download (zonder embeddings)."""
-    _require_rest_auth(request)
+    """Brein-export als JSON-download (zonder embeddings én zonder secrets)."""
+    _require_owner(request)
     brain: BrainDB = _request_context(request).brain
 
     def dump() -> dict[str, Any]:
@@ -630,9 +642,9 @@ async def backup(request: Request) -> Any:
             "properties(n) AS props"
         )
         nodes = []
-        for n in raw_nodes:  # embeddings eruit: groot en herleidbaar
+        for n in raw_nodes:  # embeddings + secrets eruit (groot/herleidbaar/gevoelig)
             props = {k: str(v) if not isinstance(v, (str, int, float, bool, list, type(None))) else v
-                     for k, v in (n["props"] or {}).items() if k != "embedding"}
+                     for k, v in (n["props"] or {}).items() if not _is_secret_prop(k)}
             nodes.append({"id": n["id"], "labels": n["labels"], "props": props})
         rels = brain.run(
             "MATCH (a)-[r]->(b) RETURN elementId(a) AS source, type(r) AS type, "
