@@ -29,11 +29,11 @@ SESSION_MAX_AGE = 24 * 3600  # 24 uur
 
 
 def _session_secret() -> str:
-    """Sleutel om de sessie-cookie te ondertekenen. Een eigen secret heeft de
-    voorkeur; anders hergebruiken we de bestaande sterke random-secrets."""
-    return (os.environ.get("SPAN_SESSION_SECRET", "").strip()
-            or os.environ.get("SPAN_AUTH_TOKEN", "").strip()
-            or os.environ.get("SPAN_AUDIT_HMAC_KEY", "").strip())
+    """Toegewijde sleutel om de sessie-cookie te ondertekenen. GEEN fallback naar
+    het bearer-token/audit-key: die dienen andere trust-grenzen, en een gelekt
+    bearer-token mag geen sessies van willekeurige gebruikers kunnen vervalsen
+    (audit H-3). Leeg -> read_session faalt closed (geen geldige sessies)."""
+    return os.environ.get("SPAN_SESSION_SECRET", "").strip()
 
 
 def _session_serializer() -> URLSafeTimedSerializer:
