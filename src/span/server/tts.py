@@ -1,13 +1,17 @@
-"""Server-side TTS — twee backends, browser-onafhankelijk.
+"""Server-side TTS — drie backends, browser-onafhankelijk.
 
-- **XTTS (voorkeur):** als SPAN_XTTS_URL gezet is, gaat de tekst naar de lokale
+- **ElevenLabs (cloud, optioneel):** als ELEVENLABS_API_KEY gezet is, gaat de
+  tekst naar de ElevenLabs-API — de beste stemkwaliteit van de markt. Let op
+  (AVG): de uitgesproken tekst verlaat dan de server (VS-verwerking); bewuste
+  keuze van de beheerder. Sprekers zijn namen (voices uit het account).
+- **XTTS:** als SPAN_XTTS_URL gezet is, gaat de tekst naar de lokale
   XTTS-v2-GPU-service (natuurlijke stem, blijft op de server). Sprekers zijn
   namen (studio-stemmen).
 - **Piper (fallback):** in-container neurale TTS op CPU; sprekers zijn nummers,
   met regelbare expressie/variatie/tempo.
 
-De HUD haalt per zin audio op bij /api/tts en speelt die af via WebAudio, zodat
-barge-in schoon werkt.
+Faalketen: elevenlabs → xtts → piper. De HUD haalt per zin audio op bij
+/api/tts en speelt die af via WebAudio, zodat barge-in schoon werkt.
 """
 
 from __future__ import annotations
@@ -22,6 +26,13 @@ VOICE_PATH = (os.environ.get("SPAN_TTS_VOICE", "").strip()
 
 # Lokale XTTS-GPU-service (base-URL, bv. http://xtts:8001). Leeg = Piper.
 XTTS_URL = os.environ.get("SPAN_XTTS_URL", "").strip().rstrip("/")
+
+# Cloud-TTS (ElevenLabs) — alleen actief mét API-key. Default-voice = "Rachel"
+# (multilingual, spreekt prima Nederlands via het multilingual-model).
+ELEVEN_KEY = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+ELEVEN_VOICE = os.environ.get("ELEVENLABS_VOICE_ID", "").strip() or "21m00Tcm4TlvDq8ikWAM"
+ELEVEN_MODEL = os.environ.get("ELEVENLABS_MODEL", "").strip() or "eleven_multilingual_v2"
+_ELEVEN_BASE = "https://api.elevenlabs.io/v1"
 
 
 def _envf(name: str):
@@ -52,13 +63,15 @@ _lock = threading.Lock()
 
 
 def engine() -> str:
+    if ELEVEN_KEY:
+        return "elevenlabs"
     return "xtts" if XTTS_URL else "piper"
 
 
 def available() -> bool:
     if os.environ.get("SPAN_TTS_ENABLED", "1").strip().lower() in ("0", "false", "no"):
         return False
-    if XTTS_URL:
+    if ELEVEN_KEY or XTTS_URL:
         return True
     try:
         import piper  # noqa: F401
@@ -67,8 +80,37 @@ def available() -> bool:
     return os.path.exists(VOICE_PATH)
 
 
+# naam -> voice_id, gevuld bij de eerste /voices-call (HUD toont namen)
+_eleven_voices: dict[str, str] = {}
+
+
+def _eleven_load_voices() -> None:
+    import httpx
+    d = httpx.get(_ELEVEN_BASE + "/voices", timeout=15,
+                  headers={"xi-api-key": ELEVEN_KEY}).json()
+    for v in d.get("voices", []):
+        name, vid = v.get("name"), v.get("voice_id")
+        if name and vid:
+            _eleven_voices[name] = vid
+
+
 def voice_info() -> dict:
     """Stem-metadata voor de HUD (welke backend, sprekers, defaults)."""
+    if ELEVEN_KEY:
+        # zelfde vorm als XTTS (named speakers) -> HUD-dropdown werkt ongewijzigd
+        info = {"engine": "elevenlabs", "named_speakers": True,
+                "speakers": [], "default_speaker": ""}
+        try:
+            if not _eleven_voices:
+                _eleven_load_voices()
+            info["speakers"] = sorted(_eleven_voices)
+            default = next((n for n, vid in _eleven_voices.items()
+                            if vid == ELEVEN_VOICE), "")
+            info["default_speaker"] = default or (
+                info["speakers"][0] if info["speakers"] else "")
+        except Exception:
+            pass
+        return info
     if XTTS_URL:
         info = {"engine": "xtts", "named_speakers": True,
                 "speakers": [], "default_speaker": ""}
@@ -95,6 +137,37 @@ def voice_info() -> dict:
     except Exception:
         pass
     return info
+
+
+def _wav(pcm: bytes, sample_rate: int, channels: int = 1) -> bytes:
+    """Ruwe 16-bit PCM → WAV-container (het formaat dat de HUD verwacht)."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm)
+    return buf.getvalue()
+
+
+def _synth_elevenlabs(text: str, speaker) -> bytes:
+    import httpx
+    vid = ELEVEN_VOICE
+    if speaker:
+        if not _eleven_voices:
+            try:
+                _eleven_load_voices()
+            except Exception:
+                pass
+        vid = _eleven_voices.get(str(speaker), ELEVEN_VOICE)
+    with httpx.Client(timeout=60.0) as client:
+        resp = client.post(
+            f"{_ELEVEN_BASE}/text-to-speech/{vid}",
+            params={"output_format": "pcm_22050"},
+            headers={"xi-api-key": ELEVEN_KEY},
+            json={"text": text, "model_id": ELEVEN_MODEL})
+        resp.raise_for_status()
+    return _wav(resp.content, 22050)
 
 
 def _synth_xtts(text: str, speaker) -> bytes:
@@ -124,6 +197,19 @@ def synthesize(text: str, speaker=None, speaker_id=None, length_scale=None,
     text = (text or "").strip()
     if not text:
         return b""
+
+    if ELEVEN_KEY:
+        spk = speaker if speaker not in (None, "") else None
+        try:
+            return _synth_elevenlabs(text, spk)
+        except Exception:
+            # cloud even weg/limiet bereikt -> door naar de lokale keten
+            if not XTTS_URL:
+                try:
+                    import piper  # noqa: F401
+                except ImportError:
+                    raise
+            speaker = None  # ElevenLabs-naam is geen geldige XTTS/Piper-spreker
 
     if XTTS_URL:
         spk = speaker if speaker not in (None, "") else None
@@ -164,10 +250,4 @@ def synthesize(text: str, speaker=None, speaker_id=None, length_scale=None,
     sr = getattr(chunks[0], "sample_rate", 22050)
     nch = getattr(chunks[0], "sample_channels", 1)
     pcm = b"".join(c.audio_int16_bytes for c in chunks)
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(nch)
-        wf.setsampwidth(2)
-        wf.setframerate(sr)
-        wf.writeframes(pcm)
-    return buf.getvalue()
+    return _wav(pcm, sr, nch)
