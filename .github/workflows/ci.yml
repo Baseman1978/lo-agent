@@ -1,0 +1,27 @@
+# WP-C5 — CI-poort: elke push/PR draait de linter en de volledige testsuite,
+# zodat testdrift en kapotte imports niet meer stil op master belanden.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # zelfde als de Docker-image
+          cache: pip
+      - name: Installeer package + dev-deps
+        run: pip install -e .[dev]
+      - name: Lint (ruff)
+        run: ruff check src tests
+      - name: Tests (pytest)
+        env:
+          ORQ_API_KEY: dummy   # tests draaien zonder echte LLM-gateway
+        run: pytest -q

@@ -82,7 +82,8 @@ def test_mcp_tool_risk_lees_med_schrijf_en_onbekend_high():
 # -- OAuth-flow (MCP-2) ----------------------------------------------------
 
 def test_pkce_s256_geldig():
-    import base64, hashlib
+    import base64
+    import hashlib
     from span.integrations.mcp_oauth import make_pkce
     v, c = make_pkce()
     expect = base64.urlsafe_b64encode(hashlib.sha256(v.encode()).digest()).rstrip(b"=").decode()

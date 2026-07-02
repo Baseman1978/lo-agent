@@ -394,7 +394,7 @@ class O365Client:
     def _default_todo_list(self) -> str | None:
         lists = self._get("/me/todo/lists").get("value", [])
         default = next(
-            (l for l in lists if l.get("wellknownListName") == "defaultList"),
+            (li for li in lists if li.get("wellknownListName") == "defaultList"),
             lists[0] if lists else None,
         )
         return default["id"] if default else None

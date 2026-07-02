@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from span.integrations.broker.broker import IntegrationBroker, build_broker
+from span.integrations.broker.broker import build_broker
 from span.integrations.broker.connectors import (
     get_action, get_connector, list_connectors, needs_approval, Action,
 )

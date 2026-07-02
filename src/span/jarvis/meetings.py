@@ -8,7 +8,6 @@ goedkeuren = Asana-taak in Mijn taken (of een project dat Span herkent).
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 ACTIONS_PROMPT = """Je bent het meeting-subsysteem van Span, de JARVIS van Bas Spaan.
