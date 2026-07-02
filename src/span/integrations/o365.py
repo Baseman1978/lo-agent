@@ -216,10 +216,14 @@ class O365Client:
         resp.raise_for_status()
         return resp.json()
 
-    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _post(self, path: str, payload: dict[str, Any],
+              idempotent: bool = True) -> dict[str, Any]:
+        # idempotent=False voor externe/onomkeerbare sends (mail/afspraak) -> geen
+        # blinde retry bij timeout (voorkomt dubbele verzending, audit H2).
         from span.integrations.http import request_with_retry
         resp = request_with_retry(lambda: requests.post(
-            f"{GRAPH}{path}", headers=self._headers(), json=payload, timeout=30))
+            f"{GRAPH}{path}", headers=self._headers(), json=payload, timeout=30),
+            idempotent=idempotent)
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 
@@ -292,7 +296,7 @@ class O365Client:
             },
             "saveToSentItems": True,
         }
-        self._post("/me/sendMail", payload)
+        self._post("/me/sendMail", payload, idempotent=False)
         return {"sent": True, "to": to, "subject": subject}
 
     # -- agenda ---------------------------------------------------------------
@@ -345,7 +349,7 @@ class O365Client:
             payload["attendees"] = [
                 {"emailAddress": {"address": a}, "type": "required"} for a in attendees
             ]
-        created = self._post("/me/events", payload)
+        created = self._post("/me/events", payload, idempotent=False)
         return {"created": True, "id": created.get("id"), "subject": subject, "start": start_iso}
 
     def unanswered_sent(self, days: int = 5, top: int = 15) -> list[dict[str, Any]]:
@@ -776,5 +780,5 @@ class O365Client:
         if not action:
             raise ValueError("response moet accept, decline of tentative zijn.")
         self._post(f"/me/events/{event_id}/{action}",
-                   {"comment": comment, "sendResponse": bool(send_response)})
+                   {"comment": comment, "sendResponse": bool(send_response)}, idempotent=False)
         return {"event_id": event_id, "response": response, "sent": bool(send_response)}

@@ -29,20 +29,33 @@ def request_with_retry(
     do_request: Callable[[], requests.Response],
     attempts: int = 3,
     max_wait: float = 30.0,
+    idempotent: bool = True,
 ) -> requests.Response:
-    """Voer een request-callable uit; retry op 429/502/503/504 en op
-    verbindingsfouten, met Retry-After-respect en exponentiële backoff."""
+    """Voer een request-callable uit; retry met Retry-After-respect en backoff.
+
+    idempotent=True (GET/PATCH-by-id): retry op 429/502/503/504 + connectie/timeout.
+    idempotent=False (niet-idempotente POST — mail sturen, afspraak maken): NIET
+    herhalen bij een Timeout (de server kan de actie al verwerkt hebben -> dubbele
+    mail/uitnodiging) of gateway-fouten; alleen 429 (throttle, zeker níét verwerkt)
+    en een ConnectionError (verbinding faalde vóór verzenden) zijn dan veilig."""
+    retryable = RETRYABLE if idempotent else {429}
     last_exc: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:
             resp = do_request()
-        except (requests.ConnectionError, requests.Timeout) as exc:
+        except requests.ConnectionError as exc:   # vóór verzenden gefaald -> veilig
             last_exc = exc
             if attempt == attempts:
                 raise
             time.sleep(min(2 ** attempt, max_wait))
             continue
-        if resp.status_code not in RETRYABLE or attempt == attempts:
+        except requests.Timeout as exc:
+            last_exc = exc
+            if not idempotent or attempt == attempts:
+                raise   # dubbelzinnig: mogelijk al verwerkt -> niet blind opnieuw
+            time.sleep(min(2 ** attempt, max_wait))
+            continue
+        if resp.status_code not in retryable or attempt == attempts:
             return resp
         retry_after = resp.headers.get("Retry-After", "")
         try:

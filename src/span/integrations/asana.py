@@ -30,10 +30,12 @@ class AsanaClient:
         resp.raise_for_status()
         return resp.json()["data"]
 
-    def _request(self, method: str, path: str, payload: dict[str, Any]) -> Any:
+    def _request(self, method: str, path: str, payload: dict[str, Any],
+                 idempotent: bool = True) -> Any:
         from span.integrations.http import request_with_retry
         resp = request_with_retry(lambda: self._session.request(
-            method, f"{BASE}{path}", json={"data": payload}, timeout=30))
+            method, f"{BASE}{path}", json={"data": payload}, timeout=30),
+            idempotent=idempotent)
         resp.raise_for_status()
         return resp.json()["data"]
 
@@ -89,7 +91,7 @@ class AsanaClient:
             payload["due_on"] = due_on  # YYYY-MM-DD
         if project_gid:
             payload["projects"] = [project_gid]
-        task = self._request("POST", "/tasks", payload)
+        task = self._request("POST", "/tasks", payload, idempotent=False)
         return {"created": True, "gid": task["gid"], "name": task.get("name"),
                 "url": task.get("permalink_url")}
 
