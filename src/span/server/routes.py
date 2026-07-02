@@ -98,7 +98,8 @@ async def share_memory(request: Request) -> dict[str, Any]:
             share_node, ctx.brain, ctx.shared, node_id, getattr(ctx, "upn", ""))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    await asyncio.to_thread(_audit, "memory_share", f"{res['label']} {node_id}")
+    await asyncio.to_thread(_audit, "memory_share", f"{res['label']} {node_id}",
+                            getattr(_request_context(request), "upn", ""))
     return {"shared": True, **res}
 
 
@@ -115,7 +116,8 @@ async def unshare_memory(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="Knoop-id vereist.")
     from span.memory.sharing import unshare_node
     res = await asyncio.to_thread(unshare_node, ctx.shared, node_id)
-    await asyncio.to_thread(_audit, "memory_unshare", node_id)
+    await asyncio.to_thread(_audit, "memory_unshare", node_id,
+                            getattr(_request_context(request), "upn", ""))
     return res
 
 
@@ -392,7 +394,8 @@ async def inbox_approve(request: Request, item_id: int) -> dict[str, Any]:
     except Exception:
         inbox.release(item_id)  # mislukt: item blijft open voor een nieuwe poging
         raise
-    await asyncio.to_thread(_audit, item["action"] or item["kind"], item["title"])
+    await asyncio.to_thread(_audit, item["action"] or item["kind"], item["title"],
+                            getattr(ctx, "upn", ""))
     inbox.resolve(item_id, "done")
     from span.jarvis.feedback import record_feedback
     await asyncio.to_thread(record_feedback, _state["brain"],
@@ -520,7 +523,8 @@ async def integrations_run(request: Request, cid: str, aid: str) -> dict[str, An
     payload = await _json_body(request)
     return await asyncio.to_thread(
         broker.run, cid, aid, payload, ctx,
-        inbox=_state.get("inbox"), owner=owner, audit=_audit,
+        inbox=_state.get("inbox"), owner=owner,
+        audit=lambda a, d: _audit(a, d, getattr(ctx, "upn", "")),
         dispatch=_broker_dispatch(ctx))
 
 
@@ -565,7 +569,8 @@ async def integrations_set_key(request: Request, cid: str) -> dict[str, Any]:
     from span.integrations.credentials import save_key
     await asyncio.to_thread(save_key, _state["brain"], cid, str(key).strip())
     ok = await asyncio.to_thread(_rebuild_apikey, cid)
-    await asyncio.to_thread(_audit, f"integration_key:{cid}", "API-sleutel opgeslagen via UI")
+    await asyncio.to_thread(_audit, f"integration_key:{cid}", "API-sleutel opgeslagen via UI",
+                            getattr(_request_context(request), "upn", ""))
     return {"saved": True, "connected": ok}
 
 
@@ -677,7 +682,8 @@ async def upload_document(request: Request, filename: str = Query(...),
         result = await asyncio.to_thread(ingest_document, _state, filename, raw, scope)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    await asyncio.to_thread(_audit, "document_ingest", f"{filename} ({result['chunks']} delen)")
+    await asyncio.to_thread(_audit, "document_ingest", f"{filename} ({result['chunks']} delen)",
+                            getattr(_request_context(request), "upn", ""))
     return result
 
 
@@ -841,7 +847,8 @@ async def skills_upsert(request: Request) -> Any:
                 enabled=bool(body.get("enabled", True))))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    await asyncio.to_thread(_audit, "skill_upsert", res.get("name", ""))
+    await asyncio.to_thread(_audit, "skill_upsert", res.get("name", ""),
+                            getattr(_request_context(request), "upn", ""))
     return res
 
 

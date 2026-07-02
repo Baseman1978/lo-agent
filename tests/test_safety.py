@@ -281,7 +281,7 @@ def _fake_audit_brain():
             if q.strip().startswith("CREATE (:Action"):
                 store.append({"seq": kw["seq"], "type": kw["type"], "detail": kw["detail"],
                               "at": kw["at"], "prev": kw["prev"], "hash": kw["hash"],
-                              "algo": kw.get("algo")})
+                              "algo": kw.get("algo"), "actor": kw.get("actor")})
                 return []
             if "WHERE a.seq IS NOT NULL" in q:
                 return sorted(store, key=lambda r: r["seq"])
@@ -293,8 +293,9 @@ def test_audit_hmac_niet_te_vervalsen_zonder_sleutel(monkeypatch):
     from span.safety import audit
     monkeypatch.setenv("SPAN_AUDIT_HMAC_KEY", "geheim-buiten-het-brein")
     b, store = _fake_audit_brain()
-    audit.record_action(b, "mail_send", "naar jan")
-    assert store[0]["algo"] == "hmac"
+    audit.record_action(b, "mail_send", "naar jan", "bas@lomans.nl")
+    assert store[0]["algo"] == "hmac-a"
+    assert store[0]["actor"] == "bas@lomans.nl"
     assert audit.verify_chain(b)["ok"] is True
     # aanvaller met brein-schrijftoegang herberekent met kale sha256 (geen sleutel)
     import hashlib

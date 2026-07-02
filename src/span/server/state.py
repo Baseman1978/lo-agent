@@ -191,11 +191,11 @@ def _effective_settings() -> Settings:
     )
 
 
-def _audit(action: str, detail: str) -> None:
-    """Audit-log in het brein: wat heeft Span namens Bas gedaan."""
+def _audit(action: str, detail: str, actor: str = "") -> None:
+    """Audit-log in het brein: wie deed wat (multi-user: actor = UPN/oid)."""
     # F4.6: tamper-evident hash-keten i.p.v. een losse CREATE
     from span.safety.audit import record_action
-    record_action(_state["brain"], action, detail)
+    record_action(_state["brain"], action, detail, actor)
 
 
 def _tools_overview() -> list[dict[str, Any]]:
