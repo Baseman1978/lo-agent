@@ -432,3 +432,47 @@ def test_dispatch_mcp_honoreert_iserror():
     tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s", mcp=mcp)
     out = json.loads(tb.dispatch("mcp__lomans__m365_mail_list", {}))
     assert "error" in out and "fout" in out["error"].lower()
+
+
+# -- schema-sanering op de grens (Notion-MCP additionalProperties-object) ----
+
+def test_mcp_schema_sanering_additionalproperties_object():
+    """ORQ/Bedrock 400't op additionalProperties als object; de Notion-MCP
+    levert dat in al z'n tools. De registry moet het eruit halen (regressie
+    voor de productie-uitval van 2026-07-02)."""
+    servers = [{"name": "notion", "url": "https://x/mcp", "token": "tok"}]
+    schema = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "page_id": {"type": "string"},
+            "parent": {
+                "type": "object",
+                "properties": {"id": {"type": "string"}},
+                "additionalProperties": {},              # genest object -> weg
+            },
+            "strict": {"type": "object", "additionalProperties": False},
+        },
+        "required": ["page_id"],
+        "additionalProperties": {"anyOf": [{"type": "string"}]},  # object -> weg
+    }
+    with patch.object(MCPClient, "initialize", return_value={}), \
+         patch.object(MCPClient, "list_tools", return_value=[
+             {"name": "duplicate-page", "description": "x", "inputSchema": schema}]):
+        reg = MCPRegistry(servers)
+    params = reg.tool_specs()[0]["function"]["parameters"]
+
+    def geen_object_addprops(node):
+        if isinstance(node, dict):
+            v = node.get("additionalProperties")
+            assert not isinstance(v, dict), "object-vorm had gesaneerd moeten zijn"
+            for sub in node.values():
+                geen_object_addprops(sub)
+        elif isinstance(node, list):
+            for sub in node:
+                geen_object_addprops(sub)
+
+    geen_object_addprops(params)
+    # boolean-vorm blijft staan; de rest van het schema is onaangeraakt
+    assert params["properties"]["strict"]["additionalProperties"] is False
+    assert params["required"] == ["page_id"]
