@@ -57,3 +57,56 @@ def test_leert_van_400_en_retryt_zonder_temperature():
     assert create.call_count == 2
     assert "temperature" not in create.call_args.kwargs   # retry zonder temperature
     assert "vendor/nieuw-model" in C._NO_TEMPERATURE       # onthouden
+
+
+# -- fail-soft: 400 door een kapotte MCP-toolspec (productie-uitval 2026-07-02)
+
+def _err400(msg="Error code: 400 - {'error': 'Invalid request body'}"):
+    return BadRequestError(
+        msg, response=httpx.Response(400, request=httpx.Request("POST", "http://x")),
+        body=None)
+
+
+def _tool(name):
+    return {"type": "function", "function": {"name": name, "description": "x",
+            "parameters": {"type": "object", "properties": {}}}}
+
+
+def test_400_retryt_zonder_mcp_tools_en_houdt_kern_tools():
+    llm = _llm()
+    create = llm._client.chat.completions.create
+    create.side_effect = [_err400(), _reply("OK")]
+    msg = llm.chat([{"role": "user", "content": "hoi"}], model="aws/sonnet",
+                   tools=[_tool("memory_search"), _tool("mcp__notion__notion-search")])
+    assert msg.content == "OK"
+    assert create.call_count == 2
+    namen = [t["function"]["name"] for t in create.call_args.kwargs.get("tools", [])]
+    assert namen == ["memory_search"]   # kern-tool blijft, MCP-tool eruit
+
+
+def test_400_zonder_mcp_tools_blijft_echte_fout():
+    import pytest
+    llm = _llm()
+    create = llm._client.chat.completions.create
+    create.side_effect = _err400()
+    with pytest.raises(BadRequestError):
+        llm.chat([{"role": "user", "content": "hoi"}], model="aws/sonnet",
+                 tools=[_tool("memory_search")])
+    assert create.call_count == 1       # geen zinloze retry
+
+
+def test_temperature_400_en_daarna_mcp_400_cascade():
+    llm = _llm()
+    create = llm._client.chat.completions.create
+    create.side_effect = [
+        _err400("Error code: 400 - `temperature` is deprecated."),
+        _err400(),                       # retry zonder temperature faalt ook
+        _reply("OK"),                    # retry zonder MCP-tools slaagt
+    ]
+    msg = llm.chat([{"role": "user", "content": "hoi"}], model="vendor/model-x",
+                   temperature=0.4, tools=[_tool("mcp__notion__notion-fetch")])
+    assert msg.content == "OK"
+    assert create.call_count == 3
+    laatste = create.call_args.kwargs
+    assert "temperature" not in laatste
+    assert "tools" not in laatste        # enige tool was MCP -> helemaal weg

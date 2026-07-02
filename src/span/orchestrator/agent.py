@@ -339,6 +339,11 @@ class SpanAgent:
                 # M16: model-call faalde (bv. provider-fout) — sluit de beurt
                 # netjes af i.p.v. de history half-af te laten (sommige providers
                 # weigeren een volgende call met losse tool_calls zonder antwoord)
+                # Ook in de serverlog: de chat-melding alleen bleek bij de
+                # productie-uitval van 2026-07-02 onvindbaar voor diagnose.
+                import logging
+                logging.getLogger("uvicorn.error").exception(
+                    "modelaanroep mislukte in de chat-loop: %s", exc)
                 msg = f"(de modelaanroep mislukte: {type(exc).__name__}: {exc})"
                 answer_parts.append(msg)
                 self._messages.append({"role": "assistant", "content": msg})
