@@ -28,7 +28,7 @@ def share_node(private: BrainDB, shared: BrainDB, node_id: str,
     if not rows:
         raise ValueError("Knoop niet gevonden in je eigen brein.")
     labels = rows[0]["labels"] or []
-    label = next((l for l in labels if l in SHAREABLE), None)
+    label = next((lb for lb in labels if lb in SHAREABLE), None)
     if label is None:
         raise ValueError(f"Dit type is niet deelbaar ({', '.join(labels) or 'onbekend'}).")
     props = dict(rows[0]["props"] or {})

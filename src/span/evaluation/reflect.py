@@ -65,7 +65,6 @@ def reflect_session(
         return {"summary": "Archief-sessie, niets te destilleren", "written": {}}
     # harde backstop tegen context-overschrijding: meest recente N + truncatie
     MAX_FRAGS, MAX_CONTENT = 120, 600
-    trimmed = len(convo) > MAX_FRAGS
     mfs = [{**m, "content": (m.get("content") or "")[:MAX_CONTENT]}
            for m in convo[-MAX_FRAGS:]]
 

@@ -16,7 +16,7 @@ from span.db.work import WorkDB, assert_read_only, ReadOnlyViolation
 from span.integrations.asana import AsanaClient
 from span.integrations.o365 import O365Client
 from span.jarvis.briefing import build_briefing
-from span.memory.fragments import FragmentStore, MF_TYPES
+from span.memory.fragments import FragmentStore
 from span.orchestrator.tool_specs import (  # noqa: F401  (re-export)
     TOOL_SPECS, TOOL_META, O365_TOOLS, ASANA_TOOLS,
 )
@@ -750,7 +750,7 @@ class ToolBox:
         if not rows:
             return {"error": "Knoop niet gevonden in je eigen brein."}
         labels = rows[0]["labels"] or []
-        label = next((l for l in labels if l in SHAREABLE), None)
+        label = next((lb for lb in labels if lb in SHAREABLE), None)
         if label is None:
             return {"error": f"Dit type is niet deelbaar ({', '.join(labels) or 'onbekend'})."}
         preview = (rows[0]["preview"] or "")[:160]

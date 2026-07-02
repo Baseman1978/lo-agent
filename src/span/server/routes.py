@@ -274,8 +274,6 @@ async def graph(request: Request, limit: int = Query(250, le=600),
     zichtbaar zodat het venster het skelet van het brein niet wegfiltert."""
     _require_rest_auth(request)
     brain: BrainDB = _request_context(request).brain
-    # labels die altijd zichtbaar blijven, ook buiten het tijdvenster
-    always = ["Identity", "Quest", "QuestStep", "Protocol", "Skill", "Insight"]
 
     _NODE_RETURN = ("elementId(n) AS id, labels(n)[0] AS type, coalesce(n.id, '') AS key, "
                     "left(coalesce(n.title, n.name, n.content, n.summary, n.body, n.id, ''), 70) AS label")

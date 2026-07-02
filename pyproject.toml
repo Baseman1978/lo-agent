@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff>=0.8"]
 stt = ["faster-whisper>=1.0"]  # server-side spraakherkenning (Docker)
 tts = ["piper-tts>=1.4"]       # server-side neurale TTS (Docker)
 
@@ -40,3 +40,13 @@ span = ["server/static/*", "server/static/vendor/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+# bewust codebase-idioom, geen fouten:
+#   E402 late/lazy imports (opstarttijd + circulaire imports)
+#   E701/E702 compacte one-liners in bestaande stijl
+ignore = ["E402", "E501", "E701", "E702"]
