@@ -69,3 +69,35 @@ def test_niet_geauthenticeerd_krijgt_401(monkeypatch):
         assert exc.value.status_code == 401
     finally:
         _reset_contexts()
+
+
+# -- C6: _is_owner (niet-werpende UI-schakel) --------------------------------
+
+def test_is_owner_true_voor_owner(monkeypatch):
+    monkeypatch.setattr(st, "_session_user", lambda r: {"oid": "OWNER", "upn": "bas@lomans.nl"})
+    monkeypatch.setenv("SPAN_OWNER_OID", "OWNER")
+    st._state["contexts"] = object()
+    try:
+        assert st._is_owner(_Req()) is True
+    finally:
+        _reset_contexts()
+
+
+def test_is_owner_false_voor_collega(monkeypatch):
+    monkeypatch.setattr(st, "_session_user", lambda r: {"oid": "OTHER", "upn": "col@lomans.nl"})
+    monkeypatch.setenv("SPAN_OWNER_OID", "OWNER")
+    st._state["contexts"] = object()
+    try:
+        assert st._is_owner(_Req()) is False
+    finally:
+        _reset_contexts()
+
+
+def test_is_owner_false_zonder_auth(monkeypatch):
+    monkeypatch.setattr(st, "_session_user", lambda r: None)
+    monkeypatch.setattr(st, "_check_token", lambda *a, **k: False)
+    st._state["contexts"] = object()
+    try:
+        assert st._is_owner(_Req()) is False
+    finally:
+        _reset_contexts()

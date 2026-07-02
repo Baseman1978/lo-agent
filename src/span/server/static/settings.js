@@ -13,6 +13,23 @@
     sel.appendChild(o);
   }
 
+  // C6: medewerkers zien alleen hun persoonlijke tabs (Skills/Stem/Uiterlijk);
+  // de beheer-tabs (Integraties/Agent/Systeem) zijn voor de owner. Dit is een
+  // UI-schakel — de schrijfroutes zitten server-side al achter _require_owner.
+  const ADMIN_TABS = ["integraties", "agent", "systeem"];
+  function applyRole(isOwner) {
+    if (isOwner !== false) return;  // owner, single-user of oudere backend: alles tonen
+    document.querySelectorAll(".settab-btn, .settab").forEach((n) => {
+      if (ADMIN_TABS.includes(n.dataset.tab)) n.classList.add("hidden");
+    });
+    const active = document.querySelector(".settab-btn.active");
+    if (active && ADMIN_TABS.includes(active.dataset.tab)) {
+      const first = document.querySelector('.settab-btn[data-tab="stem"]')
+        || document.querySelector(".settab-btn:not(.hidden)");
+      if (first) first.click();
+    }
+  }
+
   async function load() {
     try {
       const [sRes, mRes] = await Promise.all([
@@ -22,6 +39,7 @@
       if (!sRes.ok) return;
       const s = await sRes.json();
       defaults = s.defaults;
+      applyRole(s.is_owner);
       const models = mRes.ok ? (await mRes.json()).models : [s.model_main, s.model_light];
 
       $("set-o365-status").textContent = SPAN.sso

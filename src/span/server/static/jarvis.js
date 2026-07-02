@@ -145,6 +145,15 @@ function md(text) {
   h = h.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
   return h;
 }
+// chatlabel van de agent: volgt AGENT_NAME (via SPAN._agentName), geëscaped
+// omdat het who-label in innerHTML terechtkomt
+function agentWho(suffix) {
+  return (SPAN._agentName || "LO") + (suffix || "");
+}
+function whoTag(suffix) {
+  const t = agentWho(suffix).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return '<span class="who">' + t + "</span>";
+}
 SPAN.sys = (text, cls) => {
   el(cls || "sys").textContent = text;
   if (cls === "warn" && SPAN.glitch) SPAN.glitch();
@@ -215,6 +224,22 @@ function connect() {
   };
 }
 
+/* C6: eenmalige welkomstuitleg voor nieuwe gebruikers. Sluiten (knop of
+   klik ernaast) zet de localStorage-vlag zodat hij nooit meer terugkomt. */
+SPAN.showOnboarding = () => {
+  const ov = $("onboard-overlay"); if (!ov) return;
+  const t = $("onboard-title");
+  if (t) t.textContent = "Welkom — ik ben " + (SPAN._agentName || "LO");
+  const done = () => {
+    ov.classList.remove("open");
+    localStorage.setItem("lo_onboarded", "1");
+  };
+  const b = $("onboard-start"); if (b) b.onclick = done;
+  ov.addEventListener("click", (e) => { if (e.target === ov) done(); });
+  ov.classList.add("open");
+  if (b) b.focus();
+};
+
 /* dagstart: één keer per dag tonen + voorlezen (of geforceerd via settings) */
 SPAN.playDaily = async (force) => {
   try {
@@ -224,8 +249,8 @@ SPAN.playDaily = async (force) => {
     const d = await res.json();
     if (!force && localStorage.getItem("span_daily_shown") === d.date) return;
     localStorage.setItem("span_daily_shown", d.date);
-    const div = el("span", "SPAN · DAGSTART");
-    div.innerHTML = '<span class="who">SPAN · DAGSTART</span>' + md(d.spoken);
+    const div = el("span", agentWho(" · DAGSTART"));
+    div.innerHTML = whoTag(" · DAGSTART") + md(d.spoken);
     SPAN.chime(660, .1);
     if (SPAN.heroDaily) {
       SPAN.heroDaily(new Date().toLocaleDateString("nl-NL",
@@ -244,6 +269,7 @@ function handle(msg) {
     }
     loadPanels();
     if (SPAN.showSuggestions) SPAN.showSuggestions();
+    if (!localStorage.getItem("lo_onboarded")) SPAN.showOnboarding();
     setTimeout(() => SPAN.playDaily(false), 2200);
   }
   else if (msg.type === "session") {
@@ -251,9 +277,9 @@ function handle(msg) {
   }
   else if (msg.type === "delta") {
     SPAN.working(null);  // er komt tekst -> indicator weg
-    if (!current) current = el("span", "SPAN");
+    if (!current) current = el("span", agentWho());
     current.dataset.raw = (current.dataset.raw || "") + msg.text;
-    current.innerHTML = '<span class="who">SPAN</span>' + md(current.dataset.raw);
+    current.innerHTML = whoTag() + md(current.dataset.raw);
     log.scrollTop = log.scrollHeight;
     if (SPAN.speakDelta) SPAN.speakDelta(msg.text);  // streaming TTS per zin
   }
@@ -271,8 +297,8 @@ function handle(msg) {
   }
   else if (msg.type === "done") {
     if (!current) {
-      current = el("span", "SPAN");
-      current.innerHTML = '<span class="who">SPAN</span>' + md(msg.answer);
+      current = el("span", agentWho());
+      current.innerHTML = whoTag() + md(msg.answer);
     }
     if (current) {
       current.classList.add("done");

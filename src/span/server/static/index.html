@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LO · Lomans</title>
-<link rel="stylesheet" href="/static/jarvis.css?v=47">
-<link rel="stylesheet" href="/static/effects.css?v=47">
+<link rel="stylesheet" href="/static/jarvis.css?v=48">
+<link rel="stylesheet" href="/static/effects.css?v=48">
 </head>
 <body>
 
@@ -445,6 +445,21 @@
   </div>
 </div>
 
+<!-- C6: eenmalige welkomstuitleg voor nieuwe gebruikers (localStorage-vlag) -->
+<div id="onboard-overlay" role="dialog" aria-modal="true" aria-label="Welkom">
+  <div id="onboard-panel" class="panel">
+    <h2 id="onboard-title">Welkom — ik ben LO</h2>
+    <p class="m">De AI-assistent van Lomans. Zo werk je met mij:</p>
+    <ul id="onboard-list">
+      <li><b>Chat of praat</b> — typ onderin, of gebruik de microfoon. Zeg mijn naam om me handsfree te wekken.</li>
+      <li><b>Ik denk mee</b> — ik lees (met jouw koppeling) mee met mail en agenda en geef je elke ochtend een dagstart.</li>
+      <li><b>Jij houdt de regie</b> — alles wat ik wil versturen of wijzigen komt eerst ter goedkeuring in de inbox (✓ rechtsboven).</li>
+      <li><b>Maak me van jou</b> — stem, uiterlijk en koppelingen stel je in via ⚙ rechtsboven.</li>
+    </ul>
+    <button id="onboard-start">Aan de slag</button>
+  </div>
+</div>
+
 <div id="holo-overlay" role="dialog" aria-modal="true" aria-label="Brein-hologram">
   <button id="holo-close" class="iconbtn" title="Sluiten" aria-label="Sluiten">✕</button>
   <div id="holo-full"></div>
@@ -462,13 +477,13 @@
 <script src="/static/vendor/postprocessing__EffectComposer.js"></script>
 <script src="/static/vendor/postprocessing__UnrealBloomPass.js"></script>
 <script src="/static/vendor/qrcode.js"></script>
-<script src="/static/jarvis.js?v=47"></script>
-<script src="/static/fx.js?v=47"></script>
-<script src="/static/effects.js?v=47"></script>
-<script src="/static/orb.js?v=47"></script>
-<script src="/static/voice.js?v=47"></script>
-<script src="/static/hologram.js?v=47"></script>
-<script src="/static/settings.js?v=47"></script>
-<script src="/static/ambient.js?v=47"></script>
+<script src="/static/jarvis.js?v=48"></script>
+<script src="/static/fx.js?v=48"></script>
+<script src="/static/effects.js?v=48"></script>
+<script src="/static/orb.js?v=48"></script>
+<script src="/static/voice.js?v=48"></script>
+<script src="/static/hologram.js?v=48"></script>
+<script src="/static/settings.js?v=48"></script>
+<script src="/static/ambient.js?v=48"></script>
 </body>
 </html>
