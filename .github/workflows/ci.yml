@@ -23,5 +23,8 @@ jobs:
         run: ruff check src tests
       - name: Tests (pytest)
         env:
-          ORQ_API_KEY: dummy   # tests draaien zonder echte LLM-gateway
+          # tests draaien zonder echte LLM-gateway of database; load_settings
+          # eist deze twee (lokaal komen ze uit .env, die staat niet in git)
+          ORQ_API_KEY: dummy
+          NEO4J_PASSWORD: dummy
         run: pytest -q
