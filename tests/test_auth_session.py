@@ -8,9 +8,11 @@ from span.server import state
 
 @pytest.fixture(autouse=True)
 def session_secret(monkeypatch):
-    monkeypatch.delenv("SPAN_SESSION_SECRET", raising=False)
+    # WP-A5: sessies worden ondertekend met een eigen SPAN_SESSION_SECRET,
+    # losgekoppeld van SPAN_AUTH_TOKEN / SPAN_AUDIT_HMAC_KEY.
+    monkeypatch.delenv("SPAN_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("SPAN_AUDIT_HMAC_KEY", raising=False)
-    monkeypatch.setenv("SPAN_AUTH_TOKEN", "a" * 64)
+    monkeypatch.setenv("SPAN_SESSION_SECRET", "a" * 64)
 
 
 CLAIMS = {"oid": "abc-123", "preferred_username": "B.Spaan@Lomans.nl", "name": "Bas Spaan"}
@@ -34,13 +36,13 @@ def test_tampered_token_rejected():
 
 def test_other_secret_rejected(monkeypatch):
     token = state.make_session(CLAIMS)
-    monkeypatch.setenv("SPAN_AUTH_TOKEN", "b" * 64)  # andere sleutel
+    monkeypatch.setenv("SPAN_SESSION_SECRET", "b" * 64)  # andere sleutel
     assert state.read_session(token) is None
 
 
 def test_no_secret_means_no_session(monkeypatch):
-    monkeypatch.delenv("SPAN_AUTH_TOKEN", raising=False)
-    # zonder enige secret kan er geen geldige sessie bestaan
+    monkeypatch.delenv("SPAN_SESSION_SECRET", raising=False)
+    # zonder eigen sessie-secret kan er geen geldige sessie bestaan
     assert state.read_session("whatever") is None
 
 
