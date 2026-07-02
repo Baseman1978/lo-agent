@@ -50,17 +50,27 @@ class BrainDB:
     def ensure_database(self) -> None:
         """Maak de brein-database aan als die nog niet bestaat.
 
-        Neo4j Desktop draait een enterprise dev-licentie, dus CREATE DATABASE
-        werkt. Op community edition faalt dit; dan moet BRAIN_DB 'neo4j' zijn.
-        """
+        Community-bestendig: bestaat de database al (bv. als hernoemde default
+        via initial.dbms.default_database), dan is er niets te doen — CREATE
+        DATABASE zou daar falen omdat Community dat commando niet kent.
+        Alleen als hij ontbreekt proberen we CREATE (enterprise/dev)."""
         if self.database == "neo4j":
             return
         try:
+            rows = self.run_system(
+                "SHOW DATABASES YIELD name WHERE name = $db RETURN name",
+                db=self.database)
+            if rows:
+                return  # bestaat al — ook op community prima
+        except Exception:
+            pass  # SHOW niet beschikbaar? -> val terug op CREATE-poging
+        try:
             self.run_system(f"CREATE DATABASE `{self.database}` IF NOT EXISTS WAIT")
-        except Exception as exc:  # community edition of geen rechten
+        except Exception as exc:  # community zonder bestaande db, of geen rechten
             raise RuntimeError(
                 f"Kan database '{self.database}' niet aanmaken ({exc}). "
-                "Gebruik Neo4j Desktop (enterprise dev) of zet BRAIN_DB=neo4j."
+                "Op community edition: laad de database als hernoemde default "
+                "(initial.dbms.default_database) of zet BRAIN_DB=neo4j."
             ) from exc
 
     def vector_search(

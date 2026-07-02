@@ -5,11 +5,13 @@
 
 services:
   neo4j:
-    image: neo4j:5-enterprise
+    # C1: community-editie — gratis voor commercieel gebruik. Eén database;
+    # het brein draait als hernoemde default (initial.dbms.default_database).
+    image: neo4j:5-community
     container_name: span-neo4j-stack
     environment:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
-      NEO4J_ACCEPT_LICENSE_AGREEMENT: eval
+      NEO4J_initial_dbms_default__database: span-brain
     volumes:
       - span-neo4j-data:/data
     ports:
