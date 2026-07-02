@@ -38,6 +38,13 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
+    healthcheck:
+      # /livez is bewust unauth en DB-loos; python i.p.v. wget/curl (slim-image)
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8472/livez', timeout=5)\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
 
 volumes:
