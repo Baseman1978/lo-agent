@@ -136,7 +136,8 @@ Antwoord met uitsluitend de concepttekst."""
 def execute_approval(item: dict[str, Any], o365: Any, llm: Any = None,
                      light_model: str | None = None, asana: Any = None,
                      mcp: Any = None, brain: Any = None,
-                     shared: Any = None, shared_by: str = "") -> dict[str, Any]:
+                     shared: Any = None, shared_by: str = "",
+                     dispatch: Any = None) -> dict[str, Any]:
     """Voer een goedgekeurd Agent Inbox-item uit. Gedeeld door de HUD-API
     en de inbox_approve-tool (stembediening)."""
     payload = item["payload"]
@@ -146,7 +147,7 @@ def execute_approval(item: dict[str, Any], o365: Any, llm: Any = None,
         broker = _state.get("broker")
         if broker is None:
             return {"error": "Integration Broker niet beschikbaar."}
-        return broker.run_approved(payload, audit=_audit)
+        return broker.run_approved(payload, audit=_audit, dispatch=dispatch)
     if item["action"] == "share_memory":
         # door Span voorgesteld delen (WP-3): kopieer privé-knoop naar brain-shared
         if brain is None or shared is None:

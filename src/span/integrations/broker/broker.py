@@ -90,6 +90,8 @@ class IntegrationBroker:
             return {"status": "requires_approval", "queued": item_id,
                     "note": "Wacht op goedkeuring in de Agent Inbox."}
         result = self._execute(c, a, payload or {}, ctx, dispatch)
+        if isinstance(result, dict) and result.get("error"):
+            return {"status": "failed", "result": result}   # nooit valse 'succeeded'
         if audit is not None:
             audit(f"integration:{c.id}.{a.id}", a.name)
         return {"status": "succeeded", "result": result}
@@ -103,6 +105,8 @@ class IntegrationBroker:
             return {"error": "Onbekende connector of actie."}
         c, a = pair
         result = self._execute(c, a, payload.get("payload") or {}, ctx, dispatch)
+        if isinstance(result, dict) and result.get("error"):
+            return {"status": "failed", "result": result}   # nooit valse 'succeeded'
         if audit is not None:
             audit(f"integration:{c.id}.{a.id}", a.name)
         return {"status": "succeeded", "result": result}

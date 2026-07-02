@@ -385,6 +385,7 @@ async def inbox_approve(request: Request, item_id: int) -> dict[str, Any]:
             _state["llm"], _effective_settings().model_light, _state.get("asana"),
             _state.get("mcp"), getattr(ctx, "brain", None) or _state["brain"],
             getattr(ctx, "shared", None), getattr(ctx, "upn", ""),
+            _broker_dispatch(ctx),   # WP-A3: goedgekeurde native writes echt uitvoeren
         )
         if item.get("action") == "mcp_add":
             await asyncio.to_thread(_rebuild_mcp)
