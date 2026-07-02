@@ -66,8 +66,36 @@ class OrqChatBackend:
             if "temperature" in str(exc).lower() and "temperature" in k:
                 _NO_TEMPERATURE.add(k["model"])
                 k.pop("temperature", None)
-                return self._client.chat.completions.create(stream=stream, **k)
-            raise
+                try:
+                    return self._client.chat.completions.create(stream=stream, **k)
+                except BadRequestError as exc2:
+                    return self._retry_without_mcp_tools(k, stream, exc2)
+            return self._retry_without_mcp_tools(k, stream, exc)
+
+    def _retry_without_mcp_tools(self, k: dict[str, Any], stream: bool,
+                                 exc: BadRequestError) -> Any:
+        """Fail-soft: één afgekeurde MCP-toolspec mag de beurt niet doden.
+
+        Remote MCP-servers (Notion, Fireflies, …) kunnen op elk moment hun
+        schema's wijzigen; wijst de gateway de request daarom af (400), dan
+        proberen we één keer opnieuw zónder de MCP-tools. De kern-tools
+        blijven werken en de beheerder ziet in de log wat eruit viel
+        (productie-uitval 2026-07-02)."""
+        tools = k.get("tools") or []
+        rest = [t for t in tools
+                if not t.get("function", {}).get("name", "").startswith("mcp__")]
+        if len(rest) == len(tools):
+            raise exc  # geen MCP-tools om te strippen -> echte fout
+        import logging
+        logging.getLogger("uvicorn.error").warning(
+            "modelaanroep 400 (%s) — retry zonder %d MCP-tool(s); "
+            "controleer de MCP-schema's", str(exc)[:120], len(tools) - len(rest))
+        k = dict(k)
+        if rest:
+            k["tools"] = rest
+        else:
+            k.pop("tools", None)
+        return self._client.chat.completions.create(stream=stream, **k)
 
     def _chat_stream(self, kwargs: dict[str, Any], on_text: Callable[[str], None]) -> Any:
         content_parts: list[str] = []
