@@ -31,6 +31,7 @@
 
   /* -- inbox poll + badge ------------------------------------------------ */
   async function poll() {
+    if (document.hidden) return;  // verborgen tab: server niet lastigvallen
     try {
       const res = await fetch("/api/inbox", { headers: SPAN.authHeaders() });
       if (!res.ok) return;
@@ -66,6 +67,23 @@
       for (const item of closed) list.appendChild(card(item, false));
     }
   }
+  // D: payload leesbaar tonen — je moet kunnen zíén wat je goedkeurt
+  // (ontvanger, onderwerp, argumenten) i.p.v. alleen een titel.
+  const PAYLOAD_LABEL = { to: "aan", subject: "onderwerp", body: "inhoud",
+                          mcp_name: "tool", arguments: "argumenten",
+                          action: "actie", start: "start", end: "einde" };
+  function payloadRows(p) {
+    if (!p || typeof p !== "object") return "";
+    const rows = [];
+    for (const [k, v] of Object.entries(p)) {
+      if (k === "link" || v == null || v === "") continue;
+      const val = typeof v === "object" ? JSON.stringify(v) : String(v);
+      rows.push(`<div class="pl"><span>${esc(PAYLOAD_LABEL[k] || k)}</span>` +
+                `${esc(val.length > 300 ? val.slice(0, 300) + "…" : val)}</div>`);
+      if (rows.length >= 6) break;
+    }
+    return rows.length ? `<div class="inbox-payload">${rows.join("")}</div>` : "";
+  }
   function card(item, open) {
     const div = document.createElement("div");
     div.className = "inbox-card" + (open ? "" : " closed") +
@@ -76,6 +94,7 @@
       `<div class="k">${KIND_LABEL[item.kind] || item.kind} · ${esc(item.created.slice(11, 16))}` +
       `${item.status !== "open" ? " · " + esc(item.status) : ""}</div>` +
       `<b>${esc(item.title)}</b><p>${esc(item.detail)}</p>` +
+      (open && item.kind === "action" ? payloadRows(item.payload) : "") +
       (item.payload && _safeHttp(item.payload.link)
         ? `<a href="${esc(item.payload.link)}" target="_blank" rel="noopener noreferrer">open in Outlook</a> ` : "");
     if (open) {
@@ -125,6 +144,7 @@
                      done: "klaar", error: "fout", cancelled: "geannuleerd",
                      interrupted: "onderbroken (herstart)" };
   async function pollTasks() {
+    if (document.hidden) return;  // verborgen tab: server niet lastigvallen
     try {
       const res = await fetch("/api/tasks", { headers: SPAN.authHeaders() });
       if (!res.ok) return;
@@ -185,6 +205,7 @@
 
   /* -- health-dot -------------------------------------------------------- */
   async function healthPoll() {
+    if (document.hidden) return;  // verborgen tab: server niet lastigvallen
     try {
       const res = await fetch("/api/health", { headers: SPAN.authHeaders() });
       const h = res.ok ? await res.json() : { brain: false };
@@ -198,4 +219,9 @@
   }
   setInterval(healthPoll, 60000);
   setTimeout(healthPoll, 4000);
+
+  // tab weer zichtbaar -> meteen verversen i.p.v. wachten op de volgende tick
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) { poll(); pollTasks(); healthPoll(); }
+  });
 })();

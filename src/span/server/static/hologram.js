@@ -129,7 +129,8 @@
     controls.autoRotate = true;
     controls.autoRotateSpeed = 0.5;
     clearInterval(spinTimer);
-    spinTimer = setInterval(() => controls && controls.update(), 50);
+    spinTimer = setInterval(() =>
+      controls && !document.hidden && controls.update(), 50);
     return g;
   }
 
@@ -435,5 +436,5 @@
   }
 
   setTimeout(load, 2500);
-  setInterval(load, 120000);
+  setInterval(() => { if (!document.hidden) load(); }, 120000);
 })();
