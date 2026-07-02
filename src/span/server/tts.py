@@ -62,7 +62,41 @@ _voice = None
 _lock = threading.Lock()
 
 
+# Beheerder-keuze uit de UI (Config-node `tts_engine`); leeg = automatisch.
+_ENGINE_OVERRIDE = ""
+
+
+def set_engine_override(value: str) -> None:
+    global _ENGINE_OVERRIDE
+    _ENGINE_OVERRIDE = (value or "").strip().lower()
+
+
+def _piper_ok() -> bool:
+    try:
+        import piper  # noqa: F401
+    except ImportError:
+        return False
+    return os.path.exists(VOICE_PATH)
+
+
+def engines_available() -> list[dict]:
+    """Voor het keuzemenu in de HUD: welke spraakbronnen kunnen hier draaien."""
+    return [
+        {"id": "elevenlabs", "label": "ElevenLabs — cloud, beste kwaliteit",
+         "available": bool(ELEVEN_KEY)},
+        {"id": "xtts", "label": "XTTS — lokaal (GPU)", "available": bool(XTTS_URL)},
+        {"id": "piper", "label": "Piper — lokaal (CPU)", "available": _piper_ok()},
+    ]
+
+
 def engine() -> str:
+    if _ENGINE_OVERRIDE == "elevenlabs" and ELEVEN_KEY:
+        return "elevenlabs"
+    if _ENGINE_OVERRIDE == "xtts" and XTTS_URL:
+        return "xtts"
+    if _ENGINE_OVERRIDE == "piper" and _piper_ok():
+        return "piper"
+    # automatisch: beste beschikbare
     if ELEVEN_KEY:
         return "elevenlabs"
     return "xtts" if XTTS_URL else "piper"
@@ -96,7 +130,8 @@ def _eleven_load_voices() -> None:
 
 def voice_info() -> dict:
     """Stem-metadata voor de HUD (welke backend, sprekers, defaults)."""
-    if ELEVEN_KEY:
+    eng = engine()
+    if eng == "elevenlabs":
         # zelfde vorm als XTTS (named speakers) -> HUD-dropdown werkt ongewijzigd
         info = {"engine": "elevenlabs", "named_speakers": True,
                 "speakers": [], "default_speaker": ""}
@@ -111,7 +146,7 @@ def voice_info() -> dict:
         except Exception:
             pass
         return info
-    if XTTS_URL:
+    if eng == "xtts":
         info = {"engine": "xtts", "named_speakers": True,
                 "speakers": [], "default_speaker": ""}
         try:
@@ -197,21 +232,19 @@ def synthesize(text: str, speaker=None, speaker_id=None, length_scale=None,
     text = (text or "").strip()
     if not text:
         return b""
+    eng = engine()
 
-    if ELEVEN_KEY:
+    if eng == "elevenlabs":
         spk = speaker if speaker not in (None, "") else None
         try:
             return _synth_elevenlabs(text, spk)
         except Exception:
             # cloud even weg/limiet bereikt -> door naar de lokale keten
-            if not XTTS_URL:
-                try:
-                    import piper  # noqa: F401
-                except ImportError:
-                    raise
+            if not XTTS_URL and not _piper_ok():
+                raise
             speaker = None  # ElevenLabs-naam is geen geldige XTTS/Piper-spreker
 
-    if XTTS_URL:
+    if XTTS_URL and eng != "piper":
         spk = speaker if speaker not in (None, "") else None
         try:
             return _synth_xtts(text, spk)

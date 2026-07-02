@@ -543,9 +543,45 @@
     fetch("/api/tts/status", { headers: SPAN.authHeaders() }).then((r) => r.json()).then((s) => {
       if (!s.available) { wrap.style.display = "none"; return; }
       SPAN._ttsStreaming = !!s.streaming;   // XTTS streamt -> lage latency
+      // spraakbron-keuzemenu: server-breed, dus alleen voor de beheerder
+      const engRow = $("tts-engine-row"), engSel = $("tts-engine");
+      if (engRow && engSel) {
+        if (s.is_owner === false || !(s.engines || []).some((e) => e.available)) {
+          engRow.style.display = "none";
+        } else {
+          engRow.style.display = "";
+          engSel.innerHTML = "";
+          const auto = document.createElement("option");
+          auto.value = ""; auto.textContent = "Automatisch (beste beschikbaar)";
+          engSel.appendChild(auto);
+          (s.engines || []).forEach((e) => {
+            if (!e.available) return;
+            const o = document.createElement("option");
+            o.value = e.id; o.textContent = e.label;
+            engSel.appendChild(o);
+          });
+          engSel.value = s.engine_override || "";
+          const note = $("tts-engine-note");
+          if (note) note.textContent = "actief: " + (s.engine || "?") +
+            (s.engine === "elevenlabs" ? " · cloud — tekst verlaat de server" : " · lokaal");
+          engSel.onchange = async () => {
+            engSel.disabled = true;
+            try {
+              await fetch("/api/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", ...SPAN.authHeaders() },
+                body: JSON.stringify({ tts_engine: engSel.value }),
+              });
+              localStorage.removeItem("span_tts_speaker");  // stemnaam hoort bij de bron
+            } catch (e) { /* stil */ }
+            engSel.disabled = false;
+            ttsInit();  // stemmenlijst + schuiven verversen voor de nieuwe bron
+          };
+        }
+      }
       const sel = $("tts-speaker");
-      if (s.engine === "xtts") {
-        // XTTS: stem = naam, geen Piper-schuiven
+      if (s.named_speakers) {
+        // XTTS/ElevenLabs: stem = naam, geen Piper-schuiven
         SLIDERS.forEach((id) => showRow(id, false));
         if (sel) {
           const names = s.speakers || [];
