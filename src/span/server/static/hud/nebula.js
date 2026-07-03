@@ -16451,7 +16451,7 @@ function e_(e, t) {
 		}, a = 0, o = e.length; a < o; a++) if (i()) continue;
 	}
 }
-var Q = window.THREE ? window.THREE : {
+var Q = {
 	Group: Wn,
 	Mesh: Fi,
 	MeshLambertMaterial: lo,
@@ -17126,7 +17126,7 @@ function o_(e) {
 		};
 	}), r;
 }
-var s_ = o_(a_, (window.THREE ? window.THREE : { Group: Wn }).Group, !0), c_ = {
+var s_ = o_(a_, { Group: Wn }.Group, !0), c_ = {
 	personal: 16638023,
 	knowledge: 8843180,
 	work: 9684477,
