@@ -18,9 +18,15 @@ import { AgentStateMock, type AgentState } from './state/agent';
 import { MockMemoryStream } from './stream/mock';
 import type { PositionedNode } from './data/synthetic';
 
+export type LoState = 'idle' | 'listening' | 'thinking' | 'speaking';
+
 export interface NebulaHandle {
-  /** agent-status (N3 koppelt dit aan de echte SPAN-signalen) */
-  setState(state: AgentState): void;
+  /** echte agent-status uit de LO-app (busy is daar al naar thinking gemapt) */
+  setState(state: LoState): void;
+  /** open acties in de Agent Inbox -> waarschuwingsmodus zodra de agent stil is */
+  setAlert(on: boolean): void;
+  /** live leescascade: LO raadpleegt deze memories (WS memory_read) */
+  markReading(ids: string[], reason?: string): void;
   unmount(): void;
 }
 
@@ -97,6 +103,27 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
 
   const post = createPostChain(renderer, scene, camera, lite);
   const agent = new AgentStateMock();
+
+  // N3: echte status + alert-overlay. Alert toont alleen als de agent stil is
+  // (een lopend antwoord niet visueel onderbreken); de inbox-badge blijft toch.
+  let lastState: LoState = 'idle';
+  let alertOn = false;
+  const applyState = (): void => {
+    const effective: AgentState = alertOn && lastState === 'idle' ? 'alert' : lastState;
+    agent.set(effective, true); // manual -> auto-demo stopt definitief
+  };
+
+  // reden-label bij de leescascade ("leest · waarom")
+  const reason = document.createElement('div');
+  reason.id = 'nebula-reason';
+  container.appendChild(reason);
+  let reasonTimer: ReturnType<typeof setTimeout> | null = null;
+  const showReason = (text: string): void => {
+    reason.textContent = text;
+    reason.classList.add('open');
+    if (reasonTimer) clearTimeout(reasonTimer);
+    reasonTimer = setTimeout(() => reason.classList.remove('open'), 4500);
+  };
 
   // --- camera-vluchten (selectie/terug) --------------------------------------------
   const camGoal = new THREE.Vector3(...CAMERA);
@@ -270,10 +297,25 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
   });
 
   return {
-    setState(state: AgentState) {
-      agent.set(state, true);
+    setState(state: LoState) {
+      lastState = state;
+      applyState();
+    },
+    setAlert(on: boolean) {
+      alertOn = on;
+      applyState();
+    },
+    markReading(ids: string[], reasonText?: string) {
+      if (!graph || !activity) return;
+      const bekend = ids.filter((id) => graph!.getNode(id));
+      if (bekend.length > 0) activity.activate(bekend);
+      if (reasonText) showReason(`leest · ${reasonText}`);
+      // onbekende ids = memories die net geschreven zijn -> wolk bijwerken
+      if (bekend.length < ids.length && opts.authHeaders) void refresh();
     },
     unmount() {
+      if (reasonTimer) clearTimeout(reasonTimer);
+      reason.remove();
       renderer.setAnimationLoop(null);
       if (refreshTimer) clearInterval(refreshTimer);
       stream?.stop();

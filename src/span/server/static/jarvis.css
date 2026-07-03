@@ -618,3 +618,13 @@ body.nebula-on #log > * { pointer-events: auto; }
   font: inherit; font-size: 10px; cursor: pointer; width: 100%;
 }
 #nebula-detail .det-hint { margin-top: 6px; color: #475569; font-size: 9px; }
+
+/* N3: reden-label bij de leescascade in de NEBULA */
+#nebula-reason {
+  position: absolute; left: 14px; bottom: 14px; z-index: 2;
+  font: 10px/1.4 Consolas, monospace; letter-spacing: .14em;
+  color: #c4b5fd; text-transform: uppercase;
+  opacity: 0; transition: opacity .5s ease; pointer-events: none;
+  max-width: 60%;
+}
+#nebula-reason.open { opacity: .9; }

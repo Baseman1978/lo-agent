@@ -38,6 +38,10 @@
       const d = await res.json();
       $("inbox-badge").textContent = d.open || "";
       $("inbox-btn").classList.toggle("attention", d.open > 0);
+      // N3: open acties -> de NEBULA-orb toont de waarschuwingsmodus (rood)
+      if (SPAN._nebulaHandle && SPAN._nebulaHandle.setAlert) {
+        SPAN._nebulaHandle.setAlert(d.open > 0);
+      }
       for (const item of d.items) {
         if (item.status === "open" && !known.has(item.id) && !firstPoll) {
           toast(item.title, item.detail, item.urgency);
