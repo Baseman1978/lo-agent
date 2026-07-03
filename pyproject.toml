@@ -36,7 +36,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-span = ["server/static/*", "server/static/vendor/*"]
+span = ["server/static/*", "server/static/vendor/*", "server/static/hud/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
