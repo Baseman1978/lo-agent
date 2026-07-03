@@ -31,6 +31,8 @@ export interface NebulaHandle {
   setSettings(s: OrbSettings): void;
   /** cinema-look aan/uit (scherptediepte/aberratie/korrel); uit = kraakhelder */
   setCinema(on: boolean): void;
+  /** node-stijl: 'zacht' (gloeipunten) of 'strak' (harde kleinere kernen) */
+  setNodeStyle(style: 'zacht' | 'strak'): void;
   unmount(): void;
 }
 
@@ -319,6 +321,9 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
     },
     setCinema(on: boolean) {
       post.setCinema(on);
+    },
+    setNodeStyle(style: 'zacht' | 'strak') {
+      graph?.setNodeStyle(style === 'strak' ? 'strak' : 'zacht');
     },
     markReading(ids: string[], reasonText?: string) {
       if (!graph || !activity) return;

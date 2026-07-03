@@ -207,9 +207,9 @@
     if (!document.body.classList.contains("nebula-on")) return; // klassiek: verbergen
     wrap.classList.remove("hidden");
     const PRESETS = {
-      standaard: { density: 1, flash: 0.15, veinBoost: 1, ripples: false, cinema: true },
-      dicht: { density: 0.7, flash: 0.2, veinBoost: 1.1, ripples: false, cinema: true },
-      flitsend: { density: 0.95, flash: 0.85, veinBoost: 1.25, ripples: false, cinema: true },
+      standaard: { density: 1, flash: 0.15, veinBoost: 1, ripples: false, cinema: true, strak: false },
+      dicht: { density: 0.7, flash: 0.2, veinBoost: 1.1, ripples: false, cinema: true, strak: false },
+      flitsend: { density: 0.95, flash: 0.85, veinBoost: 1.25, ripples: false, cinema: true, strak: false },
     };
     let s;
     try { s = { ...PRESETS.standaard, ...(JSON.parse(localStorage.getItem("span_nebula_orb") || "{}")) }; }
@@ -218,6 +218,7 @@
       localStorage.setItem("span_nebula_orb", JSON.stringify(s));
       if (SPAN._nebulaHandle && SPAN._nebulaHandle.setSettings) SPAN._nebulaHandle.setSettings(s);
       if (SPAN._nebulaHandle && SPAN._nebulaHandle.setCinema) SPAN._nebulaHandle.setCinema(s.cinema !== false);
+      if (SPAN._nebulaHandle && SPAN._nebulaHandle.setNodeStyle) SPAN._nebulaHandle.setNodeStyle(s.strak ? "strak" : "zacht");
     };
     const sync = () => {
       $("neb-density").value = s.density; $("neb-density-label").textContent = (+s.density).toFixed(2);
@@ -225,6 +226,7 @@
       $("neb-veins").value = s.veinBoost; $("neb-veins-label").textContent = (+s.veinBoost).toFixed(2);
       $("neb-ripples").checked = !!s.ripples;
       $("neb-cinema").checked = s.cinema !== false;
+      $("neb-strak").checked = !!s.strak;
     };
     const on = (id, fn) => $(id).addEventListener("input", fn);
     on("neb-density", (e) => { s.density = +e.target.value; sync(); apply(); });
@@ -232,6 +234,7 @@
     on("neb-veins", (e) => { s.veinBoost = +e.target.value; sync(); apply(); });
     $("neb-ripples").addEventListener("change", (e) => { s.ripples = e.target.checked; apply(); });
     $("neb-cinema").addEventListener("change", (e) => { s.cinema = e.target.checked; apply(); });
+    $("neb-strak").addEventListener("change", (e) => { s.strak = e.target.checked; apply(); });
     for (const naam of Object.keys(PRESETS)) {
       $("neb-preset-" + naam).onclick = () => { s = { ...PRESETS[naam] }; sync(); apply(); };
     }
