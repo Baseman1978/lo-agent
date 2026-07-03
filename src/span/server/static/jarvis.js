@@ -488,7 +488,7 @@ async function loadPanels() {
       .then((r) => (r.ok ? r.json() : null))
       .then((md) => {
         if (!md) return;
-        SPAN._meetingsOk = md.configured && (md.meetings || []).length > 0;
+        SPAN._meetingsOk = (md.meetings || []).length > 0;  // data telt, niet de koppelvorm (MCP of native)
         const plek = SPAN.panelLayout().meetings;
         const sec = document.querySelector('[data-panel="meetings"]');
         const tonen = SPAN._meetingsOk && plek !== "uit";
@@ -757,7 +757,7 @@ SPAN.applyPanelLayout(SPAN.panelLayout());
   if (!gl2) { console.warn("[nebula] geen WebGL2 - klassieke weergave"); return; }
   SPAN._nebula = true;
   document.body.classList.add("nebula-on");
-  import("/static/hud/nebula.js?v=61").then((m) => {
+  import("/static/hud/nebula.js?v=62").then((m) => {
     const center = document.getElementById("center");
     if (!center) return;
     const bg = document.createElement("div");

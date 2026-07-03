@@ -663,6 +663,7 @@ body.mode-min #bar {
   position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%);
   z-index: 2; background: transparent; border: none; padding: 0;
   display: flex; gap: 14px; align-items: center;
+  width: auto; margin: 0;  /* anders houdt de bar z'n volle breedte en hangt de cluster links */
 }
 body.mode-min #bar button {
   width: 56px; height: 56px; border-radius: 50%;
