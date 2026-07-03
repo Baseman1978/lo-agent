@@ -1,7 +1,7 @@
 import { forceRadial, forceY } from 'd3-force-3d';
 import * as THREE from 'three';
 import ThreeForceGraph from 'three-forcegraph';
-import { makeGlowTexture } from './fx';
+import { makeCoreTexture, makeGlowTexture } from './fx';
 import {
   generateGraph,
   type GraphData,
@@ -28,6 +28,8 @@ export interface KnowledgeGraph {
   spark(a: string, b: string, color: string, width?: number): boolean;
   /** vuur één impuls af over een willekeurige verbinding (basisactiviteit) */
   sparkRandom(color: string): void;
+  /** node-stijl: 'zacht' (gloeipunten) of 'strak' (kleinere, hardere kernen) */
+  setNodeStyle(style: 'zacht' | 'strak'): void;
 }
 
 /**
@@ -49,25 +51,30 @@ export function createKnowledgeGraph(initial?: GraphData): KnowledgeGraph {
   for (const l of data.links) addEdge(l.source, l.target);
 
   // stap A "fijnheid": nodes als zachte gloeipunten i.p.v. 3D-bolletjes —
-  // fijner beeld én ~10× goedkoper te renderen; hubs blijven groter via val
-  const nodeTex = makeGlowTexture();
+  // fijner beeld én ~10× goedkoper te renderen; hubs blijven groter via val.
+  // 'strak' (smaakknop Bas): compacte harde kern met dunne gloedrand.
+  const glowTex = makeGlowTexture();
+  const coreTex = makeCoreTexture();
+  let nodeStyle: 'zacht' | 'strak' = 'zacht';
+  const nodeSprite = (n: any): THREE.Sprite => {
+    const node = n as MemoryNode;
+    const strak = nodeStyle === 'strak';
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: strak ? coreTex : glowTex,
+        color: node.color,
+        transparent: true,
+        opacity: strak ? 1 : 0.95,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      })
+    );
+    sprite.scale.setScalar(strak ? 4 + node.val * 1.5 : 7 + node.val * 2.4);
+    return sprite;
+  };
   const graph = new ThreeForceGraph()
     .graphData(data)
-    .nodeThreeObject((n: any) => {
-      const node = n as MemoryNode;
-      const sprite = new THREE.Sprite(
-        new THREE.SpriteMaterial({
-          map: nodeTex,
-          color: node.color,
-          transparent: true,
-          opacity: 0.95,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-        })
-      );
-      sprite.scale.setScalar(7 + node.val * 2.4);
-      return sprite;
-    })
+    .nodeThreeObject(nodeSprite)
     .linkColor(() => '#38bdf8')
     .linkOpacity(0.1)
     // impulsen: geen permanente deeltjes — we vuren ze per stuk af via emitParticle
@@ -186,6 +193,11 @@ export function createKnowledgeGraph(initial?: GraphData): KnowledgeGraph {
       link.__sparkWidth = width;
       emitter().emitParticle!(link);
       return true;
+    },
+    setNodeStyle: (style) => {
+      if (style === nodeStyle) return;
+      nodeStyle = style;
+      graph.nodeThreeObject(nodeSprite); // her-toewijzen -> sprites opnieuw opgebouwd
     },
     sparkRandom: (color) => {
       const links = (graph.graphData() as GraphData).links as SparkLink[];
