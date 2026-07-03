@@ -483,6 +483,24 @@ async function loadPanels() {
     ];
     fill("quests", questItems, "geen open quests of geplande taken");
 
+    // meetings (Fireflies) — eigen endpoint; paneel alleen tonen mét data
+    fetch("/api/meetings", { headers: SPAN.authHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((md) => {
+        if (!md) return;
+        SPAN._meetingsOk = md.configured && (md.meetings || []).length > 0;
+        const plek = SPAN.panelLayout().meetings;
+        const sec = document.querySelector('[data-panel="meetings"]');
+        const tonen = SPAN._meetingsOk && plek !== "uit";
+        if (sec) sec.classList.toggle("hidden", !tonen);
+        if (tonen) {
+          fill("meetings", md.meetings.map((m) =>
+            item(m.title || "(zonder titel)",
+                 `${esc(m.date || "")}${m.duration_min ? " · " + Math.round(m.duration_min) + " min" : ""}`)),
+            "geen meetings");
+        }
+      }).catch(() => { /* stil */ });
+
   } catch (e) { panelsError("netwerk"); }
   try {
     const res = await fetch("/api/status", { headers: SPAN.authHeaders() });
@@ -692,6 +710,43 @@ $("end").onclick = () => {
   }
 };
 
+/* -- weergave-modi: minimaal (stem) · chat · volledig ----------------------- */
+const MODES = ["min", "chat", "full"];
+SPAN.setMode = (m) => {
+  if (!MODES.includes(m)) m = "full";
+  document.body.classList.remove("mode-min", "mode-chat", "mode-full");
+  document.body.classList.add("mode-" + m);
+  localStorage.setItem("span_mode", m);
+  document.querySelectorAll("#mode-switch button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.mode === m));
+};
+SPAN.setMode(localStorage.getItem("span_mode") || "full");
+document.querySelectorAll("#mode-switch button").forEach((b) =>
+  b.addEventListener("click", () => SPAN.setMode(b.dataset.mode)));
+
+/* -- panelen indelen (volledig-weergave): links / rechts / uit --------------- */
+const PANEL_ORDER = ["agenda", "taken", "mail", "quests", "meetings", "brein"];
+const PANEL_DEFAULT = { agenda: "links", taken: "links", mail: "rechts",
+                        quests: "rechts", meetings: "rechts", brein: "uit" };
+SPAN.panelLayout = () => {
+  try { return { ...PANEL_DEFAULT, ...(JSON.parse(localStorage.getItem("span_panels") || "{}")) }; }
+  catch (e) { return { ...PANEL_DEFAULT }; }
+};
+SPAN.applyPanelLayout = (cfg) => {
+  const left = $("left"), right = $("right");
+  for (const name of PANEL_ORDER) {
+    const sec = document.querySelector(`[data-panel="${name}"]`);
+    if (!sec) continue;
+    const plek = cfg[name] || "uit";
+    // meetings blijft óók verborgen zolang er geen data is (loader beslist)
+    const verborgen = plek === "uit" || (name === "meetings" && !SPAN._meetingsOk);
+    sec.classList.toggle("hidden", verborgen);
+    if (plek === "links" && left) left.appendChild(sec);
+    else if (plek === "rechts" && right) right.appendChild(sec);
+  }
+};
+SPAN.applyPanelLayout(SPAN.panelLayout());
+
 /* -- N0: NEBULA-weergave (feature-flag, Instellingen -> Uiterlijk) ----------
    Synchroon de vlag zetten (orb.js leest hem bij eigen load), daarna de
    gebundelde scene lazy laden. Geen WebGL2 -> stil terugvallen op klassiek. */
@@ -702,7 +757,7 @@ $("end").onclick = () => {
   if (!gl2) { console.warn("[nebula] geen WebGL2 - klassieke weergave"); return; }
   SPAN._nebula = true;
   document.body.classList.add("nebula-on");
-  import("/static/hud/nebula.js?v=60").then((m) => {
+  import("/static/hud/nebula.js?v=61").then((m) => {
     const center = document.getElementById("center");
     if (!center) return;
     const bg = document.createElement("div");

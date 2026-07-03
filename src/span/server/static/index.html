@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LO · Lomans</title>
-<link rel="stylesheet" href="/static/jarvis.css?v=60">
-<link rel="stylesheet" href="/static/effects.css?v=60">
+<link rel="stylesheet" href="/static/jarvis.css?v=61">
+<link rel="stylesheet" href="/static/effects.css?v=61">
 </head>
 <body>
 
@@ -23,6 +23,11 @@
   <div id="clockbox">
     <div id="clock">--:--:--</div>
     <div id="date">—</div>
+  </div>
+  <div id="mode-switch" role="group" aria-label="Weergave">
+    <button data-mode="min" title="Minimaal — alleen de hub, bedien met je stem" aria-label="Minimale weergave">◯</button>
+    <button data-mode="chat" title="Chat — hub boven, gesprek eronder" aria-label="Chat-weergave">◐</button>
+    <button data-mode="full" title="Volledig — hub, chat en panelen" aria-label="Volledige weergave">▦</button>
   </div>
   <div class="hdr-controls">
     <span id="health-dot" title="systeemstatus"></span>
@@ -52,11 +57,11 @@
 
 <main>
   <aside id="left" class="col">
-    <section class="panel" id="panel-agenda">
+    <section class="panel" id="panel-agenda" data-panel="agenda">
       <h2>⟢ Agenda</h2>
       <div class="body" id="agenda"><div class="empty">geen data</div></div>
     </section>
-    <section class="panel" id="panel-taken">
+    <section class="panel" id="panel-taken" data-panel="taken">
       <h2>⟢ Taken · Asana + To&nbsp;Do</h2>
       <div class="body" id="taken"><div class="empty">geen data</div></div>
     </section>
@@ -84,7 +89,7 @@
   </section>
 
   <aside id="right" class="col">
-    <section class="panel" id="panel-brein">
+    <section class="panel" id="panel-brein" data-panel="brein">
       <h2>⟢ Brein-hologram <button id="holo-expand" class="iconbtn" title="Fullscreen" aria-label="Hologram fullscreen">⛶</button></h2>
       <div id="holo-canvas"><div id="holo-scene"></div></div>
       <div id="holo-search-wrap"></div>
@@ -92,13 +97,17 @@
       <div id="holo-count" class="m"></div>
       <div class="body" id="brein"><div class="empty">geen data</div></div>
     </section>
-    <section class="panel" id="panel-mail">
+    <section class="panel" id="panel-mail" data-panel="mail">
       <h2><span>⟢ Mail</span></h2>
       <div class="body" id="mail"><div class="empty">geen data</div></div>
     </section>
-    <section class="panel" id="panel-quests">
+    <section class="panel" id="panel-quests" data-panel="quests">
       <h2>⟢ Quests &amp; gepland</h2>
       <div class="body" id="quests"><div class="empty">geen data</div></div>
+    </section>
+    <section class="panel hidden" id="panel-meetings" data-panel="meetings">
+      <h2>⟢ Meetings · Fireflies</h2>
+      <div class="body" id="meetings"><div class="empty">geen data</div></div>
     </section>
   </aside>
 </main>
@@ -291,6 +300,12 @@
     </div>
     <div class="m" style="margin-bottom:10px;opacity:.7">Direct zichtbaar; lokaal bewaard.</div>
     </div><!-- /nebula-tuning -->
+
+    <h3>Panelen (volledig-weergave)</h3>
+    <div class="m" style="margin-bottom:6px">Bepaal per paneel of hij links, rechts
+      of niet zichtbaar is. Geldt voor de ▦-weergave.</div>
+    <div id="panel-layout" class="m">laden…</div>
+
 
     <h3>Orb (centrale visual)</h3>
     <div class="m" style="margin-bottom:6px">De ronde visual die reageert als LO praat/luistert/nadenkt.
@@ -537,13 +552,13 @@
 <script src="/static/vendor/postprocessing__EffectComposer.js"></script>
 <script src="/static/vendor/postprocessing__UnrealBloomPass.js"></script>
 <script src="/static/vendor/qrcode.js"></script>
-<script src="/static/jarvis.js?v=60"></script>
-<script src="/static/fx.js?v=60"></script>
-<script src="/static/effects.js?v=60"></script>
-<script src="/static/orb.js?v=60"></script>
-<script src="/static/voice.js?v=60"></script>
-<script src="/static/hologram.js?v=60"></script>
-<script src="/static/settings.js?v=60"></script>
-<script src="/static/ambient.js?v=60"></script>
+<script src="/static/jarvis.js?v=61"></script>
+<script src="/static/fx.js?v=61"></script>
+<script src="/static/effects.js?v=61"></script>
+<script src="/static/orb.js?v=61"></script>
+<script src="/static/voice.js?v=61"></script>
+<script src="/static/hologram.js?v=61"></script>
+<script src="/static/settings.js?v=61"></script>
+<script src="/static/ambient.js?v=61"></script>
 </body>
 </html>

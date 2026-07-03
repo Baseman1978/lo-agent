@@ -4,6 +4,8 @@
    blijvend infopaneel toont type, herkomst (provenance) en relaties. */
 "use strict";
 (() => {
+  const _breinPaneel = document.getElementById("panel-brein");
+  if (_breinPaneel && _breinPaneel.classList.contains("hidden")) return; // paneel uit -> niet renderen
   const SPAN = window.SPAN;
   if (typeof ForceGraph3D === "undefined") return; // vendor-bundle niet geladen
   const esc = SPAN.esc || ((s) => String(s || "").replace(/[<>&]/g,
