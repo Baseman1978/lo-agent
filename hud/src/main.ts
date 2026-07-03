@@ -114,6 +114,7 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
   // (een lopend antwoord niet visueel onderbreken); de inbox-badge blijft toch.
   let lastState: LoState = 'idle';
   let alertOn = false;
+  let nodeStyleWanted: 'zacht' | 'strak' = 'zacht';
   const applyState = (): void => {
     const effective: AgentState = alertOn && lastState === 'idle' ? 'alert' : lastState;
     agent.set(effective, true); // manual -> auto-demo stopt definitief
@@ -323,7 +324,8 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
       post.setCinema(on);
     },
     setNodeStyle(style: 'zacht' | 'strak') {
-      graph?.setNodeStyle(style === 'strak' ? 'strak' : 'zacht');
+      nodeStyleWanted = style === 'strak' ? 'strak' : 'zacht';
+      graph?.setNodeStyle(nodeStyleWanted);
     },
     markReading(ids: string[], reasonText?: string) {
       if (!graph || !activity) return;
