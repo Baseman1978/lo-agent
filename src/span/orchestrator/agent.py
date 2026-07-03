@@ -119,6 +119,7 @@ class SpanAgent:
         inbox: Any = None,
         autonomy: dict[str, str] | None = None,
         disabled_tools: set[str] | None = None,
+        integration_perms: dict | None = None,
         user_location: dict[str, float] | None = None,
         fireflies: Any = None,
         mcp: Any = None,
@@ -138,6 +139,7 @@ class SpanAgent:
         self._inbox = inbox
         self._autonomy = autonomy
         self._disabled_tools = disabled_tools
+        self._integration_perms = integration_perms
         self.user_location = user_location  # browser-GPS; mag later gezet worden
         self._fireflies = fireflies
         self.last_touched: list[str] = []
@@ -185,6 +187,7 @@ class SpanAgent:
             inbox=self._inbox, autonomy=self._autonomy,
             llm=self._llm, light_model=self._settings.model_light,
             disabled=self._disabled_tools,
+            perms=self._integration_perms,
             user_location=self.user_location,
             fireflies=self._fireflies,
             security=self._security,

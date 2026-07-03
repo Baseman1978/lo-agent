@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
         "RETURN c.model_main AS model_main, c.model_light AS model_light, "
         "       c.autonomy_mail AS autonomy_mail, c.autonomy_event AS autonomy_event, "
         "       c.triage_rules AS triage_rules, c.disabled_tools AS disabled_tools, "
-        "       c.tts_engine AS tts_engine"
+        "       c.tts_engine AS tts_engine, c.integration_perms AS integration_perms"
     )
     cfg = overrides[0] if overrides else {}
     from span.server import tts
@@ -87,6 +87,7 @@ async def lifespan(app: FastAPI):
         inbox=AgentInbox(),
         triage_rules=cfg.get("triage_rules") or "",
         disabled_tools=set(cfg.get("disabled_tools") or []),
+        integration_perms=__import__("json").loads(cfg.get("integration_perms") or "{}"),
     )
     from span.safety.settings import load_security
     _state["security"] = load_security(brain)
@@ -226,6 +227,7 @@ async def ws_chat(ws: WebSocket) -> None:
         o365=ctx.o365, asana=_state.get("asana"),
         inbox=_state["inbox"], autonomy=_state["autonomy"],
         disabled_tools=_state.get("disabled_tools"),
+        integration_perms=_state.get("integration_perms"),
         fireflies=_state.get("fireflies"),
         mcp=_state.get("mcp"),
         shared_brain=ctx.shared,
