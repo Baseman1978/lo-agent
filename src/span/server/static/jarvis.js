@@ -757,7 +757,7 @@ SPAN.applyPanelLayout(SPAN.panelLayout());
   if (!gl2) { console.warn("[nebula] geen WebGL2 - klassieke weergave"); return; }
   SPAN._nebula = true;
   document.body.classList.add("nebula-on");
-  import("/static/hud/nebula.js?v=62").then((m) => {
+  import("/static/hud/nebula.js?v=63").then((m) => {
     const center = document.getElementById("center");
     if (!center) return;
     const bg = document.createElement("div");
@@ -768,6 +768,7 @@ SPAN.applyPanelLayout(SPAN.panelLayout());
     try {  // bewaarde orb-tuning meteen toepassen
       const t = JSON.parse(localStorage.getItem("span_nebula_orb") || "null");
       if (t) SPAN._nebulaHandle.setSettings(t);
+      if (t && t.cinema === false) SPAN._nebulaHandle.setCinema(false);
     } catch (e) { /* stil */ }
   }).catch((e) => console.warn("[nebula] laden mislukt:", e));
 })();

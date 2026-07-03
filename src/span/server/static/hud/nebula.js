@@ -20765,10 +20765,17 @@ function Vy(e, t, n, r = !1) {
 	});
 	m.blendMode.opacity.value = .07;
 	let h = new Ry(n, d), g = new Ry(n, p);
-	return i.addPass(h), r ? i.addPass(new Ry(n, a, u, f)) : (i.addPass(g), i.addPass(new Ry(n, a, o, c, u, m, f))), {
+	i.addPass(h), r ? i.addPass(new Ry(n, a, u, f)) : (i.addPass(g), i.addPass(new Ry(n, a, o, c, u, m, f)));
+	let _ = !0, v = m.blendMode.blendFunction, y = (e) => {
+		o.blendMode.setBlendFunction(e ? s : $.SKIP), c.blendMode.setBlendFunction(e ? l : $.SKIP), m.blendMode.setBlendFunction(e ? v : $.SKIP), g.enabled = e;
+	};
+	return {
 		composer: i,
 		setCosmetics(e) {
-			r || (o.blendMode.setBlendFunction(e ? s : $.SKIP), c.blendMode.setBlendFunction(e ? l : $.SKIP), g.enabled = e);
+			r || y(e && _);
+		},
+		setCinema(e) {
+			_ = e, r || y(e);
 		},
 		setFocus(e) {
 			p.target ? p.target.copy(e) : p.target = e.clone();
@@ -20946,6 +20953,9 @@ function Yy(e, t = {}) {
 		},
 		setSettings(e) {
 			c.setSettings(e);
+		},
+		setCinema(e) {
+			f.setCinema(e);
 		},
 		markReading(e, n) {
 			if (!C || !w) return;

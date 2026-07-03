@@ -19,6 +19,9 @@ export interface PostChain {
   composer: EffectComposer;
   /** toggle the cosmetic effects for adaptive quality */
   setCosmetics(enabled: boolean): void;
+  /** cinema-look (scherptediepte, aberratie, scanlines, korrel) aan/uit —
+      uit = kraakhelder beeld; bloom/SMAA/tonemapping blijven altijd aan */
+  setCinema(on: boolean): void;
   /** cinematografische focus (DoF) volgt dit punt — meestal de orb of de geselecteerde node */
   setFocus(target: THREE.Vector3): void;
 }
@@ -86,14 +89,23 @@ export function createPostChain(
     composer.addPass(new EffectPass(camera, bloom, aberration, scanlines, vignette, grain, toneMapping));
   }
 
+  let cinema = true;
+  const grainBlend = grain.blendMode.blendFunction;
+  const applyLook = (enabled: boolean): void => {
+    aberration.blendMode.setBlendFunction(enabled ? aberrationBlend : BlendFunction.SKIP);
+    scanlines.blendMode.setBlendFunction(enabled ? scanlineBlend : BlendFunction.SKIP);
+    grain.blendMode.setBlendFunction(enabled ? grainBlend : BlendFunction.SKIP);
+    dofPass.enabled = enabled;
+  };
   return {
     composer,
     setCosmetics(enabled: boolean) {
       if (lite) return; // lite draait al minimaal
-      aberration.blendMode.setBlendFunction(enabled ? aberrationBlend : BlendFunction.SKIP);
-      scanlines.blendMode.setBlendFunction(enabled ? scanlineBlend : BlendFunction.SKIP);
-      // DoF is de duurste pass — als eerste uit bij krappe fps (niet de laatste pass, dus veilig)
-      dofPass.enabled = enabled;
+      applyLook(enabled && cinema); // adaptieve kwaliteit respecteert de cinema-keuze
+    },
+    setCinema(on: boolean) {
+      cinema = on;
+      if (!lite) applyLook(on);
     },
     setFocus(target: THREE.Vector3) {
       if (dof.target) dof.target.copy(target);
