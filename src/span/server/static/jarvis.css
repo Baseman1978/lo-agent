@@ -584,3 +584,37 @@ body.nebula-on #log .msg {
   background: rgba(3, 9, 17, .55); border-radius: 8px;
   padding: 6px 10px; backdrop-filter: blur(2px);
 }
+
+/* N2: NEBULA-interactie — chat-laag laat muis door naar de scene behalve op inhoud */
+body.nebula-on #log { pointer-events: none; }
+body.nebula-on #log > * { pointer-events: auto; }
+/* hover-tooltip + detailpaneel van de geheugenwolk */
+#nebula-tooltip {
+  position: fixed; z-index: 20; pointer-events: none; display: none;
+  font: 10px/1 Consolas, monospace; letter-spacing: .08em;
+  color: #f0f9ff; background: rgba(8, 47, 73, .88);
+  border: 1px solid rgba(103, 232, 249, .6); border-radius: 3px;
+  padding: 6px 9px; max-width: 340px;
+}
+#nebula-tooltip.open { display: block; }
+#nebula-detail {
+  position: fixed; top: 76px; left: 330px; z-index: 20; width: 250px;
+  font: 11px/1.8 Consolas, monospace; letter-spacing: .05em;
+  color: #bae6fd; background: rgba(3, 20, 36, .85);
+  border: 1px solid rgba(56, 189, 248, .45); border-radius: 5px;
+  padding: 12px 14px; display: none; backdrop-filter: blur(3px);
+}
+#nebula-detail.open { display: block; }
+#nebula-detail .det-title { color: #f0f9ff; font-size: 12px; margin-bottom: 6px; }
+#nebula-detail .det-row b { color: #e0f2fe; }
+#nebula-detail .det-nb { color: var(--dim); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#nebula-detail .chip {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 7px; vertical-align: -1px;
+}
+#nebula-detail .det-share {
+  margin-top: 8px; background: transparent; color: var(--cyan);
+  border: 1px solid var(--cyan-dim); border-radius: 6px; padding: 5px 9px;
+  font: inherit; font-size: 10px; cursor: pointer; width: 100%;
+}
+#nebula-detail .det-hint { margin-top: 6px; color: #475569; font-size: 9px; }
