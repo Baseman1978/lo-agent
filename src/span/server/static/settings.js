@@ -620,6 +620,9 @@
       ["span_tts_speaker", "span_tts_length", "span_tts_noise", "span_tts_noisew", "span_tts_volume"]
         .forEach((k) => localStorage.removeItem(k));
       ttsInit();
+    };
+  }
+  ttsInit();
 
   /* -- Rechten van LO: per integratie, acties in een popup ----------------- */
   function permsInit() {
@@ -726,9 +729,6 @@
       .catch(() => { wrap.textContent = "rechten laden mislukt"; });
   }
   permsInit();
-    };
-  }
-  ttsInit();
 
   /* -- Skills: lijst + maken/bewerken/aan-uit/verwijderen ------------------ */
   function skillsInit() {
