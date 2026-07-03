@@ -572,3 +572,15 @@ body[data-theme="warmachine"] {
 }
 .perm-badge.write { color: var(--warn); border-color: var(--warn); }
 .perm-badge.read { color: var(--cyan-dim); }
+
+/* N1: NEBULA-weergave — de scene als center-achtergrond, chat zweeft erover */
+body.nebula-on #reactor-wrap, body.nebula-on #wave, body.nebula-on #fx { display: none; }
+body.nebula-on #center { position: relative; }
+#nebula-bg { position: absolute; inset: 0; z-index: 0; }
+body.nebula-on #log, body.nebula-on #suggested, body.nebula-on #bar {
+  position: relative; z-index: 1;
+}
+body.nebula-on #log .msg {
+  background: rgba(3, 9, 17, .55); border-radius: 8px;
+  padding: 6px 10px; backdrop-filter: blur(2px);
+}

@@ -692,12 +692,14 @@ $("end").onclick = () => {
   try { gl2 = !!document.createElement("canvas").getContext("webgl2"); } catch (e) { /* stil */ }
   if (!gl2) { console.warn("[nebula] geen WebGL2 - klassieke weergave"); return; }
   SPAN._nebula = true;
-  import("/static/hud/nebula.js?v=55").then((m) => {
-    const wrap = document.getElementById("reactor-wrap");
-    if (!wrap) return;
-    wrap.innerHTML = "";
-    wrap.style.height = "220px";
-    SPAN._nebulaHandle = m.mount(wrap);
+  document.body.classList.add("nebula-on");
+  import("/static/hud/nebula.js?v=56").then((m) => {
+    const center = document.getElementById("center");
+    if (!center) return;
+    const bg = document.createElement("div");
+    bg.id = "nebula-bg";
+    center.prepend(bg);
+    SPAN._nebulaHandle = m.mount(bg);
   }).catch((e) => console.warn("[nebula] laden mislukt:", e));
 })();
 
