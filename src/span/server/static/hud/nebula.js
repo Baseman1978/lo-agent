@@ -17461,7 +17461,7 @@ function j_(e) {
 	}, h = () => o, g = (e) => {
 		l = e.cavity;
 		let t = o;
-		t.d3Force("radial", e.radial === null ? null : Ip(e.radial).strength(.9)), t.d3Force("flatten", e.y === null ? null : Lp(e.y).strength(e.yStrength)), t.d3ReheatSimulation?.(), t.resetCountdown?.();
+		t.d3Force("radial", e.radial === null ? null : Ip(e.radial).strength(e.radialStrength ?? .9)), t.d3Force("flatten", e.y === null ? null : Lp(e.y).strength(e.yStrength)), t.d3ReheatSimulation?.(), t.resetCountdown?.();
 	};
 	return {
 		object: o,
@@ -20853,7 +20853,8 @@ function Yy(e, t = {}) {
 		_.textContent = e, _.classList.add("open"), v && clearTimeout(v), v = setTimeout(() => _.classList.remove("open"), 4500);
 	}, b = new U(...Gy), x = new U(), S = !1, C = null, w = null, T = null, E = null, D = null, O = /* @__PURE__ */ new Map(), k = [], A = (e) => {
 		C = e, e.setForces({
-			radial: null,
+			radial: 400,
+			radialStrength: .15,
 			y: null,
 			yStrength: 0,
 			cavity: Ky
@@ -20942,6 +20943,9 @@ function Yy(e, t = {}) {
 		},
 		setAlert(e) {
 			h = e, g();
+		},
+		setSettings(e) {
+			c.setSettings(e);
 		},
 		markReading(e, n) {
 			if (!C || !w) return;
