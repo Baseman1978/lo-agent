@@ -580,14 +580,14 @@ body.nebula-on #center { position: relative; }
 body.nebula-on #log, body.nebula-on #suggested, body.nebula-on #bar {
   position: relative; z-index: 1;
 }
-body.nebula-on #log .msg {
+body.nebula-on.mode-full #log .msg {
   background: rgba(3, 9, 17, .55); border-radius: 8px;
   padding: 6px 10px; backdrop-filter: blur(2px);
 }
 
 /* N2: NEBULA-interactie — chat-laag laat muis door naar de scene behalve op inhoud */
-body.nebula-on #log { pointer-events: none; }
-body.nebula-on #log > * { pointer-events: auto; }
+body.nebula-on.mode-full #log { pointer-events: none; }
+body.nebula-on.mode-full #log > * { pointer-events: auto; }
 /* hover-tooltip + detailpaneel van de geheugenwolk */
 #nebula-tooltip {
   position: fixed; z-index: 20; pointer-events: none; display: none;
@@ -628,3 +628,74 @@ body.nebula-on #log > * { pointer-events: auto; }
   max-width: 60%;
 }
 #nebula-reason.open { opacity: .9; }
+
+/* ==== Weergave-modi: de interface ademt rond de orb ======================= */
+
+/* -- switcher in de header: drie fasen van aanwezigheid -------------------- */
+#mode-switch {
+  display: flex; gap: 2px; margin-left: 18px; padding: 3px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: rgba(6, 14, 26, .6);
+}
+#mode-switch button {
+  background: transparent; border: none; color: var(--dim); cursor: pointer;
+  font-size: 14px; line-height: 1; padding: 6px 12px; border-radius: 6px;
+  transition: color .25s ease, background .25s ease, text-shadow .25s ease;
+}
+#mode-switch button:hover { color: var(--text); }
+#mode-switch button.active {
+  color: var(--cyan); background: rgba(56, 225, 255, .12);
+  text-shadow: 0 0 12px var(--cyan-soft);
+}
+
+/* zachte overgangen bij het wisselen */
+.col, #log, #bar, #suggested { transition: opacity .35s ease; }
+
+/* -- MINIMAAL: planetarium — alleen de hub, bedien met je stem -------------- */
+body.mode-min .col { display: none; }
+body.mode-min #log, body.mode-min #suggested,
+body.mode-min #bar #input, body.mode-min #bar #doc,
+body.mode-min #bar #stop, body.mode-min #bar #end { display: none; }
+body.mode-min main { padding: 0; gap: 0; }
+body.mode-min #center { position: relative; }
+body.mode-min #reactor-wrap { padding-top: 8vh; }  /* klassieke weergave: orb hoger */
+body.mode-min #bar {
+  position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%);
+  z-index: 2; background: transparent; border: none; padding: 0;
+  display: flex; gap: 14px; align-items: center;
+}
+body.mode-min #bar button {
+  width: 56px; height: 56px; border-radius: 50%;
+  font-size: 20px; letter-spacing: 0;
+  background: rgba(6, 14, 26, .72); border: 1px solid var(--cyan-dim);
+  color: var(--cyan); backdrop-filter: blur(4px);
+}
+body.mode-min #bar #wake { width: auto; padding: 0 22px; border-radius: 28px; font-size: 12px; }
+body.mode-min #bar #mic { position: relative; }
+body.mode-min #bar #mic::after {
+  content: ""; position: absolute; inset: -7px; border-radius: 50%;
+  border: 1px solid var(--cyan-soft); animation: voice-breathe 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes voice-breathe {
+  0%, 100% { transform: scale(1); opacity: .55; }
+  50% { transform: scale(1.12); opacity: .15; }
+}
+
+/* -- CHAT: cockpitgesprek — hub boven, dialoog in een eigen glazen vlak ----- */
+body.mode-chat .col { display: none; }
+body.mode-chat #center { position: relative; }
+body.mode-chat #nebula-bg {
+  position: relative; inset: auto; flex: none; height: 52%;
+  border-bottom: 1px solid var(--line);
+}
+body.mode-chat.nebula-on #reactor-wrap, body.mode-chat.nebula-on #wave { display: none; }
+body.mode-chat #log {
+  background: linear-gradient(180deg, rgba(6, 12, 22, .35), transparent 18%);
+}
+
+/* -- VOLLEDIG: commandocentrum (huidige overlay-compositie) ----------------- */
+/* geen extra regels nodig — dit is de basisopmaak */
+
+/* meetings-paneel deelt de item-taal van de andere panelen */
+#panel-meetings .item .m { letter-spacing: .04em; }

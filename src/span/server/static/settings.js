@@ -164,6 +164,42 @@
     $("qr-note").textContent = `Scan met je telefoon (zelfde wifi): ${url}`;
   };
 
+  /* -- panelen-indeling (volledig-weergave): links/rechts/uit ---------------- */
+  (function panelLayoutInit() {
+    const wrap = $("panel-layout");
+    if (!wrap || !SPAN.panelLayout || !SPAN.applyPanelLayout) return;
+    const NAMEN = { agenda: "Agenda", taken: "Taken (Asana + To Do)", mail: "Mail",
+                    quests: "Quests & gepland", meetings: "Meetings (Fireflies)",
+                    brein: "Brein-hologram (klassiek)" };
+    const cfg = SPAN.panelLayout();
+    wrap.innerHTML = "";
+    for (const naam of Object.keys(NAMEN)) {
+      const row = document.createElement("div");
+      row.className = "setrow";
+      const lab = document.createElement("label");
+      lab.textContent = NAMEN[naam];
+      lab.setAttribute("for", "pl-" + naam);
+      const sel = document.createElement("select");
+      sel.id = "pl-" + naam;
+      for (const [w, t] of [["links", "links"], ["rechts", "rechts"], ["uit", "verbergen"]]) {
+        const o = document.createElement("option");
+        o.value = w; o.textContent = t;
+        sel.appendChild(o);
+      }
+      sel.value = cfg[naam] || "uit";
+      sel.onchange = () => {
+        cfg[naam] = sel.value;
+        localStorage.setItem("span_panels", JSON.stringify(cfg));
+        SPAN.applyPanelLayout(cfg);
+        if (naam === "brein" && sel.value !== "uit") {
+          SPAN.sys("Brein-hologram aangezet — herlaad de pagina om hem te starten.");
+        }
+      };
+      row.append(lab, sel);
+      wrap.appendChild(row);
+    }
+  })();
+
   /* -- NEBULA-orb-tuning: dichtheid/flitsen/aders/ringen (N4) --------------- */
   (function nebulaTuning() {
     const wrap = $("nebula-tuning");

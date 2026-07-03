@@ -1041,6 +1041,19 @@ async def health(request: Request) -> dict[str, Any]:
     }
 
 
+@router.get("/api/meetings")
+async def meetings_list(request: Request) -> dict[str, Any]:
+    """Recente Fireflies-meetings voor het HUD-paneel (volledig-weergave)."""
+    _require_rest_auth(request)
+    ctx = _request_context(request)
+    rows = await asyncio.to_thread(
+        ctx.brain.run,
+        "MATCH (m:Meeting) RETURN m.title AS title, m.date AS date, "
+        "m.duration_min AS duration_min, m.participants AS participants "
+        "ORDER BY coalesce(m.date, '') DESC LIMIT 8")
+    return {"configured": _state.get("fireflies") is not None, "meetings": rows}
+
+
 @router.get("/api/jarvis/daily")
 async def jarvis_daily(request: Request, force: bool = Query(False)) -> dict[str, Any]:
     """De dagstart van vandaag; genereert hem alsnog als de scheduler nog
