@@ -20909,7 +20909,7 @@ function Yy(e, t = {}) {
 		let t = M * 1e3 / (e - N);
 		M = 0, N = e, t < 40 && ne ? (ne = !1, f.setCosmetics(!1), r.setPixelRatio(1)) : t > 55 && !ne && !n && (ne = !0, f.setCosmetics(!0), r.setPixelRatio(Math.min(window.devicePixelRatio, 2)));
 	}, ie = performance.now(), ae = ie;
-	return r.setAnimationLoop(() => {
+	r.setAnimationLoop(() => {
 		if (document.hidden) return;
 		let e = performance.now(), t = (e - ie) / 1e3, n = e - ae;
 		if (ae = e, p.update(e), E && C) {
@@ -20929,9 +20929,16 @@ function Yy(e, t = {}) {
 			Math.hypot(r.x ?? 0, r.y ?? 0, r.z ?? 0) > 90 ? (u.spawn(r), k.splice(e, 1)) : t.age > 5e3 && k.splice(e, 1);
 		}
 		S && (a.position.lerp(b, .045), o.target.lerp(x, .045), a.position.distanceTo(b) < 2 && (S = !1)), C?.tick(), c.update(t, n, p.state), u.update(n), w?.update(n, p.state), T?.update(t), o.update(), f.setFocus(o.target), re(e), f.composer.render();
-	}), {
+	});
+	let oe = [
+		"idle",
+		"listening",
+		"thinking",
+		"speaking"
+	];
+	return {
 		setState(e) {
-			m = e, g();
+			m = oe.includes(e) ? e : "idle", g();
 		},
 		setAlert(e) {
 			h = e, g();
