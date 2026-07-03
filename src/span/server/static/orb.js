@@ -6,6 +6,7 @@
 "use strict";
 (() => {
   const SPAN = (window.SPAN = window.SPAN || {});
+  if (SPAN._nebula) return;  // NEBULA-weergave actief -> klassieke orb slaapt
   const wrap = document.getElementById("reactor-wrap");
   const classic = document.getElementById("reactor");
   if (!wrap || !classic) return;

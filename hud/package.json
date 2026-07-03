@@ -1,0 +1,22 @@
+{
+  "name": "lo-nebula-hud",
+  "private": true,
+  "version": "0.1.0",
+  "description": "NEBULA-HUD voor LO: GPGPU-orb + geheugenwolk, gebundeld naar src/span/server/static/hud/ (gecommit; de server blijft buildloos). Zie docs/werkplan-hud-nebula.md.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build"
+  },
+  "dependencies": {
+    "d3-force-3d": "3.0.6",
+    "postprocessing": "6.39.2",
+    "three": "0.185.1",
+    "three-forcegraph": "1.43.4"
+  },
+  "devDependencies": {
+    "@types/three": "0.185.0",
+    "typescript": "6.0.3",
+    "vite": "8.1.3"
+  }
+}

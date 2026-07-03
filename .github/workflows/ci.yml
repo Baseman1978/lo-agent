@@ -28,3 +28,20 @@ jobs:
           ORQ_API_KEY: dummy
           NEO4J_PASSWORD: dummy
         run: pytest -q
+
+  # NEBULA-HUD: de gecommitte bundel mag nooit uit de pas lopen met de bron
+  hud:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: hud/package-lock.json
+      - name: Bundel bouwen
+        working-directory: hud
+        run: npm ci && npm run build
+      - name: Drift-check (dist == bron)
+        run: git diff --exit-code -- src/span/server/static/hud

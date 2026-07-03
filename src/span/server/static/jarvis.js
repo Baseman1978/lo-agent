@@ -683,6 +683,24 @@ $("end").onclick = () => {
   }
 };
 
+/* -- N0: NEBULA-weergave (feature-flag, Instellingen -> Uiterlijk) ----------
+   Synchroon de vlag zetten (orb.js leest hem bij eigen load), daarna de
+   gebundelde scene lazy laden. Geen WebGL2 -> stil terugvallen op klassiek. */
+(function nebulaBoot() {
+  if (localStorage.getItem("span_view") !== "nebula") return;
+  let gl2 = false;
+  try { gl2 = !!document.createElement("canvas").getContext("webgl2"); } catch (e) { /* stil */ }
+  if (!gl2) { console.warn("[nebula] geen WebGL2 - klassieke weergave"); return; }
+  SPAN._nebula = true;
+  import("/static/hud/nebula.js?v=55").then((m) => {
+    const wrap = document.getElementById("reactor-wrap");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    wrap.style.height = "220px";
+    SPAN._nebulaHandle = m.mount(wrap);
+  }).catch((e) => console.warn("[nebula] laden mislukt:", e));
+})();
+
 /* -- start ----------------------------------------------------------------- */
 boot();
 // SSO-modus detecteren vóór we verbinden: bij web-login zonder sessie meteen
