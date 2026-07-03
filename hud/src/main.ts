@@ -296,9 +296,12 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
     post.composer.render();
   });
 
+  const GELDIGE_STATES: LoState[] = ['idle', 'listening', 'thinking', 'speaking'];
   return {
     setState(state: LoState) {
-      lastState = state;
+      // grens-validatie: LO kent ook tussenstanden (bv. "boot") — alles wat
+      // de orb niet kent wordt rust, anders crasht BEHAVIOUR[state] de loop
+      lastState = GELDIGE_STATES.includes(state) ? state : 'idle';
       applyState();
     },
     setAlert(on: boolean) {
