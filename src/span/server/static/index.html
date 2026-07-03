@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LO · Lomans</title>
-<link rel="stylesheet" href="/static/jarvis.css?v=52">
-<link rel="stylesheet" href="/static/effects.css?v=52">
+<link rel="stylesheet" href="/static/jarvis.css?v=53">
+<link rel="stylesheet" href="/static/effects.css?v=53">
 </head>
 <body>
 
@@ -457,6 +457,17 @@
   </div>
 </div>
 
+<!-- Rechten per integratie: popup met lees/schrijf-toggles + losse acties -->
+<div id="perm-overlay" role="dialog" aria-modal="true" aria-label="Rechten van een integratie">
+  <div id="perm-panel" class="panel">
+    <h2>⟢ <span id="perm-title">Rechten</span> <button id="perm-close" class="iconbtn" aria-label="Sluiten">✕</button></h2>
+    <div id="perm-toggles" class="setrow"></div>
+    <div class="m" style="margin:2px 0 8px;opacity:.7">Losse acties aan/uit — een
+      uitgezette actie is voor LO onzichtbaar.</div>
+    <div id="perm-list" class="body"></div>
+  </div>
+</div>
+
 <!-- C6: eenmalige welkomstuitleg voor nieuwe gebruikers (localStorage-vlag) -->
 <div id="onboard-overlay" role="dialog" aria-modal="true" aria-label="Welkom">
   <div id="onboard-panel" class="panel">
@@ -489,13 +500,13 @@
 <script src="/static/vendor/postprocessing__EffectComposer.js"></script>
 <script src="/static/vendor/postprocessing__UnrealBloomPass.js"></script>
 <script src="/static/vendor/qrcode.js"></script>
-<script src="/static/jarvis.js?v=52"></script>
-<script src="/static/fx.js?v=52"></script>
-<script src="/static/effects.js?v=52"></script>
-<script src="/static/orb.js?v=52"></script>
-<script src="/static/voice.js?v=52"></script>
-<script src="/static/hologram.js?v=52"></script>
-<script src="/static/settings.js?v=52"></script>
-<script src="/static/ambient.js?v=52"></script>
+<script src="/static/jarvis.js?v=53"></script>
+<script src="/static/fx.js?v=53"></script>
+<script src="/static/effects.js?v=53"></script>
+<script src="/static/orb.js?v=53"></script>
+<script src="/static/voice.js?v=53"></script>
+<script src="/static/hologram.js?v=53"></script>
+<script src="/static/settings.js?v=53"></script>
+<script src="/static/ambient.js?v=53"></script>
 </body>
 </html>

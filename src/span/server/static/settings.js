@@ -621,11 +621,12 @@
         .forEach((k) => localStorage.removeItem(k));
       ttsInit();
 
-  /* -- Rechten van LO: per integratie lezen/schrijven + per actie aan/uit -- */
+  /* -- Rechten van LO: per integratie, acties in een popup ----------------- */
   function permsInit() {
     const wrap = $("int-perms");
     if (!wrap) return;
     let data = null;
+    const pov = $("perm-overlay");
     const save = (partial) => fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...SPAN.authHeaders() },
@@ -643,50 +644,74 @@
       }));
       return out;
     };
+    const summary = (g) => {
+      const uit = g.tools.filter((t) => !t.enabled).length;
+      return " · " + g.tools.length + " actie" + (g.tools.length === 1 ? "" : "s")
+        + " · lezen " + (g.read ? "✓" : "✕")
+        + " · schrijven " + (g.write ? "✓" : "✕")
+        + (uit ? " · " + uit + " uit" : "");
+    };
+    function openPerm(g, ro) {
+      $("perm-title").textContent = "Rechten · " + g.label;
+      const tog = $("perm-toggles");
+      tog.innerHTML = "";
+      const mk = (kind, label) => {
+        const lab = document.createElement("label");
+        lab.className = "perm-toggle";
+        const cb = document.createElement("input");
+        cb.type = "checkbox"; cb.checked = g[kind]; cb.disabled = ro;
+        cb.onchange = () => {
+          g[kind] = cb.checked;
+          save({ integration_perms: collectPerms() });
+          render();
+        };
+        lab.append(cb, document.createTextNode(" " + label));
+        return lab;
+      };
+      tog.append(mk("read", "lezen (direct)"), mk("write", "schrijven (via Agent Inbox)"));
+      const list = $("perm-list");
+      list.innerHTML = "";
+      g.tools.forEach((t) => {
+        const line = document.createElement("label");
+        line.className = "perm-tool";
+        const cb = document.createElement("input");
+        cb.type = "checkbox"; cb.checked = t.enabled; cb.disabled = ro;
+        cb.onchange = () => {
+          t.enabled = cb.checked;
+          save({ disabled_tools: collectDisabled() });
+          render();
+        };
+        const badge = document.createElement("span");
+        badge.className = "perm-badge " + t.rw;
+        badge.textContent = t.rw === "write" ? "schrijft" : "leest";
+        line.append(cb, document.createTextNode(" " + t.name + " "), badge);
+        list.appendChild(line);
+      });
+      pov.classList.add("open");
+    }
+    if (pov) {
+      $("perm-close").onclick = () => pov.classList.remove("open");
+      pov.addEventListener("click", (e) => {
+        if (e.target === pov) pov.classList.remove("open");
+      });
+    }
     function render() {
       wrap.innerHTML = "";
       const ro = data.is_owner === false;   // medewerkers: alleen inzien
       data.integrations.forEach((g) => {
         const row = document.createElement("div");
         row.className = "perm-row";
-        const exp = document.createElement("button");
-        exp.className = "perm-exp"; exp.textContent = "▸";
-        exp.setAttribute("aria-label", "acties van " + g.label + " tonen");
         const name = document.createElement("b");
         name.textContent = g.label;
-        const count = document.createElement("span");
-        count.className = "m";
-        count.textContent = " · " + g.tools.length + " actie" + (g.tools.length === 1 ? "" : "s");
-        const mk = (kind, label) => {
-          const lab = document.createElement("label");
-          lab.className = "perm-toggle";
-          const cb = document.createElement("input");
-          cb.type = "checkbox"; cb.checked = g[kind]; cb.disabled = ro;
-          cb.onchange = () => { g[kind] = cb.checked; save({ integration_perms: collectPerms() }); };
-          lab.append(cb, document.createTextNode(" " + label));
-          return lab;
-        };
-        row.append(exp, name, count, mk("read", "lezen"), mk("write", "schrijven"));
-        const det = document.createElement("div");
-        det.className = "perm-tools hidden";
-        g.tools.forEach((t) => {
-          const line = document.createElement("label");
-          line.className = "perm-tool";
-          const cb = document.createElement("input");
-          cb.type = "checkbox"; cb.checked = t.enabled; cb.disabled = ro;
-          cb.onchange = () => { t.enabled = cb.checked; save({ disabled_tools: collectDisabled() }); };
-          const badge = document.createElement("span");
-          badge.className = "perm-badge " + t.rw;
-          badge.textContent = t.rw === "write" ? "schrijft" : "leest";
-          line.append(cb, document.createTextNode(" " + t.name + " "), badge);
-          det.appendChild(line);
-        });
-        exp.onclick = () => {
-          const open = det.classList.toggle("hidden");
-          exp.textContent = open ? "▸" : "▾";
-          exp.setAttribute("aria-expanded", String(!open));
-        };
-        wrap.append(row, det);
+        const sum = document.createElement("span");
+        sum.className = "m";
+        sum.textContent = summary(g);
+        const btn = document.createElement("button");
+        btn.className = "ghost perm-open";
+        btn.textContent = ro ? "bekijken" : "instellen";
+        btn.onclick = () => openPerm(g, ro);
+        row.append(name, sum, btn);
+        wrap.appendChild(row);
       });
       if (ro) {
         const note = document.createElement("div");

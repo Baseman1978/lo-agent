@@ -598,8 +598,8 @@ addEventListener("drop", async (e) => {
 });
 
 /* -- Escape sluit de bovenste open overlay ---------------------------------- */
-const OVERLAY_IDS = ["onboard-overlay", "holo-overlay", "settings-overlay",
-                     "inbox-overlay", "tasks-overlay"];
+const OVERLAY_IDS = ["onboard-overlay", "perm-overlay", "holo-overlay",
+                     "settings-overlay", "inbox-overlay", "tasks-overlay"];
 addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   for (const id of OVERLAY_IDS) {
