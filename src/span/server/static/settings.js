@@ -620,6 +620,87 @@
       ["span_tts_speaker", "span_tts_length", "span_tts_noise", "span_tts_noisew", "span_tts_volume"]
         .forEach((k) => localStorage.removeItem(k));
       ttsInit();
+
+  /* -- Rechten van LO: per integratie lezen/schrijven + per actie aan/uit -- */
+  function permsInit() {
+    const wrap = $("int-perms");
+    if (!wrap) return;
+    let data = null;
+    const save = (partial) => fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...SPAN.authHeaders() },
+      body: JSON.stringify(partial),
+    }).catch(() => {});
+    const collectPerms = () => {
+      const out = {};
+      data.integrations.forEach((g) => { out[g.key] = { read: g.read, write: g.write }; });
+      return out;
+    };
+    const collectDisabled = () => {
+      const out = [];
+      data.integrations.forEach((g) => g.tools.forEach((t) => {
+        if (!t.enabled) out.push(t.name);
+      }));
+      return out;
+    };
+    function render() {
+      wrap.innerHTML = "";
+      const ro = data.is_owner === false;   // medewerkers: alleen inzien
+      data.integrations.forEach((g) => {
+        const row = document.createElement("div");
+        row.className = "perm-row";
+        const exp = document.createElement("button");
+        exp.className = "perm-exp"; exp.textContent = "▸";
+        exp.setAttribute("aria-label", "acties van " + g.label + " tonen");
+        const name = document.createElement("b");
+        name.textContent = g.label;
+        const count = document.createElement("span");
+        count.className = "m";
+        count.textContent = " · " + g.tools.length + " actie" + (g.tools.length === 1 ? "" : "s");
+        const mk = (kind, label) => {
+          const lab = document.createElement("label");
+          lab.className = "perm-toggle";
+          const cb = document.createElement("input");
+          cb.type = "checkbox"; cb.checked = g[kind]; cb.disabled = ro;
+          cb.onchange = () => { g[kind] = cb.checked; save({ integration_perms: collectPerms() }); };
+          lab.append(cb, document.createTextNode(" " + label));
+          return lab;
+        };
+        row.append(exp, name, count, mk("read", "lezen"), mk("write", "schrijven"));
+        const det = document.createElement("div");
+        det.className = "perm-tools hidden";
+        g.tools.forEach((t) => {
+          const line = document.createElement("label");
+          line.className = "perm-tool";
+          const cb = document.createElement("input");
+          cb.type = "checkbox"; cb.checked = t.enabled; cb.disabled = ro;
+          cb.onchange = () => { t.enabled = cb.checked; save({ disabled_tools: collectDisabled() }); };
+          const badge = document.createElement("span");
+          badge.className = "perm-badge " + t.rw;
+          badge.textContent = t.rw === "write" ? "schrijft" : "leest";
+          line.append(cb, document.createTextNode(" " + t.name + " "), badge);
+          det.appendChild(line);
+        });
+        exp.onclick = () => {
+          const open = det.classList.toggle("hidden");
+          exp.textContent = open ? "▸" : "▾";
+          exp.setAttribute("aria-expanded", String(!open));
+        };
+        wrap.append(row, det);
+      });
+      if (ro) {
+        const note = document.createElement("div");
+        note.className = "m"; note.style.opacity = ".7";
+        note.textContent = "Alleen de beheerder kan rechten wijzigen.";
+        wrap.appendChild(note);
+      }
+    }
+    fetch("/api/integrations/permissions", { headers: SPAN.authHeaders() })
+      .then((r) => r.json())
+      .then((d) => { data = d; render(); })
+      .catch(() => { wrap.textContent = "rechten laden mislukt"; });
+  }
+  permsInit();
     };
   }
   ttsInit();

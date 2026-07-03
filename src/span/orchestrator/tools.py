@@ -45,6 +45,7 @@ class ToolBox:
         llm: Any = None,
         light_model: str | None = None,
         disabled: set[str] | None = None,
+        perms: dict[str, Any] | None = None,
         user_location: dict[str, float] | None = None,
         fireflies: Any = None,
         security: dict[str, Any] | None = None,
@@ -70,6 +71,7 @@ class ToolBox:
         self._llm = llm                # voor concept-generatie bij inbox_approve
         self._light_model = light_model
         self._disabled = disabled or set()  # door Bas uitgezet in instellingen
+        self._perms = perms or {}      # rechten per integratie: {key: {read, write}}
         self._user_location = user_location  # {lat, lon} uit de browser
         self._fireflies = fireflies
         self.touched: list[str] = []   # mf-ids geraadpleegd deze beurt (hologram)
@@ -96,12 +98,38 @@ class ToolBox:
         if self._o365 is None and self._asana is None:
             hidden.add("jarvis_briefing")
         hidden |= self._disabled
-        specs = [t for t in TOOL_SPECS if t["function"]["name"] not in hidden]
+        specs = [t for t in TOOL_SPECS if t["function"]["name"] not in hidden
+                 and self._perm_allowed(t["function"]["name"])]
         # dynamische MCP-tools van gekoppelde servers erbij
         if self._mcp is not None:
             specs += [t for t in self._mcp.tool_specs()
-                      if t["function"]["name"] not in self._disabled]
+                      if t["function"]["name"] not in self._disabled
+                      and self._perm_allowed(t["function"]["name"])]
         return specs
+
+    def _perm_key_rw(self, name: str) -> tuple[str | None, str | None]:
+        """Integratie-sleutel + read/write van een tool, voor het rechtenmodel.
+        Built-ins: TOOL_META-groep; MCP: 'mcp:<server>' + capability-classifier."""
+        if name.startswith("mcp__"):
+            from span.safety.risk import mcp_capability
+            parts = name.split("__")
+            server = parts[1] if len(parts) >= 3 else ""
+            return f"mcp:{server}", mcp_capability(parts[-1])
+        meta = TOOL_META.get(name)
+        if not meta:
+            return None, None
+        return meta[0], meta[1]
+
+    def _perm_allowed(self, name: str) -> bool:
+        """Rechten per integratie (Instellingen → Integraties): mag LO deze
+        tool gebruiken? Geen instelling = toegestaan (huidig gedrag)."""
+        key, rw = self._perm_key_rw(name)
+        if key is None:
+            return True
+        p = self._perms.get(key)
+        if not isinstance(p, dict):
+            return True
+        return bool(p.get(rw, True))
 
     def _autonomy_auto_for(self, name: str) -> bool:
         """Mag deze tool zonder goedkeuring draaien bij autonomy=auto?
@@ -118,6 +146,12 @@ class ToolBox:
         if name in self._disabled:
             return json.dumps({"error": f"Tool '{name}' is door Bas uitgeschakeld "
                                "in de instellingen."}, ensure_ascii=False)
+        if not self._perm_allowed(name):
+            _key, rw = self._perm_key_rw(name)
+            soort = "schrijven" if rw == "write" else "lezen"
+            return json.dumps({"error": f"Geen toestemming: {soort} is voor deze "
+                               "integratie uitgezet (Instellingen → Integraties → "
+                               "Rechten)."}, ensure_ascii=False)
         # F1.1/F1.2 — risico-beoordeling + exfiltratie-vangnet vóór de handler
         from span.safety.guard import assess_tool
         assessment = assess_tool(

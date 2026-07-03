@@ -195,13 +195,37 @@ async def save_settings(request: Request) -> dict[str, Any]:
 
     if "disabled_tools" in body:
         from span.orchestrator.tools import TOOL_META
-        disabled = [t for t in (body["disabled_tools"] or []) if t in TOOL_META]
+        disabled = [t for t in (body["disabled_tools"] or [])
+                    if t in TOOL_META or (isinstance(t, str) and t.startswith("mcp__"))]
         _state["disabled_tools"] = set(disabled)
         await asyncio.to_thread(
             _state["brain"].run,
             "MERGE (c:Config {id:'runtime'}) SET c.disabled_tools = $d", d=disabled,
         )
         result["disabled_tools"] = disabled
+
+    if "integration_perms" in body:
+        raw = body["integration_perms"] or {}
+        if not isinstance(raw, dict):
+            raise HTTPException(status_code=422, detail="integration_perms: object verwacht.")
+        clean: dict[str, dict[str, bool]] = {}
+        for key, val in raw.items():
+            if not isinstance(key, str) or not isinstance(val, dict):
+                continue
+            clean[key[:80]] = {"read": bool(val.get("read", True)),
+                               "write": bool(val.get("write", True))}
+        _state["integration_perms"] = clean
+        import json as _json
+        await asyncio.to_thread(
+            _state["brain"].run,
+            "MERGE (c:Config {id:'runtime'}) SET c.integration_perms = $p",
+            p=_json.dumps(clean),
+        )
+        dicht = [k for k, v in clean.items() if not (v["read"] and v["write"])]
+        await asyncio.to_thread(_audit, "integration_perms",
+                                ("beperkt: " + ", ".join(sorted(dicht))) if dicht else "alles open",
+                                getattr(_request_context(request), "upn", ""))
+        result["integration_perms"] = clean
 
     if "tts_engine" in body:
         from span.server import tts
@@ -436,6 +460,41 @@ async def inbox_reject(request: Request, item_id: int) -> dict[str, Any]:
 
 
 # -- Integration Broker: catalogus + acties (onder LO's governance) ---------
+@router.get("/api/integrations/permissions")
+async def integrations_permissions(request: Request) -> dict[str, Any]:
+    """Rechtenoverzicht voor de HUD: per integratie(groep) de tools met hun
+    read/write-aard, de aan/uit-stand per actie (disabled_tools) en de
+    lees/schrijf-toestemming (integration_perms)."""
+    _require_rest_auth(request)
+    from span.orchestrator.tools import TOOL_META
+    from span.safety.risk import mcp_capability
+    perms = _state.get("integration_perms") or {}
+    disabled = _state.get("disabled_tools") or set()
+    groups: dict[str, dict[str, Any]] = {}
+    for name, (grp, rw) in TOOL_META.items():
+        g = groups.setdefault(grp, {"key": grp, "label": grp, "tools": []})
+        g["tools"].append({"name": name, "rw": rw, "enabled": name not in disabled})
+    mcp = _state.get("mcp")
+    if mcp is not None:
+        for full in mcp.tool_names():
+            parts = full.split("__")
+            server = parts[1] if len(parts) >= 3 else "?"
+            key = f"mcp:{server}"
+            g = groups.setdefault(key, {"key": key, "label": f"{server} (MCP)",
+                                        "tools": []})
+            g["tools"].append({"name": full, "rw": mcp_capability(parts[-1]),
+                               "enabled": full not in disabled})
+    out = []
+    for key in sorted(groups, key=str.lower):
+        g = groups[key]
+        p = perms.get(g["key"]) or {}
+        g["read"] = bool(p.get("read", True))
+        g["write"] = bool(p.get("write", True))
+        g["tools"].sort(key=lambda t: (t["rw"], t["name"]))
+        out.append(g)
+    return {"integrations": out, "is_owner": _is_owner(request)}
+
+
 @router.get("/api/integrations/catalog")
 async def integrations_catalog(request: Request, category: str = Query(""),
                                capability: str = Query(""), q: str = Query("")) -> dict[str, Any]:
@@ -521,7 +580,8 @@ def _broker_dispatch(ctx: Any):
         o365=getattr(ctx, "o365", None), asana=_state.get("asana"),
         inbox=_state.get("inbox"), autonomy=_state.get("autonomy") or {},
         llm=_state["llm"], light_model=_effective_settings().model_light,
-        disabled=_state.get("disabled_tools"), fireflies=_state.get("fireflies"),
+        disabled=_state.get("disabled_tools"), perms=_state.get("integration_perms"),
+        fireflies=_state.get("fireflies"),
         security=_state.get("security"), mcp=_state.get("mcp"),
         shared=getattr(ctx, "shared", None))
     return tb.dispatch
