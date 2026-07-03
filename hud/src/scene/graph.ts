@@ -19,7 +19,7 @@ export interface KnowledgeGraph {
   nodeCount(): number;
   tick(): void;
   /** reshape the layout (variant switch): radial shell, Y-plane pull en holte rond de orb */
-  setForces(cfg: { radial: number | null; y: number | null; yStrength: number; cavity: number }): void;
+  setForces(cfg: { radial: number | null; radialStrength?: number; y: number | null; yStrength: number; cavity: number }): void;
   getNode(id: string): PositionedNode | undefined;
   neighbors(id: string): PositionedNode[];
   /** true zodra de eerste tickFrame is geweest (particles/krachten zijn dan veilig) */
@@ -137,7 +137,7 @@ export function createKnowledgeGraph(initial?: GraphData): KnowledgeGraph {
       d3ReheatSimulation?: () => void;
       resetCountdown?: () => void;
     };
-    g.d3Force('radial', cfg.radial === null ? null : forceRadial(cfg.radial).strength(0.9));
+    g.d3Force('radial', cfg.radial === null ? null : forceRadial(cfg.radial).strength(cfg.radialStrength ?? 0.9));
     g.d3Force('flatten', cfg.y === null ? null : forceY(cfg.y).strength(cfg.yStrength));
     g.d3ReheatSimulation?.();
     g.resetCountdown?.();

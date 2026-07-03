@@ -696,13 +696,13 @@ $("end").onclick = () => {
    Synchroon de vlag zetten (orb.js leest hem bij eigen load), daarna de
    gebundelde scene lazy laden. Geen WebGL2 -> stil terugvallen op klassiek. */
 (function nebulaBoot() {
-  if (localStorage.getItem("span_view") !== "nebula") return;
+  if (localStorage.getItem("span_view") === "klassiek") return;  // N4: NEBULA is de standaard
   let gl2 = false;
   try { gl2 = !!document.createElement("canvas").getContext("webgl2"); } catch (e) { /* stil */ }
   if (!gl2) { console.warn("[nebula] geen WebGL2 - klassieke weergave"); return; }
   SPAN._nebula = true;
   document.body.classList.add("nebula-on");
-  import("/static/hud/nebula.js?v=59").then((m) => {
+  import("/static/hud/nebula.js?v=60").then((m) => {
     const center = document.getElementById("center");
     if (!center) return;
     const bg = document.createElement("div");
@@ -710,6 +710,10 @@ $("end").onclick = () => {
     center.prepend(bg);
     SPAN._nebulaHandle = m.mount(bg, { authHeaders: SPAN.authHeaders });
     SPAN._nebulaHandle.setState(SPAN.state === "busy" ? "thinking" : (SPAN.state || "idle"));
+    try {  // bewaarde orb-tuning meteen toepassen
+      const t = JSON.parse(localStorage.getItem("span_nebula_orb") || "null");
+      if (t) SPAN._nebulaHandle.setSettings(t);
+    } catch (e) { /* stil */ }
   }).catch((e) => console.warn("[nebula] laden mislukt:", e));
 })();
 

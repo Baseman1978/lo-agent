@@ -12,7 +12,7 @@ import { setupInteractions, type Interactions } from './interactions';
 import { NeuralActivity } from './scene/activity';
 import { Highlighter, makeGlowTexture, MemoryPulses } from './scene/fx';
 import { createKnowledgeGraph, type KnowledgeGraph } from './scene/graph';
-import { createOrb } from './scene/orb';
+import { createOrb, type OrbSettings } from './scene/orb';
 import { createPostChain } from './scene/post';
 import { AgentStateMock, type AgentState } from './state/agent';
 import { MockMemoryStream } from './stream/mock';
@@ -27,6 +27,8 @@ export interface NebulaHandle {
   setAlert(on: boolean): void;
   /** live leescascade: LO raadpleegt deze memories (WS memory_read) */
   markReading(ids: string[], reason?: string): void;
+  /** orb-tuning uit Instellingen -> Uiterlijk (dichtheid/flitsen/aders/ringen) */
+  setSettings(s: OrbSettings): void;
   unmount(): void;
 }
 
@@ -141,7 +143,9 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
 
   const attachGraph = (g: KnowledgeGraph): void => {
     graph = g;
-    g.setForces({ radial: null, y: null, yStrength: 0, cavity: CAVITY });
+    // N4 (keuze Bas): losse memories niet laten wegzweven — een mílde
+    // schilkracht dikt de wolk in; verbonden clusters houden hun vorm
+    g.setForces({ radial: 400, radialStrength: 0.15, y: null, yStrength: 0, cavity: CAVITY });
     scene.add(g.object);
     activity = new NeuralActivity(g, glowTex);
     scene.add(activity.group);
@@ -307,6 +311,9 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
     setAlert(on: boolean) {
       alertOn = on;
       applyState();
+    },
+    setSettings(sett: OrbSettings) {
+      orb.setSettings(sett);
     },
     markReading(ids: string[], reasonText?: string) {
       if (!graph || !activity) return;

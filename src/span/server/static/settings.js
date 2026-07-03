@@ -164,11 +164,46 @@
     $("qr-note").textContent = `Scan met je telefoon (zelfde wifi): ${url}`;
   };
 
+  /* -- NEBULA-orb-tuning: dichtheid/flitsen/aders/ringen (N4) --------------- */
+  (function nebulaTuning() {
+    const wrap = $("nebula-tuning");
+    if (!wrap) return;
+    if (!document.body.classList.contains("nebula-on")) return; // klassiek: verbergen
+    wrap.classList.remove("hidden");
+    const PRESETS = {
+      standaard: { density: 1, flash: 0.15, veinBoost: 1, ripples: false },
+      dicht: { density: 0.7, flash: 0.2, veinBoost: 1.1, ripples: false },
+      flitsend: { density: 0.95, flash: 0.85, veinBoost: 1.25, ripples: false },
+    };
+    let s;
+    try { s = { ...PRESETS.standaard, ...(JSON.parse(localStorage.getItem("span_nebula_orb") || "{}")) }; }
+    catch (e) { s = { ...PRESETS.standaard }; }
+    const apply = () => {
+      localStorage.setItem("span_nebula_orb", JSON.stringify(s));
+      if (SPAN._nebulaHandle && SPAN._nebulaHandle.setSettings) SPAN._nebulaHandle.setSettings(s);
+    };
+    const sync = () => {
+      $("neb-density").value = s.density; $("neb-density-label").textContent = (+s.density).toFixed(2);
+      $("neb-flash").value = s.flash; $("neb-flash-label").textContent = (+s.flash).toFixed(2);
+      $("neb-veins").value = s.veinBoost; $("neb-veins-label").textContent = (+s.veinBoost).toFixed(2);
+      $("neb-ripples").checked = !!s.ripples;
+    };
+    const on = (id, fn) => $(id).addEventListener("input", fn);
+    on("neb-density", (e) => { s.density = +e.target.value; sync(); apply(); });
+    on("neb-flash", (e) => { s.flash = +e.target.value; sync(); apply(); });
+    on("neb-veins", (e) => { s.veinBoost = +e.target.value; sync(); apply(); });
+    $("neb-ripples").addEventListener("change", (e) => { s.ripples = e.target.checked; apply(); });
+    for (const naam of Object.keys(PRESETS)) {
+      $("neb-preset-" + naam).onclick = () => { s = { ...PRESETS[naam] }; sync(); apply(); };
+    }
+    sync(); apply();
+  })();
+
   /* -- weergave: klassiek of NEBULA (N0-feature-flag) ---------------------- */
   (function viewInit() {
     const sel = $("set-view");
     if (!sel) return;
-    sel.value = localStorage.getItem("span_view") === "nebula" ? "nebula" : "klassiek";
+    sel.value = localStorage.getItem("span_view") === "klassiek" ? "klassiek" : "nebula";
     sel.onchange = () => {
       localStorage.setItem("span_view", sel.value === "nebula" ? "nebula" : "klassiek");
       location.reload();  // schone start: juiste scripts/scene laden
