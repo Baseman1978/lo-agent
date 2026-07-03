@@ -61,3 +61,27 @@ de dump (echte store), dus vectorzoeken werkt direct. Controleer daarna een chat
   Config-node → off-host versleuteld bewaren (rclone crypt / age).
 - **Retentie:** `scripts/neo4j-backup.sh` houdt de laatste `NOVA_BACKUP_KEEP` (default 7) per db.
 - **Test periodiek de drill (A)** — een ongeteste backup is geen backup.
+
+## Off-host herstel (Synology, versleutelde kopieën)
+
+De nachtelijke backup zet AES-256-versleutelde kopieën op de Synology
+(`Bas_Spaan@192.168.3.6:nova-backups/neo4j/*.dump.enc`, poort 55). Het
+wachtwoordbestand staat op de z390: `~/.secrets/nova-backup-key` — **bewaar een
+kopie in je wachtwoordmanager**; zonder dit bestand zijn de off-host kopieën
+onbruikbaar (dat is de bedoeling bij diefstal, niet bij herstel).
+
+Herstel wanneer de z390 zelf weg is:
+```bash
+# 1. haal de jongste kopie van de Synology (vanaf elke pc met ssh-toegang)
+scp -P 55 Bas_Spaan@192.168.3.6:nova-backups/neo4j/span-brain-<STAMP>.dump.enc .
+# 2. ontsleutel met de sleutel uit je wachtwoordmanager (zet hem in ./key)
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+  -in span-brain-<STAMP>.dump.enc -out span-brain.dump -pass file:./key
+# 3. laad in een verse Neo4j (community): zie 'Echte restore' hierboven —
+#    neo4j-admin database load span-brain --from-path=. + default-db-rename
+```
+
+NB (community, sinds C1): de nachtelijke dump stopt de neo4j-container ~1
+minuut (STOP DATABASE bestaat niet op community); LO's /readyz geeft die
+minuut 503 en herstelt vanzelf. De Synology-klok loopt iets achter — de
+remote retentie heeft daarom 2 dagen marge.
