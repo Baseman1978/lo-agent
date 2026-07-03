@@ -31,3 +31,4 @@ str
 list[str]
 list[dict[str
 tuple[Settings
+hud/node_modules/

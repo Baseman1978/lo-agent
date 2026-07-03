@@ -164,6 +164,17 @@
     $("qr-note").textContent = `Scan met je telefoon (zelfde wifi): ${url}`;
   };
 
+  /* -- weergave: klassiek of NEBULA (N0-feature-flag) ---------------------- */
+  (function viewInit() {
+    const sel = $("set-view");
+    if (!sel) return;
+    sel.value = localStorage.getItem("span_view") === "nebula" ? "nebula" : "klassiek";
+    sel.onchange = () => {
+      localStorage.setItem("span_view", sel.value === "nebula" ? "nebula" : "klassiek");
+      location.reload();  // schone start: juiste scripts/scene laden
+    };
+  })();
+
   /* -- stem ------------------------------------------------------------- */
   function fillVoices() {
     const sel = $("set-voice");
