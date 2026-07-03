@@ -35,8 +35,14 @@ SPAN.setState = (next) => {
   const label = $("state-label");
   const names = { idle: "STANDBY", listening: "LUISTERT…", busy: "DENKT…",
     speaking: "SPREEKT", boot: "BOOT" };
-  label.textContent = names[next] || next.toUpperCase();
-  label.classList.toggle("hot", next !== "idle");
+  if (label) {
+    label.textContent = names[next] || next.toUpperCase();
+    label.classList.toggle("hot", next !== "idle");
+  }
+  // N3: de NEBULA-orb volgt de echte agent-status (busy heet daar thinking)
+  if (SPAN._nebulaHandle && SPAN._nebulaHandle.setState) {
+    SPAN._nebulaHandle.setState(next === "busy" ? "thinking" : next);
+  }
 };
 
 /* -- "bezig"-indicator in de chat (tijdens denken/tool-aanroepen) -------- */
@@ -294,6 +300,9 @@ function handle(msg) {
   else if (msg.type === "memory_read") {
     // live: Span raadpleegt geheugen tijdens de beurt -> hologram-leescascade
     if (SPAN.markReading) SPAN.markReading(msg.ids || [], msg.reason || "");
+    if (SPAN._nebulaHandle && SPAN._nebulaHandle.markReading) {
+      SPAN._nebulaHandle.markReading(msg.ids || [], msg.reason || "");
+    }
   }
   else if (msg.type === "done") {
     if (!current) {
@@ -693,13 +702,14 @@ $("end").onclick = () => {
   if (!gl2) { console.warn("[nebula] geen WebGL2 - klassieke weergave"); return; }
   SPAN._nebula = true;
   document.body.classList.add("nebula-on");
-  import("/static/hud/nebula.js?v=57").then((m) => {
+  import("/static/hud/nebula.js?v=58").then((m) => {
     const center = document.getElementById("center");
     if (!center) return;
     const bg = document.createElement("div");
     bg.id = "nebula-bg";
     center.prepend(bg);
     SPAN._nebulaHandle = m.mount(bg, { authHeaders: SPAN.authHeaders });
+    SPAN._nebulaHandle.setState(SPAN.state === "busy" ? "thinking" : (SPAN.state || "idle"));
   }).catch((e) => console.warn("[nebula] laden mislukt:", e));
 })();
 
