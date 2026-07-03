@@ -35,8 +35,8 @@ export interface KnowledgeGraph {
  * vasturiano's 3d-force-graph) so it composes with our own renderer, brain,
  * point cloud and pmndrs postprocessing chain in a single scene.
  */
-export function createKnowledgeGraph(): KnowledgeGraph {
-  const data: GraphData = generateGraph();
+export function createKnowledgeGraph(initial?: GraphData): KnowledgeGraph {
+  const data: GraphData = initial ?? generateGraph();
 
   // id → node en adjacency, bijgehouden bij elke toevoeging (links zijn hier
   // nog string-referenties; de simulatie muteert ze later naar object-refs)

@@ -693,13 +693,13 @@ $("end").onclick = () => {
   if (!gl2) { console.warn("[nebula] geen WebGL2 - klassieke weergave"); return; }
   SPAN._nebula = true;
   document.body.classList.add("nebula-on");
-  import("/static/hud/nebula.js?v=56").then((m) => {
+  import("/static/hud/nebula.js?v=57").then((m) => {
     const center = document.getElementById("center");
     if (!center) return;
     const bg = document.createElement("div");
     bg.id = "nebula-bg";
     center.prepend(bg);
-    SPAN._nebulaHandle = m.mount(bg);
+    SPAN._nebulaHandle = m.mount(bg, { authHeaders: SPAN.authHeaders });
   }).catch((e) => console.warn("[nebula] laden mislukt:", e));
 })();
 

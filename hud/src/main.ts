@@ -1,17 +1,22 @@
-// NEBULA-HUD — N1: scene-port (werkplan docs/werkplan-hud-nebula.md).
-// De volledige sandbox-scene (GPGPU-orb + geheugenwolk + cinema-post) draait
-// als center-achtergrond van LO. Data is in deze fase nog synthetisch
-// (mock-stream); N2 koppelt /api/graph, N3 de live WS-signalen.
+// NEBULA-HUD — N2: het echte brein (werkplan docs/werkplan-hud-nebula.md).
+// De scene draait op /api/graph-data (LO-adapter), ververst elke 120s
+// incrementeel (nieuwe memories landen met een lichtpuls), en is interactief:
+// hover-tooltip + klik → detailpaneel + camera-vlucht. Zonder auth of bij een
+// fout valt hij terug op de synthetische demo-data. N3 koppelt de live
+// WS-signalen (leescascade + agent-status).
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { fetchLoGraph, type LoGraph } from './data/lo';
+import { setupInteractions, type Interactions } from './interactions';
 import { NeuralActivity } from './scene/activity';
-import { makeGlowTexture, MemoryPulses } from './scene/fx';
-import { createKnowledgeGraph } from './scene/graph';
+import { Highlighter, makeGlowTexture, MemoryPulses } from './scene/fx';
+import { createKnowledgeGraph, type KnowledgeGraph } from './scene/graph';
 import { createOrb } from './scene/orb';
 import { createPostChain } from './scene/post';
 import { AgentStateMock, type AgentState } from './state/agent';
 import { MockMemoryStream } from './stream/mock';
+import type { PositionedNode } from './data/synthetic';
 
 export interface NebulaHandle {
   /** agent-status (N3 koppelt dit aan de echte SPAN-signalen) */
@@ -22,6 +27,8 @@ export interface NebulaHandle {
 export interface MountOptions {
   /** mobiel/zwakke GPU: 16k i.p.v. 65k deeltjes, minimale post-keten */
   lite?: boolean;
+  /** auth-headers van de LO-app (SPAN.authHeaders) — zonder: synthetische demo */
+  authHeaders?: () => Record<string, string>;
 }
 
 export function webgl2Available(): boolean {
@@ -42,6 +49,7 @@ export function detectLite(): boolean {
 const CAMERA: [number, number, number] = [420, 180, 620];
 const CAVITY = 215;
 const AUTO_ROTATE = 0.35;
+const REFRESH_MS = 120_000;
 
 export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHandle {
   const lite = opts.lite ?? detectLite();
@@ -68,6 +76,7 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
   controls.dampingFactor = 0.06;
   controls.autoRotate = true;
   controls.autoRotateSpeed = AUTO_ROTATE;
+  controls.enableZoom = false; // voorpagina: geen scroll-jacking; N4 maakt dit instelbaar
   controls.minDistance = 180;
   controls.maxDistance = 2200;
 
@@ -76,28 +85,99 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
   key.position.set(1, 1, 0.5);
   scene.add(key);
 
-  // --- inhoud -----------------------------------------------------------------
+  // --- vaste inhoud --------------------------------------------------------------
   const orb = createOrb(renderer, 110, lite ? 128 : 256);
   scene.add(orb.group);
-
-  const graph = createKnowledgeGraph();
-  graph.setForces({ radial: null, y: null, yStrength: 0, cavity: CAVITY });
-  scene.add(graph.object);
 
   const glowTex = makeGlowTexture();
   const pulses = new MemoryPulses(glowTex);
   scene.add(pulses.group);
-  const activity = new NeuralActivity(graph, glowTex);
-  scene.add(activity.group);
+  const highlighter = new Highlighter(glowTex);
+  scene.add(highlighter.group);
 
   const post = createPostChain(renderer, scene, camera, lite);
-
-  // --- agent-status: auto-demo tot N3 de echte signalen koppelt ----------------
   const agent = new AgentStateMock();
 
-  // --- mock-stream: nieuwe memories landen met een lichtpuls (drain-pattern) ---
-  const stream = new MockMemoryStream(() => graph.nodeIds(), 100_000, 4000);
-  stream.start();
+  // --- camera-vluchten (selectie/terug) --------------------------------------------
+  const camGoal = new THREE.Vector3(...CAMERA);
+  const targetGoal = new THREE.Vector3();
+  let transitioning = false;
+
+  // --- brein: echte data, met synthetische demo als vangnet --------------------------
+  let graph: KnowledgeGraph | null = null;
+  let activity: NeuralActivity | null = null;
+  let interactions: Interactions | null = null;
+  let stream: MockMemoryStream | null = null;
+  let refreshTimer: ReturnType<typeof setInterval> | null = null;
+  const types = new Map<string, string>();
+  const pendingPulses: { node: PositionedNode; age: number }[] = [];
+
+  const attachGraph = (g: KnowledgeGraph): void => {
+    graph = g;
+    g.setForces({ radial: null, y: null, yStrength: 0, cavity: CAVITY });
+    scene.add(g.object);
+    activity = new NeuralActivity(g, glowTex);
+    scene.add(activity.group);
+    interactions = setupInteractions({
+      renderer,
+      camera,
+      graph: g,
+      highlighter,
+      typeOf: (id) => types.get(id) ?? '',
+      authHeaders: opts.authHeaders,
+      onFocusNode(pos) {
+        const dir = camera.position.clone().sub(controls.target).normalize();
+        camGoal.copy(pos).add(dir.multiplyScalar(240));
+        targetGoal.copy(pos);
+        transitioning = true;
+      },
+      onSelectionChange(node) {
+        controls.autoRotate = node === null;
+        if (node === null) {
+          camGoal.set(...CAMERA);
+          targetGoal.set(0, 0, 0);
+          transitioning = true;
+        }
+      },
+    });
+  };
+
+  const refresh = async (): Promise<void> => {
+    if (document.hidden || !graph || !opts.authHeaders) return;
+    try {
+      const d = await fetchLoGraph(opts.authHeaders());
+      const nieuwe = d.nodes.filter((n) => !graph!.getNode(n.id));
+      if (nieuwe.length === 0) return;
+      for (const [id, t] of d.types) types.set(id, t);
+      const nieuweIds = new Set(nieuwe.map((n) => n.id));
+      const nieuweLinks = d.links.filter(
+        (l) => nieuweIds.has(l.source) || nieuweIds.has(l.target)
+      );
+      graph!.addMemories(nieuwe, nieuweLinks);
+      for (const n of nieuwe) pendingPulses.push({ node: n, age: 0 });
+    } catch {
+      /* stil — volgende poging over 120s */
+    }
+  };
+
+  const boot = async (): Promise<void> => {
+    if (opts.authHeaders) {
+      try {
+        const d: LoGraph = await fetchLoGraph(opts.authHeaders());
+        for (const [id, t] of d.types) types.set(id, t);
+        attachGraph(createKnowledgeGraph({ nodes: d.nodes, links: d.links }));
+        refreshTimer = setInterval(() => void refresh(), REFRESH_MS);
+        return;
+      } catch (e) {
+        console.warn('[nebula] echte graafdata laden mislukt, demo-data:', e);
+      }
+    }
+    // demo-modus: synthetisch brein + mock-stream (zoals de sandbox)
+    attachGraph(createKnowledgeGraph());
+    stream = new MockMemoryStream(() => graph!.nodeIds(), 100_000, 4000);
+    stream.start();
+  };
+  void boot();
 
   // --- maat & zichtbaarheid -----------------------------------------------------
   const resize = (): void => {
@@ -137,7 +217,6 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
   // --- render-loop -----------------------------------------------------------------
   const t0 = performance.now();
   let prev = t0;
-  const pendingPulses: { node: import('./data/synthetic').PositionedNode; age: number }[] = [];
 
   renderer.setAnimationLoop(() => {
     if (document.hidden) return; // verborgen tab: geen GPU/CPU (Fase D-lijn)
@@ -148,14 +227,16 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
 
     agent.update(now);
 
-    // stream-buffer leegmaken aan het begin van het frame (nooit mid-render)
-    const events = stream.drain();
-    if (events.length > 0) {
-      graph.addMemories(
-        events.map((e) => e.node),
-        events.flatMap((e) => e.links)
-      );
-      for (const e of events) pendingPulses.push({ node: e.node, age: 0 });
+    // demo-stream leegmaken aan het begin van het frame (nooit mid-render)
+    if (stream && graph) {
+      const events = stream.drain();
+      if (events.length > 0) {
+        graph.addMemories(
+          events.map((e) => e.node),
+          events.flatMap((e) => e.links)
+        );
+        for (const e of events) pendingPulses.push({ node: e.node, age: 0 });
+      }
     }
     // "memory landt": puls pas als de simulatie de node een plek gaf
     for (let i = pendingPulses.length - 1; i >= 0; i--) {
@@ -171,10 +252,17 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
       }
     }
 
-    graph.tick();
+    if (transitioning) {
+      camera.position.lerp(camGoal, 0.045);
+      controls.target.lerp(targetGoal, 0.045);
+      if (camera.position.distanceTo(camGoal) < 2) transitioning = false;
+    }
+
+    graph?.tick();
     orb.update(t, dt, agent.state);
     pulses.update(dt);
-    activity.update(dt, agent.state);
+    activity?.update(dt, agent.state);
+    interactions?.update(t);
     controls.update();
     post.setFocus(controls.target);
     adaptQuality(now);
@@ -187,7 +275,9 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
     },
     unmount() {
       renderer.setAnimationLoop(null);
-      stream.stop();
+      if (refreshTimer) clearInterval(refreshTimer);
+      stream?.stop();
+      interactions?.dispose();
       ro.disconnect();
       controls.dispose();
       post.composer.dispose();

@@ -21,7 +21,7 @@ const CLASS_WEIGHTS: [DataClass, number][] = [
 
 export interface MemoryNode {
   id: string;
-  dataClass: DataClass;
+  dataClass: string;  // synthetisch: DataClass; LO: het Neo4j-label (Insight, ...)
   color: string;
   val: number; // node size weight
   label: string;
