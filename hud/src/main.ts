@@ -29,6 +29,8 @@ export interface NebulaHandle {
   markReading(ids: string[], reason?: string): void;
   /** orb-tuning uit Instellingen -> Uiterlijk (dichtheid/flitsen/aders/ringen) */
   setSettings(s: OrbSettings): void;
+  /** cinema-look aan/uit (scherptediepte/aberratie/korrel); uit = kraakhelder */
+  setCinema(on: boolean): void;
   unmount(): void;
 }
 
@@ -314,6 +316,9 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
     },
     setSettings(sett: OrbSettings) {
       orb.setSettings(sett);
+    },
+    setCinema(on: boolean) {
+      post.setCinema(on);
     },
     markReading(ids: string[], reasonText?: string) {
       if (!graph || !activity) return;
