@@ -187,6 +187,12 @@ async def _security_headers(request, call_next):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
     resp.headers.setdefault("X-Frame-Options", "DENY")
+    # HTML nooit heuristisch laten cachen: zonder deze header bleef een oude
+    # index.html na een deploy in de browser hangen (de ?v=-cache-bust op
+    # js/css helpt niet als de HTML zelf oud is). no-cache = opslaan mag,
+    # maar altijd hervalideren (ETag -> goedkope 304 zolang niets wijzigde).
+    if resp.headers.get("content-type", "").startswith("text/html"):
+        resp.headers.setdefault("Cache-Control", "no-cache")
     return resp
 
 
