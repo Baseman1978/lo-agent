@@ -74,7 +74,9 @@ main {
   position: relative; z-index: 10; flex: 1; display: flex; gap: 14px;
   padding: 14px 18px; min-height: 0;
 }
-.col { width: 295px; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+/* bento: bredere tegels zodat items op één regel passen; hoogte per tegel
+   wordt door fitPanels (jarvis.js) verdeeld naar inhoud */
+.col { width: clamp(295px, 23vw, 420px); display: flex; flex-direction: column; gap: 14px; min-height: 0; }
 #center { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 /* mobiel: panelen niet verbergen maar onder de chat stapelen */
 @media (max-width: 1100px) {
@@ -106,13 +108,47 @@ main {
 }
 .panel .body { overflow-y: auto; scrollbar-width: thin; font-size: 12px; flex: 1; }
 .panel .empty { color: var(--dim); font-style: italic; font-size: 11.5px; }
-.item { padding: 5px 0; border-bottom: 1px solid rgba(22,49,78,.55); line-height: 1.4; }
+/* bento: één regel per item — titel links (afgekapt), meta rechts */
+.item {
+  padding: 5px 0; border-bottom: 1px solid rgba(22,49,78,.55); line-height: 1.5;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+}
 .item:last-child { border-bottom: none; }
-.item .t { color: var(--text); }
-.item .m { color: var(--dim); font-size: 10.5px; display: block; }
+.item .t {
+  color: var(--text); flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.item .m {
+  color: var(--dim); font-size: 10.5px; flex: 0 1 auto; max-width: 46%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right;
+}
 .item .due { color: var(--gold); }
 .item.now { border-left: 2px solid var(--cyan); padding-left: 7px; }
 .item.read { opacity: .55; }
+
+/* bento: fitPanels verbergt wat niet past en zet er een "+ n"-regel onder */
+.item.fit-hide { display: none; }
+.more-row {
+  flex: none; padding-top: 5px; font-size: 10.5px; letter-spacing: .14em;
+  color: var(--cyan-dim); cursor: pointer; text-transform: uppercase;
+}
+.more-row:hover { color: var(--cyan); }
+/* leeg paneel krimpt tot kopregel + één regel uitleg */
+.panel.lean { flex: 0 0 auto; }
+.panel.lean .body { flex: 0 0 auto; }
+/* "+ n" geklikt: het paneel klapt open als overlay met alle items (mag wrappen) */
+#panel-backdrop {
+  position: fixed; inset: 0; z-index: 55; background: rgba(2, 8, 16, .74);
+  backdrop-filter: blur(2px);
+}
+.panel.expanded {
+  position: fixed; z-index: 56; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(640px, 92vw); max-height: 82vh; flex: none;
+  box-shadow: 0 0 60px rgba(56, 225, 255, .18);
+}
+.panel.expanded .body { overflow-y: auto; }
+.panel.expanded .item { align-items: flex-start; }
+.panel.expanded .item .t, .panel.expanded .item .m { white-space: normal; }
 .bigstat { display: flex; justify-content: space-between; padding: 3px 0; }
 .bigstat b { color: var(--cyan); font-family: Consolas, monospace; }
 
