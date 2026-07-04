@@ -137,15 +137,6 @@ button.ghost:hover { background: rgba(56,225,255,.08); }
 .msg { animation: msg-in .22s ease both; }
 @keyframes msg-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
-/* -- reactor ----------------------------------------------------------- */
-#reactor-wrap { position: relative; display: flex; flex-direction: column; align-items: center; padding: 2px 0 0; }
-#reactor { width: 190px; height: 190px; filter: drop-shadow(0 0 26px rgba(56,225,255,.35)); }
-#state-label {
-  margin-top: -12px; font-size: 10px; letter-spacing: .5em; color: var(--cyan-dim);
-  font-family: Consolas, monospace; text-transform: uppercase;
-}
-#state-label.hot { color: var(--cyan); text-shadow: 0 0 12px var(--cyan-soft); }
-
 /* -- chat log ----------------------------------------------------------- */
 #log { flex: 1; overflow-y: auto; padding: 8px 4px 14px; scrollbar-width: thin; }
 /* "bezig"-indicator: toont in de chat dat Span denkt / een tool draait */
@@ -214,114 +205,12 @@ body.glitching main, body.glitching header {
   100% { transform: translate(0); filter: none; }
 }
 
-/* -- brein-hologram --------------------------------------------------- */
-/* hologram = pronkstuk: meer hoogte dan mail/quests (alleen desktop;
-   op mobiel stapelen de panelen en geldt de flex:0 0 auto uit de media-query) */
-@media (min-width: 1101px) { #panel-brein { flex: 2.4; } }
-#panel-brein h2 { display: flex; align-items: center; justify-content: space-between; }
+/* -- icoonknoppen (header, dialogen) ----------------------------------- */
 .iconbtn {
   background: transparent; color: var(--cyan); border: 1px solid var(--line);
   border-radius: 6px; padding: 1px 7px; cursor: pointer; font-size: 12px;
 }
 .iconbtn:hover { border-color: var(--cyan-dim); box-shadow: 0 0 8px rgba(56,225,255,.25); }
-#holo-canvas {
-  flex: 1 1 auto; min-height: 260px; border: none; border-radius: 10px;
-  overflow: hidden; margin-bottom: 6px; position: relative;
-  /* geen afgekaderde doos meer: zachte gloed in het midden die naar de
-     panel-achtergrond uitvloeit, zodat het hologram lijkt te zweven */
-  background:
-    radial-gradient(ellipse 72% 64% at 50% 46%,
-      rgba(56,225,255,.10), rgba(13,35,56,.38) 42%, transparent 76%);
-}
-/* fijn cyaan grid dat naar de randen uitvloeit (radiale mask) — geen harde
-   vierkante grens meer achter de zwevende nodes (CSP-proof, geen GPU) */
-#holo-canvas::before {
-  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
-  background:
-    repeating-linear-gradient(0deg, rgba(56,225,255,.045) 0 1px, transparent 1px 24px),
-    repeating-linear-gradient(90deg, rgba(56,225,255,.045) 0 1px, transparent 1px 24px);
-  -webkit-mask: radial-gradient(ellipse 62% 60% at 50% 50%, #000 28%, transparent 80%);
-          mask: radial-gradient(ellipse 62% 60% at 50% 50%, #000 28%, transparent 80%);
-}
-#holo-scene { width: 100%; height: 100%; position: relative; z-index: 0; }
-/* tekstlijst onder de graph blijft compact -> de chamber is het pronkstuk */
-#brein { flex: 0 1 auto; max-height: 108px; }
-
-/* infopaneel bij een gepinde node */
-.holo-card {
-  position: absolute; top: 8px; right: 8px; width: 232px; z-index: 3;
-  max-height: calc(100% - 16px); overflow: auto;
-  background: var(--panel); backdrop-filter: blur(6px);
-  border: 1px solid var(--cyan-dim); border-radius: 8px;
-  box-shadow: 0 0 16px var(--cyan-soft); color: var(--text);
-  font-size: 11.5px; padding: 10px 10px 8px;
-  transform: translateX(8px); opacity: 0; pointer-events: none;
-  transition: opacity .18s, transform .18s;
-}
-.holo-card.open { opacity: 1; transform: none; pointer-events: auto; }
-.holo-card h3 { margin: 0; font-size: 9px; letter-spacing: .22em; color: var(--cyan); text-transform: uppercase; }
-.holo-card h4 { margin: 9px 0 3px; font-size: 8.5px; letter-spacing: .18em; color: var(--dim); text-transform: uppercase; }
-.holo-title { font-size: 13px; color: var(--text); margin: 2px 0 2px; font-weight: 600; }
-.holo-src { color: var(--dim); margin: 2px 0; line-height: 1.35; }
-.holo-rel { margin: 2px 0; }
-.holo-rel i { color: var(--cyan-dim); font-style: normal; font-size: 9px; letter-spacing: .06em; }
-.holo-hint { color: var(--dim); opacity: .6; font-size: 9.5px; margin-top: 8px; }
-.holo-x { position: absolute; top: 6px; right: 6px; padding: 0 6px; font-size: 11px; }
-.holo-share { margin-top: 9px; padding: 4px 9px; font-size: 9px; letter-spacing: .12em;
-  text-transform: uppercase; color: var(--cyan); background: transparent;
-  border: 1px solid var(--cyan-dim); border-radius: 3px; cursor: pointer; }
-.holo-share:hover:not(:disabled) { background: var(--cyan-dim); color: #001; }
-.holo-share:disabled { opacity: .7; cursor: default; }
-
-/* zoekbalk + suggesties */
-#holo-search-wrap { position: relative; margin-bottom: 5px; }
-#holo-search {
-  width: 100%; box-sizing: border-box; background: rgba(6,12,22,.6);
-  border: 1px solid var(--line); border-radius: 6px; color: var(--text);
-  font-size: 11px; padding: 4px 8px; outline: none;
-}
-#holo-search:focus { border-color: var(--cyan-dim); box-shadow: 0 0 8px var(--cyan-soft); }
-#holo-suggest { position: absolute; left: 0; right: 0; z-index: 5; display: flex; flex-direction: column; }
-.holo-sug {
-  text-align: left; background: rgba(6,12,22,.96); border: 1px solid var(--line);
-  border-top: none; color: var(--text); font-size: 10.5px; padding: 4px 8px; cursor: pointer;
-}
-.holo-sug:hover { background: rgba(20,40,60,.96); color: var(--cyan); }
-.holo-chip.win { letter-spacing: .04em; border-color: var(--cyan-dim); }
-
-/* live leescascade-readout ("Span leest: …") */
-#holo-reason {
-  margin-top: 4px; font-size: 10px; letter-spacing: .06em; color: var(--cyan);
-  opacity: 0; transition: opacity .3s; min-height: 13px; pointer-events: none;
-}
-#holo-reason::before { content: "◈ LO "; color: var(--dim); }
-
-/* bediening in fullscreen: zoek + filters als overlay boven de scene */
-#holo-full > #holo-search-wrap {
-  position: absolute; top: 16px; left: 20px; width: 260px; z-index: 42;
-}
-#holo-full > #holo-filters {
-  position: absolute; top: 52px; left: 20px; max-width: 60%; z-index: 42;
-}
-#holo-count { font-size: 10px; color: var(--dim); margin-bottom: 6px; letter-spacing: .08em; }
-#holo-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
-.holo-chip {
-  background: transparent; border: 1px solid; border-radius: 20px;
-  color: var(--dim); font-size: 9px; padding: 1px 8px; cursor: pointer;
-  letter-spacing: .08em; opacity: .35;
-}
-.holo-chip.on { color: var(--text); opacity: 1; }
-.holo-tip {
-  background: rgba(6,12,22,.92); border: 1px solid var(--line); border-radius: 6px;
-  padding: 5px 8px; color: var(--text); font-size: 11.5px; max-width: 260px;
-}
-#holo-overlay {
-  position: fixed; inset: 0; z-index: 40; display: none;
-  background: radial-gradient(900px 500px at 50% 40%, #0a1a2e 0%, rgba(2,5,10,.97) 70%);
-}
-#holo-overlay.open { display: block; }
-#holo-full { position: absolute; inset: 0; }
-#holo-close { position: absolute; top: 16px; right: 20px; z-index: 41; font-size: 16px; padding: 6px 12px; }
 
 /* -- tool-permissies ----------------------------------------------------- */
 .perm-group { margin-bottom: 10px; }
@@ -574,7 +463,7 @@ body[data-theme="warmachine"] {
 .perm-badge.read { color: var(--cyan-dim); }
 
 /* N1: NEBULA-weergave — de scene als center-achtergrond, chat zweeft erover */
-body.nebula-on #reactor-wrap, body.nebula-on #wave, body.nebula-on #fx { display: none; }
+body.nebula-on #wave, body.nebula-on #fx { display: none; }
 body.nebula-on #center { position: relative; }
 #nebula-bg { position: absolute; inset: 0; z-index: 0; }
 body.nebula-on #log, body.nebula-on #suggested, body.nebula-on #bar {
@@ -658,7 +547,6 @@ body.mode-min #bar #input, body.mode-min #bar #doc,
 body.mode-min #bar #stop, body.mode-min #bar #end { display: none; }
 body.mode-min main { padding: 0; gap: 0; }
 body.mode-min #center { position: relative; }
-body.mode-min #reactor-wrap { padding-top: 8vh; }  /* klassieke weergave: orb hoger */
 body.mode-min #bar {
   position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%);
   z-index: 2; background: transparent; border: none; padding: 0;
@@ -690,7 +578,7 @@ body.mode-chat #nebula-bg {
   position: relative; inset: auto; flex: none; height: 52%;
   border-bottom: 1px solid var(--line);
 }
-body.mode-chat.nebula-on #reactor-wrap, body.mode-chat.nebula-on #wave { display: none; }
+body.mode-chat.nebula-on #wave { display: none; }
 body.mode-chat #log {
   background: linear-gradient(180deg, rgba(6, 12, 22, .35), transparent 18%);
 }

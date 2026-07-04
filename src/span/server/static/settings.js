@@ -170,7 +170,7 @@
     if (!wrap || !SPAN.panelLayout || !SPAN.applyPanelLayout) return;
     const NAMEN = { agenda: "Agenda", taken: "Taken (Asana + To Do)", mail: "Mail",
                     quests: "Quests & gepland", meetings: "Meetings (Fireflies)",
-                    brein: "Brein-hologram (klassiek)" };
+                    brein: "Brein (statistieken)" };
     const cfg = SPAN.panelLayout();
     wrap.innerHTML = "";
     for (const naam of Object.keys(NAMEN)) {
@@ -191,9 +191,6 @@
         cfg[naam] = sel.value;
         localStorage.setItem("span_panels", JSON.stringify(cfg));
         SPAN.applyPanelLayout(cfg);
-        if (naam === "brein" && sel.value !== "uit") {
-          SPAN.sys("Brein-hologram aangezet — herlaad de pagina om hem te starten.");
-        }
       };
       row.append(lab, sel);
       wrap.appendChild(row);
@@ -204,7 +201,7 @@
   (function nebulaTuning() {
     const wrap = $("nebula-tuning");
     if (!wrap) return;
-    if (!document.body.classList.contains("nebula-on")) return; // klassiek: verbergen
+    if (!document.body.classList.contains("nebula-on")) return; // geen WebGL2: verbergen
     wrap.classList.remove("hidden");
     const PRESETS = {
       standaard: { density: 1, flash: 0.15, veinBoost: 1, ripples: false, cinema: true, strak: false },
@@ -239,17 +236,6 @@
       $("neb-preset-" + naam).onclick = () => { s = { ...PRESETS[naam] }; sync(); apply(); };
     }
     sync(); apply();
-  })();
-
-  /* -- weergave: klassiek of NEBULA (N0-feature-flag) ---------------------- */
-  (function viewInit() {
-    const sel = $("set-view");
-    if (!sel) return;
-    sel.value = localStorage.getItem("span_view") === "klassiek" ? "klassiek" : "nebula";
-    sel.onchange = () => {
-      localStorage.setItem("span_view", sel.value === "nebula" ? "nebula" : "klassiek");
-      location.reload();  // schone start: juiste scripts/scene laden
-    };
   })();
 
   /* -- stem ------------------------------------------------------------- */
@@ -517,7 +503,6 @@
   const COMMANDS = [
     ["Agent Inbox openen", () => document.getElementById("inbox-btn").click()],
     ["Instellingen openen", () => { overlay.classList.add("open"); load(); }],
-    ["Brein-hologram fullscreen", () => document.getElementById("holo-expand").click()],
     ["Dagstart afspelen", () => SPAN.playDaily && SPAN.playDaily(true)],
     ["Wake word aan/uit", () => document.getElementById("wake").click()],
     ["Voorlezen aan/uit", () => document.getElementById("speak").click()],
@@ -574,37 +559,6 @@
     pal.classList.toggle("open");
     if (pal.classList.contains("open")) { palIdx = 0; palRender(); palQ.focus(); }
   };
-
-  /* -- Orb (centrale visual): live tweaken, lokaal bewaard ----------------- */
-  function orbInit() {
-    if (!SPAN.orbConfig) return;       // orb.js niet geladen (geen three.js)
-    const cfg = SPAN.orbConfig();
-    const set = (id, v) => { const el = $(id); if (el) el.value = v; };
-    const lbl = (id, v) => { const el = $(id); if (el) el.textContent = v; };
-    set("orb-style", cfg.style); set("orb-palette", cfg.palette); set("orb-shape", cfg.shape);
-    set("orb-cubes", cfg.cubes); lbl("orb-cubes-label", cfg.cubes);
-    set("orb-pulse", cfg.pulse); lbl("orb-pulse-label", cfg.pulse.toFixed(1));
-    set("orb-rot", cfg.rotation); lbl("orb-rot-label", cfg.rotation.toFixed(1));
-    set("orb-size", cfg.cubeSize); lbl("orb-size-label", cfg.cubeSize);
-    set("orb-smooth", cfg.smooth); lbl("orb-smooth-label", (cfg.smooth || 0.25).toFixed(2));
-    set("orb-bloom", cfg.bloom); lbl("orb-bloom-label", (cfg.bloom == null ? 1.6 : cfg.bloom).toFixed(1));
-    const on = (id, fn) => { const el = $(id); if (el) el.addEventListener("input", fn); };
-    on("orb-style", (e) => SPAN.applyOrbConfig({ style: e.target.value }));
-    on("orb-shape", (e) => SPAN.applyOrbConfig({ shape: e.target.value }));
-    on("orb-palette", (e) => SPAN.applyOrbConfig({ palette: e.target.value }));
-    on("orb-cubes", (e) => { lbl("orb-cubes-label", e.target.value); SPAN.applyOrbConfig({ cubes: parseInt(e.target.value) }); });
-    on("orb-pulse", (e) => { lbl("orb-pulse-label", (+e.target.value).toFixed(1)); SPAN.applyOrbConfig({ pulse: +e.target.value }); });
-    on("orb-rot", (e) => { lbl("orb-rot-label", (+e.target.value).toFixed(1)); SPAN.applyOrbConfig({ rotation: +e.target.value }); });
-    on("orb-size", (e) => { lbl("orb-size-label", e.target.value); SPAN.applyOrbConfig({ cubeSize: +e.target.value }); });
-    on("orb-smooth", (e) => { lbl("orb-smooth-label", (+e.target.value).toFixed(2)); SPAN.applyOrbConfig({ smooth: +e.target.value }); });
-    on("orb-bloom", (e) => { lbl("orb-bloom-label", (+e.target.value).toFixed(1)); SPAN.applyOrbConfig({ bloom: +e.target.value }); });
-    const rst = $("orb-reset");
-    if (rst) rst.onclick = () => {
-      SPAN.applyOrbConfig({ style:"orb", shape:"bol", cubes:1200, pulse:1.0, rotation:1.0, cubeSize:0.05, radius:2.0, palette:"span", smooth:0.25, bloom:1.6 });
-      orbInit();
-    };
-  }
-  orbInit();
 
   /* -- sub-tabs in het instellingen-paneel -------------------------------- */
   (function tabsInit() {

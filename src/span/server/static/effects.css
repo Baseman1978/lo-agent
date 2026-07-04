@@ -109,7 +109,7 @@ body:has(#reticle) textarea { cursor: none; }
   text-transform: uppercase;
 }
 
-/* -- waveform-canvas onder de reactor (#57/#58) ----------------------------------- */
+/* -- waveform-canvas (spraak) (#57/#58) -------------------------------- */
 #wave {
   display: block; width: min(560px, 80%); height: 56px; margin: -6px auto 0;
   opacity: .9;
