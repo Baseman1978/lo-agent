@@ -149,6 +149,44 @@ class TestAgentInbox:
         assert inbox.resolve(iid, "rejected") is None  # geen tweede transitie
         assert inbox.get(iid)["status"] == "done"  # status verandert niet meer
 
+    def test_persistent_schrijft_en_herstelt(self):
+        # met een brein erbij: add/resolve schrijven door, en een nieuwe
+        # inbox (herstart) laadt de items terug met doorlopende teller
+        from span.jarvis.ambient import AgentInbox
+        brain = MagicMock()
+        brain.run.return_value = []  # niets te herstellen bij de eerste start
+        inbox = AgentInbox(brain)
+        iid = inbox.add(kind="choice", title="Tegenspraak",
+                        payload={"options": [{"id": "mf-a", "content": "A"}]})
+        merge = [c for c in brain.run.call_args_list if "MERGE (n:InboxItem" in c.args[0]]
+        assert merge and merge[-1].kwargs["id"] == iid
+        assert json.loads(merge[-1].kwargs["payload"])["options"][0]["id"] == "mf-a"
+        inbox.resolve(iid, "done")
+        merge = [c for c in brain.run.call_args_list if "MERGE (n:InboxItem" in c.args[0]]
+        assert merge[-1].kwargs["status"] == "done"
+        # herstart: brein geeft de opgeslagen items terug; processing -> open
+        brain2 = MagicMock()
+        brain2.run.return_value = [
+            {"id": 7, "kind": "action", "title": "Mail", "detail": "", "action": "mail_send",
+             "payload": '{"to": ["x@y.nl"]}', "urgency": "high", "origin": "", "owner": "",
+             "status": "processing", "created": "2026-07-04T03:30:00", "resolved": None},
+        ]
+        inbox2 = AgentInbox(brain2)
+        item = inbox2.get(7)
+        assert item["status"] == "open"          # mid-vlucht gecrasht -> weer open
+        assert item["payload"] == {"to": ["x@y.nl"]}
+        assert inbox2.add(kind="notify", title="t") == 8  # teller loopt door
+
+    def test_persistentie_faalt_zacht(self):
+        # brein down mag de inbox nooit breken (meldingen blijven werken)
+        from span.jarvis.ambient import AgentInbox
+        brain = MagicMock()
+        brain.run.side_effect = RuntimeError("neo4j down")
+        inbox = AgentInbox(brain)
+        iid = inbox.add(kind="notify", title="t")
+        assert inbox.get(iid)["status"] == "open"
+        assert inbox.resolve(iid, "done")["status"] == "done"
+
     def test_triage_faalt_zacht(self):
         from span.jarvis.ambient import triage_message
         llm = MagicMock()
