@@ -84,7 +84,7 @@ async def lifespan(app: FastAPI):
             "mail": cfg.get("autonomy_mail") or "ask",
             "event": cfg.get("autonomy_event") or "ask",
         },
-        inbox=AgentInbox(),
+        inbox=AgentInbox(brain),  # persistent: open items overleven een deploy
         triage_rules=cfg.get("triage_rules") or "",
         disabled_tools=set(cfg.get("disabled_tools") or []),
         integration_perms=__import__("json").loads(cfg.get("integration_perms") or "{}"),

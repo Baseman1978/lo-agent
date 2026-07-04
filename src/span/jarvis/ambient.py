@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+import json
 import threading
 from datetime import datetime
 from typing import Any
@@ -35,12 +36,79 @@ Antwoord met uitsluitend JSON:
 
 
 class AgentInbox:
-    """Thread-safe wachtrij: acties die op goedkeuring wachten + meldingen."""
+    """Thread-safe wachtrij: acties die op goedkeuring wachten + meldingen.
 
-    def __init__(self) -> None:
+    Met een brein erbij zijn items persistent (InboxItem-knopen): open
+    meldingen en acties overleven dan een deploy/herstart. Zonder brein
+    (CLI-sessie, tests) blijft de inbox vluchtig, zoals voorheen."""
+
+    def __init__(self, brain: Any = None) -> None:
         self._items: list[dict[str, Any]] = []
         self._lock = threading.Lock()
-        self._ids = itertools.count(1)
+        self._brain = brain
+        start = 1
+        if brain is not None:
+            try:
+                rows = brain.run(
+                    "MATCH (n:InboxItem) RETURN n.item_id AS id, n.kind AS kind, "
+                    "n.title AS title, n.detail AS detail, n.action AS action, "
+                    "n.payload AS payload, n.urgency AS urgency, n.origin AS origin, "
+                    "n.owner AS owner, n.status AS status, n.created AS created, "
+                    "n.resolved AS resolved ORDER BY n.item_id"
+                )
+                for r in rows[-100:]:
+                    item = {k: (r.get(k) or "") for k in
+                            ("kind", "title", "detail", "action", "urgency",
+                             "origin", "owner", "status", "created")}
+                    item["id"] = r["id"]
+                    try:
+                        item["payload"] = json.loads(r.get("payload") or "{}")
+                    except Exception:
+                        item["payload"] = {}
+                    if r.get("resolved"):
+                        item["resolved"] = r["resolved"]
+                    # processing was mid-vlucht toen de server stopte -> weer open
+                    if item["status"] == "processing":
+                        item["status"] = "open"
+                    self._items.append(item)
+                if rows:
+                    start = max(r["id"] for r in rows) + 1
+            except Exception as exc:
+                print(f"[inbox] herstel uit brein mislukt: {exc}", flush=True)
+        self._ids = itertools.count(start)
+
+    def _persist(self, item: dict[str, Any]) -> None:
+        """Write-through naar het brein; zacht falend (inbox werkt altijd door).
+        Claim/release (processing) wordt bewust NIET opgeslagen: crasht de
+        server mid-uitvoering, dan staat het item na herstart gewoon weer open."""
+        if self._brain is None:
+            return
+        try:
+            self._brain.run(
+                "MERGE (n:InboxItem {item_id: $id}) SET n.kind = $kind, "
+                "n.title = $title, n.detail = $detail, n.action = $action, "
+                "n.payload = $payload, n.urgency = $urgency, n.origin = $origin, "
+                "n.owner = $owner, n.status = $status, n.created = $created, "
+                "n.resolved = $resolved",
+                id=item["id"], kind=item["kind"], title=item["title"],
+                detail=item["detail"], action=item["action"],
+                payload=json.dumps(item["payload"], ensure_ascii=False),
+                urgency=item["urgency"], origin=item["origin"],
+                owner=item["owner"], status=item["status"],
+                created=item["created"], resolved=item.get("resolved"),
+            )
+        except Exception as exc:
+            print(f"[inbox] opslaan mislukt: {exc}", flush=True)
+
+    def _prune_store(self, min_id: int) -> None:
+        """Spiegel de in-memory cap (laatste 100) naar het brein."""
+        if self._brain is None:
+            return
+        try:
+            self._brain.run("MATCH (n:InboxItem) WHERE n.item_id < $min DELETE n",
+                            min=min_id)
+        except Exception as exc:
+            print(f"[inbox] opschonen mislukt: {exc}", flush=True)
 
     def add(
         self,
@@ -69,6 +137,9 @@ class AgentInbox:
         with self._lock:
             self._items.append(item)
             del self._items[:-100]  # houd het compact
+            min_id = self._items[0]["id"]
+        self._persist(item)
+        self._prune_store(min_id)
         return item["id"]
 
     def get(self, item_id: int) -> dict[str, Any] | None:
@@ -102,7 +173,9 @@ class AgentInbox:
                 return None
             item["status"] = status
             item["resolved"] = now_local().isoformat(timespec="seconds")
-            return dict(item)
+            snapshot = dict(item)
+        self._persist(snapshot)
+        return snapshot
 
     @staticmethod
     def _visible(item: dict[str, Any], owner: str | None) -> bool:
