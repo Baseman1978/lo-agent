@@ -742,9 +742,7 @@ SPAN.applyPanelLayout = (cfg) => {
    zoveel items als er echt passen; de rest zit achter één "+ n"-regel die
    het paneel als overlay openklapt. Op mobiel (<=1100px) blijft de native
    scroll — daar is vegen natuurlijker dan een overlay. */
-let fitRaf = null;
 SPAN.fitPanels = () => {
-  if (fitRaf) cancelAnimationFrame(fitRaf);
   const panels = [...document.querySelectorAll("main .panel")]
     .filter((p) => !p.classList.contains("hidden") && !p.classList.contains("expanded"));
   const smal = innerWidth <= 1100;
@@ -759,33 +757,32 @@ SPAN.fitPanels = () => {
     sec.style.flex = smal ? "" : (n === 0 ? "" : `${Math.min(n, 8)} 1 0%`);
   }
   if (smal) return;
-  // pas 2: ná layout meten wat er past; rest verbergen achter "+ n"
-  fitRaf = requestAnimationFrame(() => {
-    fitRaf = null;
-    for (const sec of panels) {
-      const body = sec.querySelector(".body");
-      if (!body) continue;
-      const items = [...body.querySelectorAll(".item, .bigstat")];
-      if (!items.length) continue;
-      const H = body.clientHeight;
-      if (!H) continue;  // paneel niet zichtbaar (mode-min/chat): niets verbergen
-      const hoogtes = items.map((el) => el.offsetHeight + 1);
-      let past = 0, gebruikt = 0;
-      for (const h of hoogtes) {
-        if (gebruikt + h > H) break;
-        gebruikt += h; past++;
-      }
-      if (past >= items.length) continue;
-      // ruimte vrijhouden voor de "+ n"-regel zelf (die krimpt de body ~22px)
-      while (past > 1 && gebruikt + 22 > H) { past--; gebruikt -= hoogtes[past]; }
-      items.forEach((el, i) => el.classList.toggle("fit-hide", i >= past));
-      const more = document.createElement("div");
-      more.className = "more-row";
-      more.textContent = `▾ nog ${items.length - past}`;
-      more.onclick = () => expandPanel(sec);
-      sec.appendChild(more);
+  // pas 2: meten wat er past; rest verbergen achter "+ n". Synchroon — het
+  // lezen van clientHeight forceert de layout na pas 1 (géén rAF: die vuurt
+  // niet in achtergrond-tabs, waardoor de fit dan stil zou blijven staan).
+  for (const sec of panels) {
+    const body = sec.querySelector(".body");
+    if (!body) continue;
+    const items = [...body.querySelectorAll(".item, .bigstat")];
+    if (!items.length) continue;
+    const H = body.clientHeight;
+    if (!H) continue;  // paneel niet zichtbaar (mode-min/chat): niets verbergen
+    const hoogtes = items.map((el) => el.offsetHeight + 1);
+    let past = 0, gebruikt = 0;
+    for (const h of hoogtes) {
+      if (gebruikt + h > H) break;
+      gebruikt += h; past++;
     }
-  });
+    if (past >= items.length) continue;
+    // ruimte vrijhouden voor de "+ n"-regel zelf (die krimpt de body ~22px)
+    while (past > 1 && gebruikt + 22 > H) { past--; gebruikt -= hoogtes[past]; }
+    items.forEach((el, i) => el.classList.toggle("fit-hide", i >= past));
+    const more = document.createElement("div");
+    more.className = "more-row";
+    more.textContent = `▾ nog ${items.length - past}`;
+    more.onclick = () => expandPanel(sec);
+    sec.appendChild(more);
+  }
 };
 function expandPanel(sec) {
   closeExpandedPanel();
@@ -820,7 +817,7 @@ SPAN.applyPanelLayout(SPAN.panelLayout());
   if (!gl2) { console.warn("[nebula] geen WebGL2 - geen 3D-scene"); return; }
   SPAN._nebula = true;
   document.body.classList.add("nebula-on");
-  import("/static/hud/nebula.js?v=68").then((m) => {
+  import("/static/hud/nebula.js?v=69").then((m) => {
     const center = document.getElementById("center");
     if (!center) return;
     const bg = document.createElement("div");
