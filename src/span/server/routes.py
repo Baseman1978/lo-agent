@@ -416,6 +416,11 @@ async def inbox_approve(request: Request, item_id: int) -> dict[str, Any]:
     pre = inbox.get(item_id)  # eigenaar-check vóór de claim: B keurt A's actie niet goed
     if pre is None or not inbox.approvable_by(pre, owner):
         raise HTTPException(status_code=404, detail="Item niet gevonden of al afgehandeld.")
+    if pre.get("kind") == "choice":
+        # een keuze-item kent geen generiek "goedkeuren" — er moet een van de
+        # opties gekozen worden (POST /api/inbox/{id}/choose)
+        raise HTTPException(status_code=400,
+                            detail="Dit item vraagt een keuze — kies een van de opties.")
     item = inbox.claim(item_id)  # atomair: dubbelklik kan nooit twee keer uitvoeren
     if item is None:
         raise HTTPException(status_code=404, detail="Item niet gevonden of al afgehandeld.")
@@ -457,6 +462,58 @@ async def inbox_reject(request: Request, item_id: int) -> dict[str, Any]:
     await asyncio.to_thread(record_feedback, _state["brain"],
                             item["kind"], item.get("action", ""), "rejected")
     return {"rejected": True}
+
+
+@router.post("/api/inbox/{item_id}/choose")
+async def inbox_choose(request: Request, item_id: int) -> dict[str, Any]:
+    """Keuze-item afhandelen (bv. tegenspraak in het geheugen): de gekozen
+    versie blijft, de andere opties worden gearchiveerd (superseded) zodat
+    de recall ze niet meer ophaalt."""
+    _require_rest_auth(request)
+    body = await request.json()
+    pick = str(body.get("pick") or "")
+    inbox: AgentInbox = _state["inbox"]
+    ctx = _request_context(request)
+    owner = getattr(ctx.brain, "database", "")
+    pre = inbox.get(item_id)  # zelfde eigenaar-check als bij approve
+    if pre is None or not inbox.approvable_by(pre, owner):
+        raise HTTPException(status_code=404, detail="Item niet gevonden of al afgehandeld.")
+    if pre.get("kind") != "choice":
+        raise HTTPException(status_code=400, detail="Dit item is geen keuze-item.")
+    option_ids = [o.get("id") for o in (pre.get("payload") or {}).get("options") or []]
+    if pick not in option_ids:
+        raise HTTPException(status_code=400, detail="Onbekende keuze.")
+    item = inbox.claim(item_id)  # atomair: dubbelklik kiest nooit twee keer
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item niet gevonden of al afgehandeld.")
+    losers = [i for i in option_ids if i != pick]
+    brain = getattr(ctx, "brain", None) or _state["brain"]
+
+    def _resolve_contradiction() -> None:
+        brain.run(
+            "MATCH (mf:MemoryFragment {id: $id}) "
+            "SET mf.contradiction_flagged = null",
+            id=pick,
+        )
+        brain.run(
+            "UNWIND $ids AS i MATCH (mf:MemoryFragment {id: i}) "
+            "SET mf.superseded = true, mf.superseded_by = $winner, "
+            "    mf.contradiction_flagged = null",
+            ids=losers, winner=pick,
+        )
+
+    try:
+        await asyncio.to_thread(_resolve_contradiction)
+    except Exception:
+        inbox.release(item_id)  # mislukt: item blijft open voor een nieuwe poging
+        raise
+    await asyncio.to_thread(_audit, item.get("action") or "choice", item["title"],
+                            getattr(ctx, "upn", ""))
+    inbox.resolve(item_id, "done")
+    from span.jarvis.feedback import record_feedback
+    await asyncio.to_thread(record_feedback, _state["brain"],
+                            item["kind"], item.get("action", ""), "approved")
+    return {"chosen": pick, "superseded": losers}
 
 
 # -- Integration Broker: catalogus + acties (onder LO's governance) ---------

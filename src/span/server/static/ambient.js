@@ -56,7 +56,8 @@
   setTimeout(poll, 3000);
 
   /* -- inbox overlay ----------------------------------------------------- */
-  const KIND_LABEL = { action: "ACTIE", needs_reply: "ANTWOORD NODIG", notify: "MELDING" };
+  const KIND_LABEL = { action: "ACTIE", needs_reply: "ANTWOORD NODIG", notify: "MELDING",
+                       choice: "KEUZE" };
   function render(items) {
     const list = $("inbox-list");
     list.innerHTML = "";
@@ -88,6 +89,17 @@
     }
     return rows.length ? `<div class="inbox-payload">${rows.join("")}</div>` : "";
   }
+  // keuze-item (bv. tegenspraak in het geheugen): beide versies tonen met
+  // een letter, en per versie een eigen "deze klopt"-knop i.p.v. één goedkeuren
+  const LETTERS = "ABCDEFGH";
+  function choiceRows(options) {
+    const rows = (options || []).slice(0, LETTERS.length).map((o, i) => {
+      const txt = String(o.content || o.id || "");
+      return `<div class="pl"><span>${LETTERS[i]}</span>` +
+             `${esc(txt.length > 300 ? txt.slice(0, 300) + "…" : txt)}</div>`;
+    });
+    return rows.length ? `<div class="inbox-payload">${rows.join("")}</div>` : "";
+  }
   function card(item, open) {
     const div = document.createElement("div");
     div.className = "inbox-card" + (open ? "" : " closed") +
@@ -99,20 +111,50 @@
       `${item.status !== "open" ? " · " + esc(item.status) : ""}</div>` +
       `<b>${esc(item.title)}</b><p>${esc(item.detail)}</p>` +
       (open && item.kind === "action" ? payloadRows(item.payload) : "") +
+      (open && item.kind === "choice" ? choiceRows(item.payload && item.payload.options) : "") +
       (item.payload && _safeHttp(item.payload.link)
         ? `<a href="${esc(item.payload.link)}" target="_blank" rel="noopener noreferrer">open in Outlook</a> ` : "");
     if (open) {
-      const ok = document.createElement("button");
-      ok.className = "ghost"; ok.textContent = approveLabel;
-      ok.onclick = () => act(item.id, "approve", ok);
+      const row = document.createElement("div");
+      row.className = "inbox-actions";
+      if (item.kind === "choice") {
+        const options = ((item.payload && item.payload.options) || []).slice(0, LETTERS.length);
+        options.forEach((o, i) => {
+          const b = document.createElement("button");
+          b.className = "ghost"; b.textContent = `✓ ${LETTERS[i]} klopt`;
+          b.onclick = () => choose(item.id, o.id, b);
+          row.appendChild(b);
+        });
+      } else {
+        const ok = document.createElement("button");
+        ok.className = "ghost"; ok.textContent = approveLabel;
+        ok.onclick = () => act(item.id, "approve", ok);
+        row.appendChild(ok);
+      }
       const no = document.createElement("button");
       no.className = "ghost reject"; no.textContent = "✕ negeren";
       no.onclick = () => act(item.id, "reject", no);
-      const row = document.createElement("div");
-      row.className = "inbox-actions"; row.append(ok, no);
+      row.appendChild(no);
       div.appendChild(row);
     }
     return div;
+  }
+  async function choose(id, pick, btn) {
+    btn.disabled = true; btn.textContent = "…";
+    try {
+      const res = await fetch(`/api/inbox/${id}/choose`, {
+        method: "POST",
+        headers: { ...SPAN.authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ pick }),
+      });
+      const d = await res.json();
+      if (!res.ok) { SPAN.sys(d.detail || "Mislukt", "warn"); btn.disabled = false; return; }
+      SPAN.chime(880, .1);
+      const n = (d.superseded || []).length;
+      SPAN.sys(n ? `Geheugen bijgewerkt — ${n} tegenstrijdige versie${n > 1 ? "s" : ""} gearchiveerd.`
+                 : "Geheugen bijgewerkt.");
+      poll();
+    } catch (e) { SPAN.sys("Keuze mislukt.", "warn"); btn.disabled = false; }
   }
   async function act(id, verb, btn) {
     btn.disabled = true; btn.textContent = "…";

@@ -234,7 +234,13 @@ def consolidate_memory(brain, llm, light_model=None) -> dict[str, int]:
             "SET mf.contradiction_flagged = true",
             ids=ids,
         )
-        contradictions.append({"ids": ids, "issue": c["issue"]})
+        # de fragmentteksten meegeven zodat de melding een echte keuze kan
+        # voorleggen ("welke klopt?") i.p.v. alleen ids die niemand kan duiden
+        by_id = {f["id"]: f for f in fragments}
+        contradictions.append({
+            "ids": ids, "issue": c["issue"],
+            "options": [{"id": i, "content": by_id[i]["content"]} for i in ids],
+        })
     merged_entities = dedup_entities(brain)
     return {"duplicates": dup_count, "insights": insight_count,
             "contradictions": contradictions, "entities_merged": merged_entities}
@@ -400,8 +406,13 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
                           detail=f"{result['duplicates']} duplicaten samengevoegd, "
                                  f"{result['insights']} nieuwe inzichten.")
             for c in result.get("contradictions", []):
-                inbox.add(kind="notify", title="Tegenspraak in het geheugen",
-                          detail=f"{c['issue']} ({', '.join(c['ids'])}) — welke klopt?",
+                # keuze-item: de HUD toont beide versies met een knop per
+                # versie; kiezen archiveert de andere (superseded)
+                inbox.add(kind="choice", title="Tegenspraak in het geheugen",
+                          detail=f"{c['issue']} — welke versie klopt?",
+                          action="memory_pick",
+                          payload={"issue": c["issue"],
+                                   "options": c.get("options") or []},
                           urgency="high")
 
     async def do_weekreview() -> None:

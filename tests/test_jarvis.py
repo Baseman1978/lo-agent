@@ -468,6 +468,25 @@ class TestProactief:
         result = consolidate_memory(brain, llm)
         assert result["duplicates"] == 1 and result["insights"] == 1
 
+    def test_consolidatie_tegenspraak_bevat_opties_met_tekst(self):
+        # de melding moet een échte keuze kunnen voorleggen: per fragment de
+        # tekst, niet alleen ids waar niemand iets mee kan (HUD keuze-item)
+        from span.jarvis import daily
+        brain = MagicMock()
+        frags = [{"id": f"mf-{i}", "type": "observation", "content": f"feit {i}"}
+                 for i in range(12)]
+        brain.run.side_effect = [frags, [{"n": 0}], []]
+        llm = MagicMock()
+        llm.chat_json.return_value = {
+            "contradictions": [{"ids": ["mf-1", "mf-2"], "issue": "datering botst"}],
+        }
+        with patch.object(daily, "dedup_entities", return_value=0):
+            result = daily.consolidate_memory(brain, llm)
+        c = result["contradictions"][0]
+        assert c["issue"] == "datering botst"
+        assert c["options"] == [{"id": "mf-1", "content": "feit 1"},
+                                {"id": "mf-2", "content": "feit 2"}]
+
     def test_consolidatie_slaat_over_bij_weinig_fragmenten(self):
         from span.jarvis.daily import consolidate_memory
         brain = MagicMock()
