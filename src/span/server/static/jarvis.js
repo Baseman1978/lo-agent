@@ -486,8 +486,10 @@ async function loadPanels() {
                  `${esc(m.date || "")}${m.duration_min ? " · " + Math.round(m.duration_min) + " min" : ""}`)),
             "geen meetings");
         }
+        SPAN.fitPanels();
       }).catch(() => { /* stil */ });
 
+    SPAN.fitPanels();
   } catch (e) { panelsError("netwerk"); }
   try {
     const res = await fetch("/api/status", { headers: SPAN.authHeaders() });
@@ -508,6 +510,7 @@ async function loadPanels() {
     lat.className = "bigstat";
     lat.innerHTML = `<span>laatste antwoord</span><b id="latency-stat">—</b>`;
     $("brein").appendChild(lat);
+    SPAN.fitPanels();
   } catch (e) { /* stil */ }
 }
 /* panelen verversen met back-off: normaal elke 90s, maar als de MCP-server
@@ -616,6 +619,7 @@ const OVERLAY_IDS = ["onboard-overlay", "perm-overlay",
                      "settings-overlay", "inbox-overlay", "tasks-overlay"];
 addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
+  if (closeExpandedPanel()) { e.preventDefault(); return; }  // bento "+ n"-overlay
   for (const id of OVERLAY_IDS) {
     const ov = $(id);
     if (ov && ov.classList.contains("open")) {
@@ -704,6 +708,7 @@ SPAN.setMode = (m) => {
   localStorage.setItem("span_mode", m);
   document.querySelectorAll("#mode-switch button").forEach((b) =>
     b.classList.toggle("active", b.dataset.mode === m));
+  if (m === "full" && SPAN.fitPanels) SPAN.fitPanels();  // bento hermeten
 };
 SPAN.setMode(localStorage.getItem("span_mode") || "full");
 document.querySelectorAll("#mode-switch button").forEach((b) =>
@@ -729,7 +734,82 @@ SPAN.applyPanelLayout = (cfg) => {
     if (plek === "links" && left) left.appendChild(sec);
     else if (plek === "rechts" && right) right.appendChild(sec);
   }
+  SPAN.fitPanels();
 };
+
+/* -- bento: alles in één beeld, nooit scrollen ------------------------------
+   Elke tegel krijgt hoogte naar inhoud (leeg = alleen kopregel) en toont
+   zoveel items als er echt passen; de rest zit achter één "+ n"-regel die
+   het paneel als overlay openklapt. Op mobiel (<=1100px) blijft de native
+   scroll — daar is vegen natuurlijker dan een overlay. */
+let fitRaf = null;
+SPAN.fitPanels = () => {
+  if (fitRaf) cancelAnimationFrame(fitRaf);
+  const panels = [...document.querySelectorAll("main .panel")]
+    .filter((p) => !p.classList.contains("hidden") && !p.classList.contains("expanded"));
+  const smal = innerWidth <= 1100;
+  // pas 1: reset + hoogteverdeling naar inhoud (mobiel: alles native laten)
+  for (const sec of panels) {
+    const body = sec.querySelector(".body");
+    if (!body) continue;
+    sec.querySelector(".more-row")?.remove();
+    body.querySelectorAll(".fit-hide").forEach((el) => el.classList.remove("fit-hide"));
+    const n = body.querySelectorAll(".item, .bigstat").length;
+    sec.classList.toggle("lean", !smal && n === 0);
+    sec.style.flex = smal ? "" : (n === 0 ? "" : `${Math.min(n, 8)} 1 0%`);
+  }
+  if (smal) return;
+  // pas 2: ná layout meten wat er past; rest verbergen achter "+ n"
+  fitRaf = requestAnimationFrame(() => {
+    fitRaf = null;
+    for (const sec of panels) {
+      const body = sec.querySelector(".body");
+      if (!body) continue;
+      const items = [...body.querySelectorAll(".item, .bigstat")];
+      if (!items.length) continue;
+      const H = body.clientHeight;
+      if (!H) continue;  // paneel niet zichtbaar (mode-min/chat): niets verbergen
+      const hoogtes = items.map((el) => el.offsetHeight + 1);
+      let past = 0, gebruikt = 0;
+      for (const h of hoogtes) {
+        if (gebruikt + h > H) break;
+        gebruikt += h; past++;
+      }
+      if (past >= items.length) continue;
+      // ruimte vrijhouden voor de "+ n"-regel zelf (die krimpt de body ~22px)
+      while (past > 1 && gebruikt + 22 > H) { past--; gebruikt -= hoogtes[past]; }
+      items.forEach((el, i) => el.classList.toggle("fit-hide", i >= past));
+      const more = document.createElement("div");
+      more.className = "more-row";
+      more.textContent = `▾ nog ${items.length - past}`;
+      more.onclick = () => expandPanel(sec);
+      sec.appendChild(more);
+    }
+  });
+};
+function expandPanel(sec) {
+  closeExpandedPanel();
+  const bd = document.createElement("div");
+  bd.id = "panel-backdrop";
+  bd.onclick = closeExpandedPanel;
+  document.body.appendChild(bd);
+  sec.classList.add("expanded");
+  sec.querySelector(".more-row")?.remove();
+  sec.querySelectorAll(".fit-hide").forEach((el) => el.classList.remove("fit-hide"));
+}
+function closeExpandedPanel() {
+  const open = document.querySelector(".panel.expanded");
+  $("panel-backdrop")?.remove();
+  if (!open) return false;
+  open.classList.remove("expanded");
+  SPAN.fitPanels();
+  return true;
+}
+let fitResizeTimer = null;
+addEventListener("resize", () => {
+  clearTimeout(fitResizeTimer);
+  fitResizeTimer = setTimeout(() => SPAN.fitPanels(), 150);
+});
 SPAN.applyPanelLayout(SPAN.panelLayout());
 
 /* -- NEBULA-scene: dé center-visual (N5: de klassieke orb is verwijderd) ----
@@ -740,7 +820,7 @@ SPAN.applyPanelLayout(SPAN.panelLayout());
   if (!gl2) { console.warn("[nebula] geen WebGL2 - geen 3D-scene"); return; }
   SPAN._nebula = true;
   document.body.classList.add("nebula-on");
-  import("/static/hud/nebula.js?v=67").then((m) => {
+  import("/static/hud/nebula.js?v=68").then((m) => {
     const center = document.getElementById("center");
     if (!center) return;
     const bg = document.createElement("div");
