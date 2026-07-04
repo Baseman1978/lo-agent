@@ -776,6 +776,7 @@ SPAN.fitPanels = () => {
     if (past >= items.length) continue;
     // ruimte vrijhouden voor de "+ n"-regel zelf (die krimpt de body ~22px)
     while (past > 1 && gebruikt + 22 > H) { past--; gebruikt -= hoogtes[past]; }
+    past = Math.max(past, 1);  // nooit een leeg paneel met alleen "▾ nog n"
     items.forEach((el, i) => el.classList.toggle("fit-hide", i >= past));
     const more = document.createElement("div");
     more.className = "more-row";
@@ -817,7 +818,7 @@ SPAN.applyPanelLayout(SPAN.panelLayout());
   if (!gl2) { console.warn("[nebula] geen WebGL2 - geen 3D-scene"); return; }
   SPAN._nebula = true;
   document.body.classList.add("nebula-on");
-  import("/static/hud/nebula.js?v=69").then((m) => {
+  import("/static/hud/nebula.js?v=70").then((m) => {
     const center = document.getElementById("center");
     if (!center) return;
     const bg = document.createElement("div");

@@ -136,6 +136,10 @@ main {
 /* leeg paneel krimpt tot kopregel + één regel uitleg */
 .panel.lean { flex: 0 0 auto; }
 .panel.lean .body { flex: 0 0 auto; }
+/* gevuld paneel houdt altijd ruimte voor kop + 1 item + "▾ nog n" */
+@media (min-width: 1101px) {
+  main .panel:not(.lean) { min-height: 96px; }
+}
 /* "+ n" geklikt: het paneel klapt open als overlay met alle items (mag wrappen) */
 #panel-backdrop {
   position: fixed; inset: 0; z-index: 55; background: rgba(2, 8, 16, .74);
