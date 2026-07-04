@@ -155,7 +155,6 @@
     const close = () => { ov.classList.add("gone"); setTimeout(() => ov.remove(), 600); };
     ov.onclick = close;
     setTimeout(close, 12000);
-    if (SPAN.flare) SPAN.flare();
   };
 
   /* -- hero: alert-takeover (#88) — voor urgente inbox-items ------------------ */

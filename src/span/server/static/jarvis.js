@@ -1,11 +1,11 @@
 /* SPAN · J.A.R.V.I.S. HUD — core: state, websocket-chat, panelen, boot.
-   Visuals in fx.js, spraak in voice.js, brein-hologram in hologram.js. */
+   Visuals in fx.js + de NEBULA-scene (hud/nebula.js), spraak in voice.js. */
 "use strict";
 
 const $ = (id) => document.getElementById(id);
 const log = $("log"), input = $("input");
 
-/* gedeelde namespace voor fx.js / voice.js / hologram.js */
+/* gedeelde namespace voor fx.js / voice.js / settings.js */
 const SPAN = window.SPAN = {
   state: "boot",        // boot | idle | listening | busy | speaking
   micLevel: 0,          // 0..1, gezet door voice.js, gelezen door fx.js
@@ -32,13 +32,6 @@ SPAN.authHeaders = () => ({ Authorization: "Bearer " + token() });
 
 SPAN.setState = (next) => {
   SPAN.state = next;
-  const label = $("state-label");
-  const names = { idle: "STANDBY", listening: "LUISTERT…", busy: "DENKT…",
-    speaking: "SPREEKT", boot: "BOOT" };
-  if (label) {
-    label.textContent = names[next] || next.toUpperCase();
-    label.classList.toggle("hot", next !== "idle");
-  }
   // N3: de NEBULA-orb volgt de echte agent-status (busy heet daar thinking)
   if (SPAN._nebulaHandle && SPAN._nebulaHandle.setState) {
     SPAN._nebulaHandle.setState(next === "busy" ? "thinking" : next);
@@ -95,7 +88,7 @@ const BOOT_LINES = [
   "ORQ.AI gateway: online",
   "geheugenindex: HNSW geladen",
   "spraakinterface: gereed",
-  "hologram-renderer: WebGL",
+  "NEBULA-renderer: WebGL2",
   "ambient watcher: actief",
   "integraties: O365 · Asana · Telegram",
   "ALLE SYSTEMEN ONLINE",
@@ -294,12 +287,8 @@ function handle(msg) {
     if (msg.phase === "start") SPAN.working(SPAN.toolLabel(msg.name) + "…");
     else SPAN.working((SPAN._agentName || "LO") + " werkt verder…");
   }
-  else if (msg.type === "touched") {
-    if (SPAN.highlightNodes) SPAN.highlightNodes(msg.ids || []);
-  }
   else if (msg.type === "memory_read") {
-    // live: Span raadpleegt geheugen tijdens de beurt -> hologram-leescascade
-    if (SPAN.markReading) SPAN.markReading(msg.ids || [], msg.reason || "");
+    // live: Span raadpleegt geheugen tijdens de beurt -> leescascade in de scene
     if (SPAN._nebulaHandle && SPAN._nebulaHandle.markReading) {
       SPAN._nebulaHandle.markReading(msg.ids || [], msg.reason || "");
     }
@@ -313,7 +302,6 @@ function handle(msg) {
       current.classList.add("done");
       if (SPAN.highlightFacts) SPAN.highlightFacts(current);
     }
-    if (SPAN.reactorOk) SPAN.reactorOk();
     SPAN.working(null);
     current = null; SPAN.busy = false; SPAN.setState("idle");
     { const st = $("stop"); if (st) st.classList.add("hidden"); }
@@ -359,7 +347,6 @@ SPAN.send = (textOverride) => {
   if (!text || SPAN.busy || !ws || ws.readyState !== 1) return;
   SPAN._muteStream = false;   // een nieuw antwoord mag weer voorgelezen worden
   turnStart = Date.now();
-  if (SPAN.beginTurn) SPAN.beginTurn();  // hologram: camera vliegt 1x naar de eerste lees
   const sg = $("suggested"); if (sg) sg.innerHTML = "";  // suggesties weg zodra je begint
   el("user", "JIJ").appendChild(document.createTextNode(text));
   ws.send(JSON.stringify({ type: "user", text }));
@@ -625,16 +612,14 @@ addEventListener("drop", async (e) => {
 });
 
 /* -- Escape sluit de bovenste open overlay ---------------------------------- */
-const OVERLAY_IDS = ["onboard-overlay", "perm-overlay", "holo-overlay",
+const OVERLAY_IDS = ["onboard-overlay", "perm-overlay",
                      "settings-overlay", "inbox-overlay", "tasks-overlay"];
 addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   for (const id of OVERLAY_IDS) {
     const ov = $(id);
     if (ov && ov.classList.contains("open")) {
-      if (id === "holo-overlay") {
-        $("holo-close").click();  // verhuist de 3D-scene netjes terug
-      } else if (id === "onboard-overlay") {
+      if (id === "onboard-overlay") {
         $("onboard-start").click();  // via de knop, zodat de gezien-vlag gezet wordt
       } else {
         ov.classList.remove("open");
@@ -747,17 +732,15 @@ SPAN.applyPanelLayout = (cfg) => {
 };
 SPAN.applyPanelLayout(SPAN.panelLayout());
 
-/* -- N0: NEBULA-weergave (feature-flag, Instellingen -> Uiterlijk) ----------
-   Synchroon de vlag zetten (orb.js leest hem bij eigen load), daarna de
-   gebundelde scene lazy laden. Geen WebGL2 -> stil terugvallen op klassiek. */
+/* -- NEBULA-scene: dé center-visual (N5: de klassieke orb is verwijderd) ----
+   Geen WebGL2 -> geen 3D-scene; chat en panelen werken gewoon door. */
 (function nebulaBoot() {
-  if (localStorage.getItem("span_view") === "klassiek") return;  // N4: NEBULA is de standaard
   let gl2 = false;
   try { gl2 = !!document.createElement("canvas").getContext("webgl2"); } catch (e) { /* stil */ }
-  if (!gl2) { console.warn("[nebula] geen WebGL2 - klassieke weergave"); return; }
+  if (!gl2) { console.warn("[nebula] geen WebGL2 - geen 3D-scene"); return; }
   SPAN._nebula = true;
   document.body.classList.add("nebula-on");
-  import("/static/hud/nebula.js?v=65").then((m) => {
+  import("/static/hud/nebula.js?v=66").then((m) => {
     const center = document.getElementById("center");
     if (!center) return;
     const bg = document.createElement("div");

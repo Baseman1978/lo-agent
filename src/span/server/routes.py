@@ -310,7 +310,7 @@ async def models(request: Request) -> dict[str, Any]:
 @router.get("/api/graph")
 async def graph(request: Request, limit: int = Query(250, le=600),
                 since: int = Query(0, ge=0, le=3650)) -> dict[str, Any]:
-    """Het brein als graph: nodes + links voor het 3D-hologram in de HUD.
+    """Het brein als graph: nodes + links voor de NEBULA-scene in de HUD.
     since = aantal dagen terug (0 = alles). Formele/kern-labels blijven altijd
     zichtbaar zodat het venster het skelet van het brein niet wegfiltert."""
     _require_rest_auth(request)

@@ -1,6 +1,5 @@
 /* SPAN HUD visuals — uitbreiding van de bestaande laag, zelfde API:
-   leest SPAN.state/SPAN.micLevel, levert SPAN.glitch en nu ook SPAN.flare,
-   SPAN.ripple, SPAN.fxLevel. Ontwerpwetten (Territory/Hansen): ambient
+   leest SPAN.state/SPAN.micLevel, levert SPAN.glitch, SPAN.ripple, SPAN.fxLevel. Ontwerpwetten (Territory/Hansen): ambient
    effecten zijn coherente achtergrond, hero's duren ±3s, glitch = fout.
 
    FX-fundament: intensiteit (uit/subtiel/vol) + FPS-budget dat ambient
@@ -251,136 +250,9 @@
   }
   requestAnimationFrame(fxDraw);
 
-  /* -- arc reactor (uitgebreid: states, charge-up, arcs, flare, slaap) ------ */
-  const rc = document.getElementById("reactor").getContext("2d");
-  let t0 = 0, busySince = 0, flare = 0, echoRings = [], lastActive = Date.now();
-  const origChime = SPAN.chime;
-  SPAN.chime = (f, d) => { origChime(f, d); echoRings.push({ r: 56, op: .7 }); }; // #9
-  addEventListener("pointerdown", () => lastActive = Date.now());
-  addEventListener("keydown", () => lastActive = Date.now());
-  SPAN.flare = () => { flare = 1; };                                              // #6
-
-  const STATE_HUE = { error: "255,90,90", ok: "125,255,180" };
-  let stateTint = null, tintT = 0;
-  const origGlitch = () => {
+  /* -- foutkleurtaal (was: arc-reactor; de NEBULA-scene is nu de visual) ---- */
+  SPAN.glitch = () => {
     document.body.classList.add("glitching");
     setTimeout(() => document.body.classList.remove("glitching"), 700);
   };
-  SPAN.glitch = () => { origGlitch(); stateTint = STATE_HUE.error; tintT = 1; };  // #3 kleurtaal
-  SPAN.reactorOk = () => { stateTint = STATE_HUE.ok; tintT = 1; };
-
-  function reactorDraw(ts) {
-    // de nieuwe WebGL-orb (orb.js) heeft 't overgenomen -> klassieke reactor stil
-    if (SPAN._orbActive) { rc.clearRect(0, 0, 300, 300); requestAnimationFrame(reactorDraw); return; }
-    const t = (ts - t0) / 1000;
-    const W = 300, c = W / 2;
-    const st = SPAN.state;
-    if (st === "busy" && !busySince) busySince = Date.now();
-    if (st !== "busy") busySince = 0;
-    const idleMin = (Date.now() - lastActive) / 60000;
-    const asleep = idleMin > 5 && st === "idle";                                   // #10
-    const speed = (st === "busy" ? 3.2 : st === "speaking" ? 2.2
-      : st === "listening" ? 1.6 : .7) * (asleep ? .3 : 1);
-    let glow = ((st === "idle" ? .55 : 1) * (1 + SPAN.micLevel * .9)) * (asleep ? .6 : 1);
-    if (asleep) glow *= .9 + Math.sin(t * .8) * .1;  // ademen
-    glow = Math.min(1.6, glow + flare * 1.2);
-    flare *= .94;
-    tintT *= .96;
-    const hue = stateTint && tintT > .05 ? stateTint : "56,225,255";
-    rc.clearRect(0, 0, W, W);
-
-    const coreR = (52 + flare * 30) * (1 + SPAN.micLevel * .35);
-    const grad = rc.createRadialGradient(c, c, 4, c, c, coreR);
-    grad.addColorStop(0, `rgba(225,250,255,${Math.min(1, .95 * glow)})`);
-    grad.addColorStop(.45, `rgba(${hue},${Math.min(1, .6 * glow)})`);
-    grad.addColorStop(1, `rgba(${hue},0)`);
-    rc.fillStyle = grad;
-    rc.beginPath(); rc.arc(c, c, coreR, 0, Math.PI * 2); rc.fill();
-
-    // spokes
-    rc.save(); rc.translate(c, c);
-    rc.strokeStyle = `rgba(${hue},${.22 * glow})`; rc.lineWidth = 2;
-    for (let i = 0; i < 6; i++) {
-      rc.rotate(Math.PI / 3);
-      rc.beginPath(); rc.moveTo(56, 0); rc.lineTo(84, 0); rc.stroke();
-    }
-    rc.restore();
-
-    // spoelenring
-    rc.save(); rc.translate(c, c); rc.rotate(t * speed * .35);
-    for (let i = 0; i < 10; i++) {
-      rc.rotate(Math.PI / 5);
-      rc.fillStyle = `rgba(${hue},${Math.min(1, .55 * glow)})`;
-      rc.fillRect(60, -7, 22, 14);
-    }
-    rc.restore();
-
-    // counter-ring
-    rc.save(); rc.translate(c, c); rc.rotate(-t * speed * .5);
-    rc.strokeStyle = `rgba(${hue},${.5 * glow})`; rc.lineWidth = 3;
-    for (let i = 0; i < 8; i++) {
-      rc.rotate(Math.PI / 4);
-      rc.beginPath(); rc.arc(0, 0, 92, -.28, .28); rc.stroke();
-    }
-    rc.restore();
-
-    // charge-up tijdens lange taken (#4): buitenring vult met de tijd
-    if (busySince) {
-      const frac = Math.min(1, (Date.now() - busySince) / 20000);
-      rc.strokeStyle = `rgba(255,210,125,${.7})`; rc.lineWidth = 4;
-      rc.beginPath(); rc.arc(c, c, 148, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
-      rc.stroke();
-    }
-
-    // energie-arcs bij hoge activiteit (#5)
-    if ((st === "busy" || SPAN.micLevel > .4) && Math.random() < .15 && FX.on(1)) {
-      const a1 = Math.random() * Math.PI * 2;
-      rc.strokeStyle = `rgba(190,240,255,${.5 + Math.random() * .3})`;
-      rc.lineWidth = 1;
-      rc.beginPath();
-      let r1 = 60 + Math.random() * 30;
-      rc.moveTo(c + Math.cos(a1) * r1, c + Math.sin(a1) * r1);
-      for (let s = 0; s < 4; s++) {
-        const a2 = a1 + (Math.random() - .5) * .5;
-        r1 += 8 + Math.random() * 8;
-        rc.lineTo(c + Math.cos(a2) * r1 + (Math.random() - .5) * 6,
-                  c + Math.sin(a2) * r1 + (Math.random() - .5) * 6);
-      }
-      rc.stroke();
-    }
-
-    // chime-echo-ringen (#9)
-    for (let i = echoRings.length - 1; i >= 0; i--) {
-      const e = echoRings[i];
-      e.r += 2.4; e.op *= .95;
-      if (e.op < .03) { echoRings.splice(i, 1); continue; }
-      rc.strokeStyle = `rgba(${hue},${e.op})`; rc.lineWidth = 1.5;
-      rc.beginPath(); rc.arc(c, c, e.r, 0, Math.PI * 2); rc.stroke();
-    }
-
-    // buitenarcs + ticks
-    const arcs = [
-      { r: 104, w: 2.5, len: 1.9, dir: 1, op: .8 },
-      { r: 116, w: 1.2, len: .8, dir: -1, op: .5 },
-      { r: 128, w: 3.5, len: .45, dir: 1, op: .65 },
-      { r: 140, w: 1, len: 2.6, dir: -1, op: .3 },
-    ];
-    for (const a of arcs) {
-      rc.beginPath();
-      rc.strokeStyle = `rgba(${hue},${Math.min(1, a.op * glow)})`;
-      rc.lineWidth = a.w;
-      const start = t * speed * a.dir;
-      rc.arc(c, c, a.r, start, start + a.len);
-      rc.stroke();
-    }
-    rc.save(); rc.translate(c, c); rc.rotate(-t * speed * .15);
-    rc.strokeStyle = `rgba(${hue},${.35 * glow})`; rc.lineWidth = 1;
-    for (let i = 0; i < 36; i++) {
-      rc.rotate(Math.PI / 18);
-      rc.beginPath(); rc.moveTo(88, 0); rc.lineTo(92, 0); rc.stroke();
-    }
-    rc.restore();
-    requestAnimationFrame(reactorDraw);
-  }
-  requestAnimationFrame((ts) => { t0 = ts; reactorDraw(ts); });
 })();
