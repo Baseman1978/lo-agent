@@ -88,6 +88,10 @@ kiesbaar.
 Oude orb.js + hologram-paneel + bijbehorende vendor-libs verwijderen (~1,8
 MB minder), rechter kolom herindelen (mail/agenda krijgen de ruimte),
 docs bijwerken.
+✔ Klaar (PR #100, 2026-07-04): orb.js, hologram.js, three r128,
+3d-force-graph en de bloom-shaders zijn weg (−2143 regels). Het
+Brein-paneel bleef als compacte statistieken; er is geen klassieke
+fallback meer (zonder WebGL2 gewoon geen 3D-scene).
 
 ## Risico's & mitigaties
 
