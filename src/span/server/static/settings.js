@@ -236,6 +236,15 @@
       $("neb-preset-" + naam).onclick = () => { s = { ...PRESETS[naam] }; sync(); apply(); };
     }
     sync(); apply();
+    // prestatie-waakhond: reset-knop alleen tonen als er teruggeschakeld is
+    const perfRow = $("neb-perf-row");
+    if (perfRow && parseInt(localStorage.getItem("span_nebula_perf") || "0", 10) > 0) {
+      perfRow.classList.remove("hidden");
+      $("neb-perf-reset").onclick = () => {
+        localStorage.removeItem("span_nebula_perf");
+        location.reload();  // schone start op volle kwaliteit; waakhond meet opnieuw
+      };
+    }
   })();
 
   /* -- stem ------------------------------------------------------------- */

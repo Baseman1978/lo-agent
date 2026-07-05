@@ -41,6 +41,8 @@ export interface MountOptions {
   lite?: boolean;
   /** auth-headers van de LO-app (SPAN.authHeaders) — zonder: synthetische demo */
   authHeaders?: () => Record<string, string>;
+  /** prestatie-waakhond heeft teruggeschakeld (1 = zuinig, 2 = minimaal) */
+  onPerf?: (level: number) => void;
 }
 
 export function webgl2Available(): boolean {
@@ -228,10 +230,30 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
   ro.observe(container);
   resize();
 
-  // --- adaptieve kwaliteit (sandbox-logica) --------------------------------------
+  // --- prestatie-waakhond ------------------------------------------------------
+  // De oude sandbox-lus oscilleerde: zuinig haalde >55 fps -> terug naar vol ->
+  // <40 fps -> weer zuinig, elke 2s een beeldwissel. En setPixelRatio(1) werkte
+  // niet door in de composer-buffers (resize ontbrak), dus de post-keten bleef
+  // op volle resolutie renderen. Nu: een ratchet die alleen omlaag schakelt,
+  // de buffers echt mee-verkleint en het niveau onthoudt voor de volgende start
+  // (resetbaar via Instellingen -> NEBULA-orb).
+  const PERF_KEY = 'span_nebula_perf';
+  let perfLevel = 0; // 0 = vol · 1 = zuinig (geen cosmetica, ratio 1) · 2 = minimaal (geen post-keten)
+  try {
+    perfLevel = Math.min(2, Math.max(0, parseInt(localStorage.getItem(PERF_KEY) || '0', 10) || 0));
+  } catch { /* stil */ }
+  let bypassPost = false;
+  const applyPerf = (): void => {
+    bypassPost = perfLevel >= 2;
+    post.setCosmetics(perfLevel === 0);
+    renderer.setPixelRatio(perfLevel === 0 && !lite ? Math.min(window.devicePixelRatio, 2) : 1);
+    resize(); // composer-buffers moeten mee-krimpen, anders rendert de post-keten op de oude resolutie
+  };
+  if (perfLevel > 0) applyPerf();
+
   let frames = 0;
   let windowStart = performance.now();
-  let cosmetics = !lite;
+  let lowStreak = 0;
 
   const adaptQuality = (now: number): void => {
     frames++;
@@ -239,14 +261,13 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
     const fps = (frames * 1000) / (now - windowStart);
     frames = 0;
     windowStart = now;
-    if (fps < 40 && cosmetics) {
-      cosmetics = false;
-      post.setCosmetics(false);
-      renderer.setPixelRatio(1);
-    } else if (fps > 55 && !cosmetics && !lite) {
-      cosmetics = true;
-      post.setCosmetics(true);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    lowStreak = fps < 32 ? lowStreak + 1 : 0;
+    if (lowStreak >= 2 && perfLevel < 2) {
+      lowStreak = 0;
+      perfLevel++;
+      applyPerf();
+      try { localStorage.setItem(PERF_KEY, String(perfLevel)); } catch { /* stil */ }
+      opts.onPerf?.(perfLevel);
     }
   };
 
@@ -302,7 +323,8 @@ export function mount(container: HTMLElement, opts: MountOptions = {}): NebulaHa
     controls.update();
     post.setFocus(controls.target);
     adaptQuality(now);
-    post.composer.render();
+    if (bypassPost) renderer.render(scene, camera);
+    else post.composer.render();
   });
 
   const GELDIGE_STATES: LoState[] = ['idle', 'listening', 'thinking', 'speaking'];
