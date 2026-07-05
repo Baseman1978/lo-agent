@@ -818,13 +818,19 @@ SPAN.applyPanelLayout(SPAN.panelLayout());
   if (!gl2) { console.warn("[nebula] geen WebGL2 - geen 3D-scene"); return; }
   SPAN._nebula = true;
   document.body.classList.add("nebula-on");
-  import("/static/hud/nebula.js?v=71").then((m) => {
+  import("/static/hud/nebula.js?v=72").then((m) => {
     const center = document.getElementById("center");
     if (!center) return;
     const bg = document.createElement("div");
     bg.id = "nebula-bg";
     center.prepend(bg);
-    SPAN._nebulaHandle = m.mount(bg, { authHeaders: SPAN.authHeaders });
+    SPAN._nebulaHandle = m.mount(bg, {
+      authHeaders: SPAN.authHeaders,
+      // prestatie-waakhond: eenmalige melding als de scene terugschakelt
+      onPerf: (lvl) => SPAN.sys(lvl >= 2
+        ? "Beeld op minimale prestatiemodus gezet — deze machine trok de volle NEBULA niet. Terugzetten kan via Instellingen → Uiterlijk."
+        : "Beeld op zuinige prestatiemodus gezet voor een vloeiende NEBULA. Terugzetten kan via Instellingen → Uiterlijk."),
+    });
     SPAN._nebulaHandle.setState(SPAN.state === "busy" ? "thinking" : (SPAN.state || "idle"));
     try {  // bewaarde orb-tuning meteen toepassen
       const t = JSON.parse(localStorage.getItem("span_nebula_orb") || "null");
