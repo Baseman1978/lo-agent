@@ -236,10 +236,15 @@
       $("neb-preset-" + naam).onclick = () => { s = { ...PRESETS[naam] }; sync(); apply(); };
     }
     sync(); apply();
-    // prestatie-waakhond: reset-knop alleen tonen als er teruggeschakeld is
+    // prestatie-waakhond: reset-knop alleen tonen als er teruggeschakeld is.
+    // Bij het openen van de instellingen opnieuw checken — de waakhond kan
+    // ná paginastart ingrijpen en dan moet de knop alsnog verschijnen.
     const perfRow = $("neb-perf-row");
-    if (perfRow && parseInt(localStorage.getItem("span_nebula_perf") || "0", 10) > 0) {
-      perfRow.classList.remove("hidden");
+    if (perfRow) {
+      const perfSync = () => perfRow.classList.toggle("hidden",
+        parseInt(localStorage.getItem("span_nebula_perf") || "0", 10) <= 0);
+      perfSync();
+      $("settings-btn").addEventListener("click", perfSync);
       $("neb-perf-reset").onclick = () => {
         localStorage.removeItem("span_nebula_perf");
         location.reload();  // schone start op volle kwaliteit; waakhond meet opnieuw
