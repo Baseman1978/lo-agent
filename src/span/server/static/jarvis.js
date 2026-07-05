@@ -740,12 +740,12 @@ SPAN.applyPanelLayout = (cfg) => {
 /* -- bento: alles in één beeld, nooit scrollen ------------------------------
    Elke tegel krijgt hoogte naar inhoud (leeg = alleen kopregel) en toont
    zoveel items als er echt passen; de rest zit achter één "+ n"-regel die
-   het paneel als overlay openklapt. Op mobiel (<=1100px) blijft de native
+   het paneel als overlay openklapt. Op mobiel (<=900px) blijft de native
    scroll — daar is vegen natuurlijker dan een overlay. */
 SPAN.fitPanels = () => {
   const panels = [...document.querySelectorAll("main .panel")]
     .filter((p) => !p.classList.contains("hidden") && !p.classList.contains("expanded"));
-  const smal = innerWidth <= 1100;
+  const smal = innerWidth <= 900;
   // pas 1: reset + hoogteverdeling naar inhoud (mobiel: alles native laten)
   for (const sec of panels) {
     const body = sec.querySelector(".body");
@@ -818,7 +818,7 @@ SPAN.applyPanelLayout(SPAN.panelLayout());
   if (!gl2) { console.warn("[nebula] geen WebGL2 - geen 3D-scene"); return; }
   SPAN._nebula = true;
   document.body.classList.add("nebula-on");
-  import("/static/hud/nebula.js?v=70").then((m) => {
+  import("/static/hud/nebula.js?v=71").then((m) => {
     const center = document.getElementById("center");
     if (!center) return;
     const bg = document.createElement("div");
