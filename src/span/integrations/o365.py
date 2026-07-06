@@ -227,6 +227,22 @@ class O365Client:
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 
+    def _patch(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        # mutaties op bestaande items: geen blinde retry (zelfde lijn als _post)
+        from span.integrations.http import request_with_retry
+        resp = request_with_retry(lambda: requests.patch(
+            f"{GRAPH}{path}", headers=self._headers(), json=payload, timeout=30),
+            idempotent=False)
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+
+    def _delete(self, path: str) -> None:
+        from span.integrations.http import request_with_retry
+        resp = request_with_retry(lambda: requests.delete(
+            f"{GRAPH}{path}", headers=self._headers(), timeout=30),
+            idempotent=False)
+        resp.raise_for_status()
+
     # -- mail ---------------------------------------------------------------
 
     def inbox(self, top: int = 10, unread_only: bool = False) -> list[dict[str, Any]]:
@@ -314,11 +330,12 @@ class O365Client:
                 "endDateTime": end.isoformat(),
                 "$orderby": "start/dateTime",
                 "$top": 50,
-                "$select": "subject,start,end,location,organizer,isAllDay,onlineMeeting",
+                "$select": "id,subject,start,end,location,organizer,isAllDay,onlineMeeting",
             },
         )
         return [
             {
+                "id": e.get("id"),
                 "subject": e.get("subject"),
                 "start": (e.get("start") or {}).get("dateTime"),
                 "end": (e.get("end") or {}).get("dateTime"),
@@ -329,6 +346,105 @@ class O365Client:
             }
             for e in data.get("value", [])
         ]
+
+    def event_get(self, event_id: str) -> dict[str, Any]:
+        """Details van één afspraak — incl. serie-info (occurrence vs. seriesMaster)
+        zodat wijzig/verwijder-tools weten waar ze aan beginnen."""
+        e = self._get(f"/me/events/{event_id}", {
+            "$select": "id,subject,start,end,location,organizer,isOrganizer,attendees,"
+                       "type,seriesMasterId,isAllDay,responseStatus,bodyPreview,webLink",
+        })
+        return {
+            "id": e.get("id"),
+            "subject": e.get("subject"),
+            "start": (e.get("start") or {}).get("dateTime"),
+            "end": (e.get("end") or {}).get("dateTime"),
+            "location": (e.get("location") or {}).get("displayName"),
+            "organizer": (e.get("organizer") or {}).get("emailAddress", {}).get("name"),
+            "is_organizer": e.get("isOrganizer", False),
+            "attendees": [(a.get("emailAddress") or {}).get("address")
+                          for a in e.get("attendees") or []],
+            "type": e.get("type"),  # singleInstance | occurrence | seriesMaster | exception
+            "series_master_id": e.get("seriesMasterId"),
+            "all_day": e.get("isAllDay", False),
+            "my_response": (e.get("responseStatus") or {}).get("response"),
+            "preview": (e.get("bodyPreview") or "")[:300],
+            "link": e.get("webLink"),
+        }
+
+    def event_instances(self, event_id: str, start_iso: str, end_iso: str) -> list[dict[str, Any]]:
+        """Losse voorkomens van een terugkerende afspraak binnen een venster —
+        nodig om één occurrence te wijzigen/verwijderen i.p.v. de hele serie."""
+        data = self._get(f"/me/events/{event_id}/instances", {
+            "startDateTime": start_iso, "endDateTime": end_iso,
+            "$top": 50, "$select": "id,subject,start,end,type",
+        })
+        return [{
+            "id": i.get("id"), "subject": i.get("subject"),
+            "start": (i.get("start") or {}).get("dateTime"),
+            "end": (i.get("end") or {}).get("dateTime"),
+            "type": i.get("type"),
+        } for i in data.get("value", [])]
+
+    def update_event(self, event_id: str, subject: str = "", start_iso: str = "",
+                     end_iso: str = "", location: str = "", body: str = "") -> dict[str, Any]:
+        """Wijzig een afspraak (alleen de meegegeven velden). Let op: bij een
+        meeting stuurt Outlook automatisch een update naar de genodigden."""
+        payload: dict[str, Any] = {}
+        if subject:
+            payload["subject"] = subject
+        if start_iso:
+            payload["start"] = {"dateTime": start_iso, "timeZone": TIMEZONE}
+        if end_iso:
+            payload["end"] = {"dateTime": end_iso, "timeZone": TIMEZONE}
+        if location:
+            payload["location"] = {"displayName": location}
+        if body:
+            payload["body"] = {"contentType": "Text", "content": body}
+        if not payload:
+            raise ValueError("Niets te wijzigen — geef subject/start/end/location/body.")
+        e = self._patch(f"/me/events/{event_id}", payload)
+        return {"updated": True, "id": event_id, "subject": e.get("subject") or subject}
+
+    def delete_event(self, event_id: str) -> dict[str, Any]:
+        """Verwijder een afspraak (naar Verwijderde items — herstelbaar). Bij een
+        meeting waar de gebruiker organisator is, krijgen genodigden bericht;
+        gebruik dan liever cancel_event met een nette toelichting."""
+        self._delete(f"/me/events/{event_id}")
+        return {"deleted": True, "id": event_id}
+
+    def cancel_event(self, event_id: str, comment: str = "") -> dict[str, Any]:
+        """Annuleer een meeting als organisator, met bericht aan de genodigden.
+        Graph geeft 400 voor niet-organisatoren — vertaal dat naar respond/decline."""
+        try:
+            self._post(f"/me/events/{event_id}/cancel", {"comment": comment},
+                       idempotent=False)
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 400:
+                raise RuntimeError(
+                    "Annuleren kan alleen als organisator — gebruik o365_event_respond "
+                    "met decline om zelf af te zeggen.") from exc
+            raise
+        return {"cancelled": True, "id": event_id}
+
+    def get_schedule(self, emails: list[str], start_iso: str, end_iso: str,
+                     interval_min: int = 30) -> list[dict[str, Any]]:
+        """Beschikbaarheid van collega's (vrij/bezet) in een venster — voor het
+        vinden van een gezamenlijk slot."""
+        data = self._post("/me/calendar/getSchedule", {
+            "schedules": [e.strip() for e in emails if e.strip()][:10],
+            "startTime": {"dateTime": start_iso, "timeZone": TIMEZONE},
+            "endTime": {"dateTime": end_iso, "timeZone": TIMEZONE},
+            "availabilityViewInterval": max(15, min(int(interval_min), 60)),
+        })
+        return [{
+            "email": s.get("scheduleId"),
+            "availability": s.get("availabilityView"),  # 0=vrij per interval
+            "busy": [{
+                "start": ((b.get("start") or {}).get("dateTime") or "")[:16],
+                "end": ((b.get("end") or {}).get("dateTime") or "")[:16],
+            } for b in s.get("scheduleItems") or [] if b.get("status") != "free"],
+        } for s in data.get("value", [])]
 
     def create_event(
         self,
@@ -431,6 +547,43 @@ class O365Client:
         task = self._post(f"/me/todo/lists/{list_id}/tasks", payload)
         return {"created": True, "id": task.get("id"), "title": title, "due": due or None}
 
+    def todo_lists(self) -> list[dict[str, Any]]:
+        """Alle To Do-lijsten (de andere tools werken standaard op de default-lijst)."""
+        data = self._get("/me/todo/lists", {"$top": 25})
+        return [{
+            "id": t.get("id"), "name": t.get("displayName"),
+            "default": t.get("wellknownListName") == "defaultList",
+        } for t in data.get("value", [])]
+
+    def todo_update(self, task_id: str, title: str = "", due: str = "",
+                    body: str = "", list_id: str = "") -> dict[str, Any]:
+        """Wijzig een To Do-taak (alleen de meegegeven velden). due = YYYY-MM-DD,
+        due='geen' haalt de deadline weg."""
+        lid = list_id or self._default_todo_list()
+        if lid is None:
+            raise RuntimeError("Geen To Do-lijst gevonden.")
+        payload: dict[str, Any] = {}
+        if title:
+            payload["title"] = title
+        if due:
+            payload["dueDateTime"] = (None if due.strip().lower() == "geen"
+                                      else {"dateTime": f"{due}T09:00:00", "timeZone": TIMEZONE})
+        if body:
+            payload["body"] = {"content": body, "contentType": "text"}
+        if not payload:
+            raise ValueError("Niets te wijzigen — geef title/due/body.")
+        self._patch(f"/me/todo/lists/{lid}/tasks/{task_id}", payload)
+        return {"updated": True, "id": task_id}
+
+    def todo_delete(self, task_id: str, list_id: str = "") -> dict[str, Any]:
+        """Verwijder een To Do-taak. Let op: de To Do-API kent geen prullenbak —
+        dit is definitief (daarom loopt de tool via de Agent Inbox)."""
+        lid = list_id or self._default_todo_list()
+        if lid is None:
+            raise RuntimeError("Geen To Do-lijst gevonden.")
+        self._delete(f"/me/todo/lists/{lid}/tasks/{task_id}")
+        return {"deleted": True, "id": task_id}
+
     def todo_complete(self, task_id: str) -> dict[str, Any]:
         """Vink een To Do-taak af."""
         list_id = self._default_todo_list()
@@ -510,9 +663,10 @@ class O365Client:
         data = self._get("/me/events", {
             "$search": f'"{query}"',
             "$top": min(int(top), 25),
-            "$select": "subject,start,end,location,organizer,webLink",
+            "$select": "id,subject,start,end,location,organizer,webLink",
         })
         return [{
+            "id": e.get("id"),
             "subject": e.get("subject"),
             "start": (e.get("start") or {}).get("dateTime"),
             "end": (e.get("end") or {}).get("dateTime"),
@@ -773,12 +927,33 @@ class O365Client:
         return r.content
 
     def respond_event(self, event_id: str, response: str, comment: str = "",
-                     send_response: bool = True) -> dict[str, Any]:
-        """Reageer op een afspraak-uitnodiging: response = accept | decline | tentative."""
+                     send_response: bool = True, proposed_start: str = "",
+                     proposed_end: str = "") -> dict[str, Any]:
+        """Reageer op een afspraak-uitnodiging: response = accept | decline | tentative.
+        Met proposed_start/eind stel je een andere tijd voor (alleen bij decline/
+        tentative; Graph vereist dan sendResponse=true)."""
         action = {"accept": "accept", "decline": "decline",
                   "tentative": "tentativelyAccept"}.get(response.strip().lower())
         if not action:
             raise ValueError("response moet accept, decline of tentative zijn.")
-        self._post(f"/me/events/{event_id}/{action}",
-                   {"comment": comment, "sendResponse": bool(send_response)}, idempotent=False)
-        return {"event_id": event_id, "response": response, "sent": bool(send_response)}
+        payload: dict[str, Any] = {"comment": comment, "sendResponse": bool(send_response)}
+        if proposed_start and proposed_end:
+            if action == "accept":
+                raise ValueError("Een tegenvoorstel kan alleen bij decline of tentative.")
+            payload["proposedNewTime"] = {
+                "start": {"dateTime": proposed_start, "timeZone": TIMEZONE},
+                "end": {"dateTime": proposed_end, "timeZone": TIMEZONE},
+            }
+            payload["sendResponse"] = True  # Graph-eis bij proposedNewTime
+        try:
+            self._post(f"/me/events/{event_id}/{action}", payload, idempotent=False)
+        except requests.HTTPError as exc:
+            if (proposed_start and exc.response is not None
+                    and exc.response.status_code == 400):
+                raise RuntimeError(
+                    "Tegenvoorstel geweigerd — dit kan bij terugkerende afspraken of "
+                    "als de organisator geen tijdvoorstellen toestaat. Reageer dan "
+                    "zonder tegenvoorstel en licht toe in de opmerking.") from exc
+            raise
+        return {"event_id": event_id, "response": response, "sent": bool(payload["sendResponse"]),
+                "proposed": bool(proposed_start and proposed_end)}

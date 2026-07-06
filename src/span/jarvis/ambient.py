@@ -261,6 +261,24 @@ def execute_approval(item: dict[str, Any], o365: Any, llm: Any = None,
             payload["subject"], payload["start"], payload["end"],
             payload.get("attendees") or None, payload.get("body", ""),
         )
+    if item["action"] == "event_update":
+        return o365.update_event(
+            payload["event_id"], subject=payload.get("subject", ""),
+            start_iso=payload.get("start", ""), end_iso=payload.get("end", ""),
+            location=payload.get("location", ""), body=payload.get("body", ""),
+        )
+    if item["action"] == "event_delete":
+        return o365.delete_event(payload["event_id"])
+    if item["action"] == "event_cancel":
+        return o365.cancel_event(payload["event_id"], comment=payload.get("comment", ""))
+    if item["action"] == "event_respond":
+        return o365.respond_event(
+            payload["event_id"], payload["response"], comment=payload.get("comment", ""),
+            proposed_start=payload.get("proposed_start", ""),
+            proposed_end=payload.get("proposed_end", ""),
+        )
+    if item["action"] == "todo_delete":
+        return o365.todo_delete(payload["task_id"], list_id=payload.get("list_id", ""))
     if item["kind"] == "needs_reply" and llm is not None:
         message = llm.chat(
             [

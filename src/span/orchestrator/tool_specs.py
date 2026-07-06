@@ -392,15 +392,171 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "function": {
             "name": "o365_event_respond",
             "description": "Reageer op een afspraak-uitnodiging: accepteren, afwijzen of onder voorbehoud. "
-            "Dit stuurt een reactie naar de organisator — vat samen om welke afspraak het gaat.",
+            "Dit stuurt een reactie naar de organisator — vat samen om welke afspraak het gaat. "
+            "Met proposed_start/proposed_end stel je een andere tijd voor (alleen bij decline/tentative); "
+            "met opmerking of tegenvoorstel wacht de reactie op goedkeuring in de Agent Inbox.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "event_id": {"type": "string", "description": "Afspraak-id"},
                     "response": {"type": "string", "enum": ["accept", "decline", "tentative"]},
                     "comment": {"type": "string", "description": "Optionele opmerking aan de organisator"},
+                    "proposed_start": {"type": "string", "description": "Tegenvoorstel start (ISO, bv. 2026-07-08T10:00:00)"},
+                    "proposed_end": {"type": "string", "description": "Tegenvoorstel einde (ISO)"},
                 },
                 "required": ["event_id", "response"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_event_get",
+            "description": "Details van één afspraak: tijden, locatie, genodigden, of Bas organisator is, "
+            "en of het een losse afspraak of terugkerende serie is (type + series_master_id). "
+            "Gebruik dit vóór wijzigen/verwijderen om te weten waar je aan begint.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "event_id": {"type": "string", "description": "Afspraak-id (uit o365_calendar of o365_calendar_search)"},
+                },
+                "required": ["event_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_event_instances",
+            "description": "Losse voorkomens van een terugkerende afspraak binnen een datumvenster. "
+            "Gebruik dit om één voorkomen te wijzigen of te verwijderen in plaats van de hele serie: "
+            "geef daarna het instance-id door aan update/delete.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "event_id": {"type": "string", "description": "Id van de serie (seriesMaster)"},
+                    "start": {"type": "string", "description": "Vensterbegin (ISO, bv. 2026-07-07T00:00:00)"},
+                    "end": {"type": "string", "description": "Venstereinde (ISO)"},
+                },
+                "required": ["event_id", "start", "end"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_event_update",
+            "description": "Wijzig een afspraak: tijd, titel, locatie of omschrijving (alleen de velden die je "
+            "meegeeft). Bij een meeting stuurt Outlook automatisch een update naar de genodigden — de wijziging "
+            "wacht daarom op goedkeuring in de Agent Inbox. Voor één voorkomen van een serie: eerst "
+            "o365_event_instances voor het juiste id.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "event_id": {"type": "string", "description": "Afspraak-id"},
+                    "subject": {"type": "string", "description": "Nieuwe titel (optioneel)"},
+                    "start": {"type": "string", "description": "Nieuwe start (ISO, optioneel)"},
+                    "end": {"type": "string", "description": "Nieuw einde (ISO, optioneel)"},
+                    "location": {"type": "string", "description": "Nieuwe locatie (optioneel)"},
+                    "body": {"type": "string", "description": "Nieuwe omschrijving (optioneel)"},
+                },
+                "required": ["event_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_event_delete",
+            "description": "Verwijder een afspraak uit de agenda (naar Verwijderde items — herstelbaar). "
+            "Bij een meeting waar Bas organisator is krijgen genodigden automatisch bericht; gebruik dan "
+            "liever o365_event_cancel met een nette toelichting. Wacht op goedkeuring in de Agent Inbox.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "event_id": {"type": "string", "description": "Afspraak-id"},
+                },
+                "required": ["event_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_event_cancel",
+            "description": "Annuleer een meeting als organisator, met een bericht aan alle genodigden "
+            "(netter dan kaal verwijderen). Alleen mogelijk als Bas de organisator is. "
+            "Wacht op goedkeuring in de Agent Inbox.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "event_id": {"type": "string", "description": "Afspraak-id"},
+                    "comment": {"type": "string", "description": "Toelichting aan de genodigden"},
+                },
+                "required": ["event_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_free_slots",
+            "description": "Beschikbaarheid (vrij/bezet) van collega's in een tijdvenster, om een gezamenlijk "
+            "slot te vinden. Geef e-mailadressen; het antwoord toont per persoon de bezette blokken.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "emails": {"type": "array", "items": {"type": "string"}, "description": "E-mailadressen (max 10)"},
+                    "start": {"type": "string", "description": "Vensterbegin (ISO)"},
+                    "end": {"type": "string", "description": "Venstereinde (ISO)"},
+                    "interval_min": {"type": "integer", "description": "Rasterinterval in minuten (15-60, default 30)"},
+                },
+                "required": ["emails", "start", "end"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_todo_lists",
+            "description": "Alle To Do-lijsten van Bas. De andere To Do-tools werken standaard op de "
+            "default-lijst; geef list_id mee voor een andere lijst.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_todo_update",
+            "description": "Wijzig een To Do-taak: titel, deadline (YYYY-MM-DD, 'geen' = deadline weghalen) "
+            "of notitie. Alleen de meegegeven velden veranderen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {"type": "string", "description": "Taak-id (uit o365_todo_list)"},
+                    "title": {"type": "string", "description": "Nieuwe titel (optioneel)"},
+                    "due": {"type": "string", "description": "Nieuwe deadline YYYY-MM-DD, of 'geen' (optioneel)"},
+                    "body": {"type": "string", "description": "Nieuwe notitie (optioneel)"},
+                    "list_id": {"type": "string", "description": "Andere lijst dan de default (optioneel)"},
+                },
+                "required": ["task_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_todo_delete",
+            "description": "Verwijder een To Do-taak — definitief, de To Do-API kent geen prullenbak. "
+            "Wacht daarom op goedkeuring in de Agent Inbox. Geef title mee zodat de goedkeuring leesbaar is.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {"type": "string", "description": "Taak-id (uit o365_todo_list)"},
+                    "title": {"type": "string", "description": "Taaktitel (voor de goedkeuringsweergave)"},
+                    "list_id": {"type": "string", "description": "Andere lijst dan de default (optioneel)"},
+                },
+                "required": ["task_id"],
             },
         },
     },
@@ -1224,7 +1380,10 @@ O365_TOOLS = {"o365_mail_inbox", "o365_mail_send", "o365_calendar", "o365_event_
               "o365_excel_write", "o365_file_create", "o365_event_respond",
               "o365_doc_generate", "o365_unanswered_sent", "o365_enrich_archive",
               "o365_powerbi_reports", "o365_powerbi_dashboards", "o365_powerbi_datasets",
-              "o365_powerbi_tables", "o365_powerbi_query"}
+              "o365_powerbi_tables", "o365_powerbi_query",
+              "o365_event_get", "o365_event_instances", "o365_event_update",
+              "o365_event_delete", "o365_event_cancel", "o365_free_slots",
+              "o365_todo_lists", "o365_todo_update", "o365_todo_delete"}
 
 # Permissie-registry: groep + lezen/schrijven, voor de instellingenpagina.
 TOOL_META: dict[str, tuple[str, str]] = {
@@ -1252,7 +1411,13 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "o365_mail_reply_all_draft": ("O365 Mail", "write"),
     "o365_calendar": ("O365 Agenda", "read"),
     "o365_calendar_search": ("O365 Agenda", "read"),
+    "o365_event_get": ("O365 Agenda", "read"),
+    "o365_event_instances": ("O365 Agenda", "read"),
+    "o365_free_slots": ("O365 Agenda", "read"),
     "o365_event_create": ("O365 Agenda", "write"),
+    "o365_event_update": ("O365 Agenda", "write"),
+    "o365_event_delete": ("O365 Agenda", "write"),
+    "o365_event_cancel": ("O365 Agenda", "write"),
     "o365_files_search": ("O365 Bestanden", "read"),
     "o365_file_read": ("O365 Bestanden", "read"),
     "o365_excel_sheets": ("O365 Excel", "read"),
@@ -1270,8 +1435,11 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "o365_powerbi_query": ("Power BI", "read"),
     "o365_people_search": ("O365 Personen", "read"),
     "o365_todo_list": ("O365 To Do", "read"),
+    "o365_todo_lists": ("O365 To Do", "read"),
     "o365_todo_create": ("O365 To Do", "write"),
     "o365_todo_complete": ("O365 To Do", "write"),
+    "o365_todo_update": ("O365 To Do", "write"),
+    "o365_todo_delete": ("O365 To Do", "write"),
     "asana_my_tasks": ("Asana", "read"),
     "asana_search": ("Asana", "read"),
     "asana_projects": ("Asana", "read"),
