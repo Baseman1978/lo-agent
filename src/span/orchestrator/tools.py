@@ -33,6 +33,7 @@ _UNTRUSTED_OUTPUT_TOOLS = {"o365_mail_inbox", "o365_thread_summary", "fireflies_
                            "o365_powerbi_tables", "o365_powerbi_query",
                            "o365_event_get",  # uitnodigings-body is door derden geschreven
                            "o365_sharepoint_list_items",  # lijstitems zijn door derden ingevuld
+                           "o365_teams_chat_messages",  # chatberichten zijn door derden geschreven
                            "asana_comments"}  # comments zijn door derden geschreven
 
 
@@ -777,6 +778,130 @@ class ToolBox:
 
     def _tool_o365_people_search(self, query: str, top: int = 10) -> Any:
         return self._require_o365().search_people(query=query, top=top)
+
+    # -- contacten (Fase 2b) --------------------------------------------------
+
+    def _tool_o365_contacts_list(self, top: int = 25) -> Any:
+        return self._require_o365().contacts_list(top=top)
+
+    def _tool_o365_contact_search(self, name: str) -> Any:
+        return self._require_o365().contact_search(name)
+
+    def _tool_o365_contact_create(self, name: str, email: str = "",
+                                  phone: str = "", company: str = "") -> Any:
+        return self._require_o365().contact_create(
+            name, email=email, phone=phone, company=company)
+
+    def _tool_o365_contact_update(self, contact_id: str, name: str = "",
+                                  email: str = "", phone: str = "",
+                                  company: str = "") -> Any:
+        return self._require_o365().contact_update(
+            contact_id, name=name, email=email, phone=phone, company=company)
+
+    # -- mailregels + categorieën (Fase 2b) -----------------------------------
+
+    def _tool_o365_mail_rules_list(self) -> Any:
+        return self._require_o365().mail_rules()
+
+    def _tool_o365_mail_rule_create(self, name: str, from_contains: str = "",
+                                    subject_contains: str = "",
+                                    move_to_folder: str = "",
+                                    mark_read: bool = False,
+                                    categories: list[str] | None = None) -> Any:
+        # een staande regel werkt daarna op ÁLLE inkomende mail (persistent
+        # gedrag); er is geen autonomy-categorie voor regels -> mét inbox
+        # ALTIJD eerst goedkeuren. Dezelfde voorwaarde/actie-eis als de
+        # client-methode, zodat er geen loze regel in de wachtrij komt.
+        if not (from_contains or subject_contains):
+            raise ValueError("Geef minstens één voorwaarde "
+                             "(from_contains en/of subject_contains).")
+        if not (move_to_folder or mark_read or categories):
+            raise ValueError("Geef minstens één actie "
+                             "(move_to_folder, mark_read en/of categories).")
+        if self._inbox is not None:
+            voorwaarden = " en ".join(filter(None, [
+                f"afzender bevat '{from_contains}'" if from_contains else "",
+                f"onderwerp bevat '{subject_contains}'" if subject_contains else "",
+            ]))
+            acties = " + ".join(filter(None, [
+                f"verplaats naar '{move_to_folder}'" if move_to_folder else "",
+                "markeer als gelezen" if mark_read else "",
+                f"categorie {', '.join(categories)}" if categories else "",
+            ]))
+            queued_id = self._inbox.add(
+                owner=self._owner,
+                kind="action", action="mail_rule_create",
+                title=f"Mailregel maken: {name}"[:140],
+                detail=f"Als {voorwaarden} → {acties}."[:220],
+                payload={"name": name, "from_contains": from_contains,
+                         "subject_contains": subject_contains,
+                         "move_to_folder": move_to_folder,
+                         "mark_read": bool(mark_read),
+                         "categories": list(categories or [])},
+                origin="agent",
+            )
+            return {"queued": queued_id,
+                    "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
+        return self._require_o365().mail_rule_create(
+            name, from_contains=from_contains, subject_contains=subject_contains,
+            move_to_folder=move_to_folder, mark_read=mark_read,
+            categories=categories)
+
+    def _tool_o365_mail_rule_delete(self, rule_id: str, name: str = "") -> Any:
+        # staande-config-wijziging (regel definitief weg) -> mét inbox ALTIJD
+        # eerst goedkeuren
+        if self._inbox is not None:
+            queued_id = self._inbox.add(
+                owner=self._owner,
+                kind="action", action="mail_rule_delete",
+                title=f"Mailregel verwijderen: {name or rule_id}"[:140],
+                detail="Haalt de staande inbox-regel definitief weg.",
+                payload={"rule_id": rule_id},
+                origin="agent",
+            )
+            return {"queued": queued_id,
+                    "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
+        return self._require_o365().mail_rule_delete(rule_id)
+
+    def _tool_o365_mail_categories(self) -> Any:
+        return self._require_o365().mail_categories()
+
+    def _tool_o365_mail_categorize(self, message_id: str,
+                                   categories: list[str]) -> Any:
+        return self._require_o365().categorize_message(message_id, categories)
+
+    # -- Teams-chats (Fase 2b) -------------------------------------------------
+
+    def _tool_o365_teams_chats(self, top: int = 15) -> Any:
+        return self._require_o365().teams_chats(top=top)
+
+    def _tool_o365_teams_chat_messages(self, chat_id: str, top: int = 10) -> Any:
+        return self._require_o365().teams_chat_messages(chat_id, top=top)
+
+    def _chat_kop(self, chat_id: str) -> str:
+        """Deelnemersnamen voor een leesbare Agent Inbox-titel (best effort;
+        de HUD toont geen payload, dus de titel moet het verhaal vertellen)."""
+        try:
+            names = self._require_o365().chat_members(chat_id)
+            return ", ".join(str(n) for n in names[:4]) or chat_id
+        except Exception:
+            return chat_id
+
+    def _tool_o365_teams_chat_send(self, chat_id: str, text: str) -> Any:
+        # gaat DIRECT naar de chat-deelnemers (uitgaand kanaal); er is geen
+        # autonomy-categorie voor Teams -> mét inbox ALTIJD eerst goedkeuren
+        if self._inbox is not None:
+            queued_id = self._inbox.add(
+                owner=self._owner,
+                kind="action", action="teams_chat_send",
+                title=f"Teams-bericht aan {self._chat_kop(chat_id)}"[:140],
+                detail=text[:120],
+                payload={"chat_id": chat_id, "text": text},
+                origin="agent",
+            )
+            return {"queued": queued_id,
+                    "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
+        return self._require_o365().teams_chat_send(chat_id, text)
 
     # -- Power BI (alleen-lezen, aparte resource op hetzelfde login) ---------
     def _tool_o365_powerbi_reports(self, top: int = 50) -> Any:

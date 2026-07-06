@@ -26,6 +26,10 @@ TOOL_RISK: dict[str, str] = {
     "o365_todo_list": "low", "o365_todo_lists": "low",
     "o365_drive_browse": "low", "o365_sharepoint_lists": "low",
     "o365_sharepoint_list_items": "low",
+    # contacten/regels/Teams lezen — laag (eigen data, niets naar buiten)
+    "o365_contacts_list": "low", "o365_contact_search": "low",
+    "o365_mail_rules_list": "low", "o365_mail_categories": "low",
+    "o365_teams_chats": "low", "o365_teams_chat_messages": "low",
     "asana_my_tasks": "low", "asana_search": "low",
     "asana_projects": "low", "asana_task_detail": "low",
     "asana_project_tasks": "low", "asana_subtasks": "low",
@@ -49,6 +53,10 @@ TOOL_RISK: dict[str, str] = {
     # OneDrive-huishouden: omkeerbaar en binnen de eigen drive — midden
     "o365_folder_create": "med", "o365_file_move_rename": "med",
     "o365_file_copy": "med",
+    # eigen contacten + categorie op één mail: omkeerbaar, blijft binnen de
+    # eigen mailbox — midden (direct)
+    "o365_contact_create": "med", "o365_contact_update": "med",
+    "o365_mail_categorize": "med",
     "asana_task_create": "med", "asana_task_complete": "med",
     "asana_task_update": "med", "asana_task_move": "med",
     "asana_project_create": "med",
@@ -72,6 +80,14 @@ TOOL_RISK: dict[str, str] = {
     # is extern zichtbaar voor het hele team. Zonder expliciete entry zou de
     # med-fallback ze ZONDER Agent Inbox draaien.
     "asana_task_delete": "high", "asana_comment_add": "high",
+    # mailregels zijn STAANDE config die op álle toekomstige mail werkt (en
+    # het klassieke exfiltratie-kanaal — de client bouwt bewust geen forward/
+    # redirect/delete-acties, maar ook move/categorise-regels zijn persistent
+    # gedrag); teams_chat_send gaat direct naar derden. Zonder expliciete
+    # entry zou de med-fallback rule_create/rule_delete ZONDER Agent Inbox
+    # draaien ('rule' is geen high-trefwoord in _default_tier).
+    "o365_mail_rule_create": "high", "o365_mail_rule_delete": "high",
+    "o365_teams_chat_send": "high",
     # Fireflies: deleteTranscript verwijdert het transcript DEFINITIEF (geen
     # prullenbak). Zonder expliciete entry zou de med-fallback dit ZONDER
     # Agent Inbox draaien ('delete' is geen high-trefwoord in _default_tier).
