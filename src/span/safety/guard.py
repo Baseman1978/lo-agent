@@ -24,6 +24,8 @@ _HAS_QUEUE_PATH = {"o365_mail_send", "o365_event_create",
                    "o365_event_respond", "o365_todo_delete",
                    "o365_mail_reply_send", "o365_mail_forward_send",
                    "o365_file_delete", "o365_file_share_link",
+                   "o365_mail_rule_create", "o365_mail_rule_delete",
+                   "o365_teams_chat_send",
                    "asana_task_delete", "asana_comment_add",
                    "fireflies_meeting_delete"}
 

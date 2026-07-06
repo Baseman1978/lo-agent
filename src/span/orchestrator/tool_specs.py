@@ -827,6 +827,209 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "o365_contacts_list",
+            "description": "Persoonlijke Outlook-contacten van Bas (naam, e-mail, telefoon, "
+            "bedrijf), alfabetisch. Nieuw recht (Contacts) — geeft dit een 403, dan eerst "
+            "opnieuw inloggen bij Microsoft 365.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "top": {"type": "integer", "description": "Aantal contacten (default 25, max 50)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_contact_search",
+            "description": "Zoek in de persoonlijke Outlook-contacten op naam (begint-met, "
+            "met bevat-fallback). Voor collega's in de organisatie: o365_people_search. "
+            "Nieuw recht (Contacts) — geeft dit een 403, dan eerst opnieuw inloggen bij "
+            "Microsoft 365.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "(deel van de) naam"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_contact_create",
+            "description": "Maak een nieuw persoonlijk Outlook-contact (naam verplicht; "
+            "e-mail, telefoon en bedrijf optioneel). Nieuw recht (Contacts) — geeft dit "
+            "een 403, dan eerst opnieuw inloggen bij Microsoft 365.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Volledige naam, bv. 'Jan de Vries'"},
+                    "email": {"type": "string", "description": "E-mailadres (optioneel)"},
+                    "phone": {"type": "string", "description": "Mobiel nummer (optioneel)"},
+                    "company": {"type": "string", "description": "Bedrijfsnaam (optioneel)"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_contact_update",
+            "description": "Wijzig een Outlook-contact — alleen de meegegeven velden. "
+            "contact_id uit o365_contacts_list of o365_contact_search. Nieuw recht "
+            "(Contacts) — geeft dit een 403, dan eerst opnieuw inloggen bij Microsoft 365.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "contact_id": {"type": "string", "description": "Contact-id"},
+                    "name": {"type": "string", "description": "Nieuwe volledige naam (optioneel)"},
+                    "email": {"type": "string", "description": "Nieuw e-mailadres (optioneel)"},
+                    "phone": {"type": "string", "description": "Nieuw mobiel nummer (optioneel)"},
+                    "company": {"type": "string", "description": "Nieuwe bedrijfsnaam (optioneel)"},
+                },
+                "required": ["contact_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_mail_rules_list",
+            "description": "Toon de inbox-regels (mailregels) met per regel id, naam, "
+            "aan/uit, voorwaarden en acties. Nieuw recht (MailboxSettings) — geeft dit "
+            "een 403, dan eerst opnieuw inloggen bij Microsoft 365.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_mail_rule_create",
+            "description": "Maak een inbox-regel: als afzender/onderwerp iets bevat → "
+            "verplaats naar map, markeer gelezen en/of ken categorieën toe. Minstens één "
+            "voorwaarde én één actie. Doorsturen/verwijderen als regel-actie bestaat "
+            "bewust NIET. Een regel is staand gedrag op alle toekomstige mail — wacht "
+            "daarom op goedkeuring in de Agent Inbox. Nieuw recht (MailboxSettings) — "
+            "geeft dit een 403, dan eerst opnieuw inloggen bij Microsoft 365.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Naam van de regel"},
+                    "from_contains": {"type": "string", "description": "Voorwaarde: afzender(adres/naam) bevat dit (optioneel)"},
+                    "subject_contains": {"type": "string", "description": "Voorwaarde: onderwerp bevat dit (optioneel)"},
+                    "move_to_folder": {"type": "string", "description": "Actie: verplaats naar deze map (naam of deel ervan, optioneel)"},
+                    "mark_read": {"type": "boolean", "description": "Actie: markeer als gelezen (default false)"},
+                    "categories": {"type": "array", "items": {"type": "string"},
+                                   "description": "Actie: ken deze categorieën toe (optioneel)"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_mail_rule_delete",
+            "description": "Verwijder een inbox-regel (definitief; staande config). Wacht op "
+            "goedkeuring in de Agent Inbox. Geef name mee voor een leesbare goedkeuring. "
+            "Nieuw recht (MailboxSettings) — geeft dit een 403, dan eerst opnieuw inloggen "
+            "bij Microsoft 365.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "rule_id": {"type": "string", "description": "Regel-id (uit o365_mail_rules_list)"},
+                    "name": {"type": "string", "description": "Regelnaam (voor de goedkeuringsweergave)"},
+                },
+                "required": ["rule_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_mail_categories",
+            "description": "Toon de Outlook-categorieën (masterCategories: naam + kleur) — "
+            "gebruik deze namen bij o365_mail_categorize en mailregels. Nieuw recht "
+            "(MailboxSettings) — geeft dit een 403, dan eerst opnieuw inloggen bij "
+            "Microsoft 365.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_mail_categorize",
+            "description": "Ken categorieën toe aan één mail (vervangt de bestaande "
+            "categorielijst van die mail; lege lijst = categorieën weghalen). Nieuw recht "
+            "(Mail.ReadWrite expliciet) — geeft dit een 403, dan eerst opnieuw inloggen "
+            "bij Microsoft 365.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message_id": {"type": "string", "description": "graph_id van de mail"},
+                    "categories": {"type": "array", "items": {"type": "string"},
+                                   "description": "Categorienamen (zie o365_mail_categories)"},
+                },
+                "required": ["message_id", "categories"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_teams_chats",
+            "description": "Recente Teams-chats: chat-id, type (oneOnOne/group), onderwerp "
+            "en deelnemersnamen. Gebruik het chat-id daarna voor o365_teams_chat_messages "
+            "of o365_teams_chat_send.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "top": {"type": "integer", "description": "Aantal chats (default 15, max 30)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_teams_chat_messages",
+            "description": "Laatste berichten uit één Teams-chat (afzender, tijdstip, platte "
+            "tekst). chat_id uit o365_teams_chats.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chat_id": {"type": "string", "description": "Chat-id (uit o365_teams_chats)"},
+                    "top": {"type": "integer", "description": "Aantal berichten (default 10, max 30)"},
+                },
+                "required": ["chat_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_teams_chat_send",
+            "description": "Verstuur een bericht in een Teams-chat — gaat direct naar de "
+            "deelnemers en wacht daarom op goedkeuring in de Agent Inbox. chat_id uit "
+            "o365_teams_chats. Nieuw recht (ChatMessage.Send) — geeft dit een 403, dan "
+            "eerst opnieuw inloggen bij Microsoft 365.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chat_id": {"type": "string", "description": "Chat-id (uit o365_teams_chats)"},
+                    "text": {"type": "string", "description": "Berichttekst (platte tekst)"},
+                },
+                "required": ["chat_id", "text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "o365_powerbi_reports",
             "description": "Lijst Power BI-rapporten (naam, id, webUrl) waar de gebruiker "
             "toegang toe heeft. Alleen-lezen.",
@@ -1799,7 +2002,14 @@ O365_TOOLS = {"o365_mail_inbox", "o365_mail_send", "o365_calendar", "o365_event_
               "o365_drive_browse", "o365_folder_create", "o365_file_move_rename",
               "o365_file_copy", "o365_file_delete", "o365_file_share_link",
               "o365_sharepoint_lists", "o365_sharepoint_list_items",
-              "o365_mail_reply_send", "o365_mail_forward_send"}
+              "o365_mail_reply_send", "o365_mail_forward_send",
+              "o365_contacts_list", "o365_contact_search",
+              "o365_contact_create", "o365_contact_update",
+              "o365_mail_rules_list", "o365_mail_rule_create",
+              "o365_mail_rule_delete", "o365_mail_categories",
+              "o365_mail_categorize",
+              "o365_teams_chats", "o365_teams_chat_messages",
+              "o365_teams_chat_send"}
 
 # Permissie-registry: groep + lezen/schrijven, voor de instellingenpagina.
 TOOL_META: dict[str, tuple[str, str]] = {
@@ -1854,6 +2064,18 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "o365_sharepoint_lists": ("O365 SharePoint", "read"),
     "o365_sharepoint_list_items": ("O365 SharePoint", "read"),
     "o365_teams_search": ("O365 Teams", "read"),
+    "o365_teams_chats": ("O365 Teams", "read"),
+    "o365_teams_chat_messages": ("O365 Teams", "read"),
+    "o365_teams_chat_send": ("O365 Teams", "write"),
+    "o365_contacts_list": ("O365 Contacten", "read"),
+    "o365_contact_search": ("O365 Contacten", "read"),
+    "o365_contact_create": ("O365 Contacten", "write"),
+    "o365_contact_update": ("O365 Contacten", "write"),
+    "o365_mail_rules_list": ("O365 Mail", "read"),
+    "o365_mail_rule_create": ("O365 Mail", "write"),
+    "o365_mail_rule_delete": ("O365 Mail", "write"),
+    "o365_mail_categories": ("O365 Mail", "read"),
+    "o365_mail_categorize": ("O365 Mail", "write"),
     "o365_powerbi_reports": ("Power BI", "read"),
     "o365_powerbi_dashboards": ("Power BI", "read"),
     "o365_powerbi_datasets": ("Power BI", "read"),

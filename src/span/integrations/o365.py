@@ -28,6 +28,15 @@ SCOPES = [
     "Sites.Read.All",      # SharePoint-sites doorzoeken
     "Chat.Read",           # Teams-chatberichten doorzoeken
     "People.Read",         # personen/collega's opzoeken
+    # Fase 2b — allemaal user-consentable (geen admin consent). Bij de
+    # eerstvolgende browser-login vraagt Microsoft incremental consent; tot
+    # die tijd geven de nieuwe Graph-calls een 403 (-> opnieuw inloggen).
+    "Mail.ReadWrite",            # ONDERHOUDSPUNT: bestaande mail-writes (move/
+                                 # delete/flag) gebruiken dit al — nu expliciet;
+                                 # ook voor categorieën op berichten
+    "Contacts.ReadWrite",        # contacten lezen/aanmaken/bijwerken
+    "MailboxSettings.ReadWrite", # inbox-regels (messageRules) + masterCategories
+    "ChatMessage.Send",          # Teams-chatberichten versturen
 ]
 TIMEZONE = "W. Europe Standard Time"
 
@@ -886,6 +895,160 @@ class O365Client:
         }]})
         return _search_hits(data)
 
+    # -- Teams-chats lezen + versturen (Chat.Read / ChatMessage.Send, Fase 2b) -
+
+    @staticmethod
+    def _strip_html(html_text: str) -> str:
+        """Platte tekst uit een Teams-berichtbody (body.content is HTML)."""
+        import html as _html
+        import re as _re
+        kaal = _re.sub(r"<[^>]+>", " ", html_text or "")
+        return _re.sub(r"\s+", " ", _html.unescape(kaal)).strip()
+
+    def teams_chats(self, top: int = 15) -> list[dict[str, Any]]:
+        """Recente Teams-chats: id, type (oneOnOne/group), deelnemersnamen.
+        Sorteren op laatste bericht mag niet op elke tenant — dan zonder."""
+        params: dict[str, Any] = {
+            "$expand": "members($select=displayName)",
+            "$top": min(int(top), 30),
+        }
+        try:
+            data = self._get("/me/chats", {
+                **params,
+                "$orderby": "lastMessagePreview/createdDateTime desc",
+            })
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 400:
+                data = self._get("/me/chats", params)
+            else:
+                raise
+        return [{
+            "id": c.get("id"),
+            "type": c.get("chatType"),
+            "topic": c.get("topic"),
+            "members": [(m or {}).get("displayName")
+                        for m in c.get("members") or []],
+        } for c in data.get("value", [])]
+
+    def teams_chat_messages(self, chat_id: str, top: int = 10) -> list[dict[str, Any]]:
+        """Laatste berichten uit één chat: afzender, tijdstip, platte tekst."""
+        data = self._get(f"/me/chats/{chat_id}/messages",
+                         {"$top": min(int(top), 30)})
+        return [{
+            "from": (((m.get("from") or {}).get("user")) or {}).get("displayName"),
+            "sent": m.get("createdDateTime"),
+            "text": self._strip_html((m.get("body") or {}).get("content") or "")[:500],
+        } for m in data.get("value", [])]
+
+    def chat_members(self, chat_id: str) -> list[str]:
+        """Deelnemersnamen van één chat — voor een leesbare Agent Inbox-titel."""
+        data = self._get(f"/me/chats/{chat_id}/members",
+                         {"$select": "displayName"})
+        return [m.get("displayName") for m in data.get("value", [])
+                if m.get("displayName")]
+
+    def teams_chat_send(self, chat_id: str, text: str) -> dict[str, Any]:
+        """Verstuur een Teams-chatbericht — gaat DIRECT naar de deelnemers,
+        daarom loopt de tool altijd via de Agent Inbox. Geen blinde retry
+        (idempotent=False), net als mail versturen."""
+        m = self._post(f"/me/chats/{chat_id}/messages",
+                       {"body": {"content": text}}, idempotent=False)
+        return {"sent": True, "chat_id": chat_id, "message_id": m.get("id")}
+
+    # -- contacten (Contacts.ReadWrite, Fase 2b) ------------------------------
+
+    _CONTACT_SELECT = ("id,displayName,emailAddresses,mobilePhone,"
+                       "businessPhones,companyName")
+
+    @staticmethod
+    def _slim_contact(c: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": c.get("id"),
+            "name": c.get("displayName"),
+            "emails": [(e or {}).get("address")
+                       for e in c.get("emailAddresses") or []],
+            "mobile": c.get("mobilePhone"),
+            "phones": c.get("businessPhones") or [],
+            "company": c.get("companyName"),
+        }
+
+    @staticmethod
+    def _split_name(name: str) -> tuple[str, str]:
+        """'Jan de Vries' -> ('Jan de', 'Vries'): splitsen op de laatste spatie."""
+        parts = name.strip().rsplit(" ", 1)
+        return (parts[0], parts[1]) if len(parts) == 2 else (name.strip(), "")
+
+    def contacts_list(self, top: int = 25) -> list[dict[str, Any]]:
+        """Persoonlijke Outlook-contacten, alfabetisch op naam."""
+        data = self._get("/me/contacts", {
+            "$top": min(int(top), 50),
+            "$orderby": "displayName",
+            "$select": self._CONTACT_SELECT,
+        })
+        return [self._slim_contact(c) for c in data.get("value", [])]
+
+    def contact_search(self, name: str) -> list[dict[str, Any]]:
+        """Zoek contacten op naam. GEEN $search: dat is op /me/contacts
+        ongedocumenteerd/onbetrouwbaar. Daarom $filter startswith (via de
+        centrale odata_quote-escape), aangevuld met een client-side
+        bevat-match over de eerste ~100 contacten als startswith niets vindt
+        ('Jan' matcht dan ook 'de Vries, Jan')."""
+        data = self._get("/me/contacts", {
+            "$filter": f"startswith(displayName, {odata_quote(name)})",
+            "$top": 15,
+            "$select": self._CONTACT_SELECT,
+        })
+        hits = [self._slim_contact(c) for c in data.get("value", [])]
+        if hits:
+            return hits
+        data = self._get("/me/contacts", {
+            "$top": 100, "$select": self._CONTACT_SELECT,
+        })
+        needle = name.strip().lower()
+        return [self._slim_contact(c) for c in data.get("value", [])
+                if needle in (c.get("displayName") or "").lower()][:15]
+
+    def contact_create(self, name: str, email: str = "", phone: str = "",
+                       company: str = "") -> dict[str, Any]:
+        """Nieuw Outlook-contact; de naam wordt op de laatste spatie gesplitst
+        in givenName/surname (Outlook sorteert/zoekt daarop)."""
+        given, sur = self._split_name(name)
+        payload: dict[str, Any] = {"displayName": name.strip(), "givenName": given}
+        if sur:
+            payload["surname"] = sur
+        if email:
+            payload["emailAddresses"] = [{"address": email, "name": name.strip()}]
+        if phone:
+            payload["mobilePhone"] = phone
+        if company:
+            payload["companyName"] = company
+        c = self._post("/me/contacts", payload)
+        return {"created": True, "id": c.get("id"),
+                "name": c.get("displayName") or name}
+
+    def contact_update(self, contact_id: str, name: str = "", email: str = "",
+                       phone: str = "", company: str = "") -> dict[str, Any]:
+        """Wijzig een contact — alleen de meegegeven velden."""
+        payload: dict[str, Any] = {}
+        if name:
+            given, sur = self._split_name(name)
+            payload["displayName"] = name.strip()
+            payload["givenName"] = given
+            if sur:
+                payload["surname"] = sur
+        if email:
+            payload["emailAddresses"] = [{"address": email,
+                                          "name": name.strip() or email}]
+        if phone:
+            payload["mobilePhone"] = phone
+        if company:
+            payload["companyName"] = company
+        if not payload:
+            raise ValueError("Niets te wijzigen — geef name/email/phone/company.")
+        c = self._patch(f"/me/contacts/{contact_id}", payload)
+        return {"updated": True, "id": contact_id,
+                "name": c.get("displayName") or name or None}
+
     # -- personen -------------------------------------------------------------
 
     def search_people(self, query: str, top: int = 10) -> list[dict[str, Any]]:
@@ -1039,6 +1202,78 @@ class O365Client:
                                json={"body": {"contentType": "Text", "content": body}}, timeout=30)
             r.raise_for_status()
         return {"reply_all_draft": True, "draft_id": did}
+
+    # -- mailregels + categorieën (MailboxSettings.ReadWrite / Mail.ReadWrite,
+    #    Fase 2b) --------------------------------------------------------------
+
+    def mail_rules(self) -> list[dict[str, Any]]:
+        """Inbox-regels (messageRules): per regel compact id, naam, enabled,
+        de gevulde voorwaarden en de gevulde acties."""
+        data = self._get("/me/mailFolders/inbox/messageRules")
+        return [{
+            "id": r.get("id"),
+            "name": r.get("displayName"),
+            "enabled": r.get("isEnabled", True),
+            "conditions": {k: v for k, v in (r.get("conditions") or {}).items() if v},
+            "actions": {k: v for k, v in (r.get("actions") or {}).items()
+                        if v not in (None, False, [])},
+        } for r in data.get("value", [])]
+
+    def mail_rule_create(self, name: str, from_contains: str = "",
+                         subject_contains: str = "", move_to_folder: str = "",
+                         mark_read: bool = False,
+                         categories: list[str] | None = None) -> dict[str, Any]:
+        """Maak een inbox-regel. VEILIGHEIDSGRENS (hard, hier in de client):
+        deze methode bouwt uitsluitend de acties moveToFolder / markAsRead /
+        assignCategories. Forward-, redirect- en delete-acties bestaan bewust
+        NIET — mailregels zijn een klassiek exfiltratie-kanaal: één stille
+        forward-regel lekt daarna álle inkomende mail naar buiten.
+        Minstens één voorwaarde én één actie verplicht."""
+        if not (from_contains or subject_contains):
+            raise ValueError("Geef minstens één voorwaarde "
+                             "(from_contains en/of subject_contains).")
+        if not (move_to_folder or mark_read or categories):
+            raise ValueError("Geef minstens één actie "
+                             "(move_to_folder, mark_read en/of categories).")
+        conditions: dict[str, Any] = {}
+        if from_contains:
+            conditions["senderContains"] = [from_contains]
+        if subject_contains:
+            conditions["subjectContains"] = [subject_contains]
+        actions: dict[str, Any] = {}
+        if move_to_folder:
+            # mapnaam -> folder-id via dezelfde lookup als mail_move
+            actions["moveToFolder"] = self._resolve_folder(move_to_folder)
+        if mark_read:
+            actions["markAsRead"] = True
+        if categories:
+            actions["assignCategories"] = [str(c) for c in categories]
+        bestaand = self._get("/me/mailFolders/inbox/messageRules").get("value", [])
+        seq = max([int(r.get("sequence") or 0) for r in bestaand], default=0) + 1
+        r = self._post("/me/mailFolders/inbox/messageRules", {
+            "displayName": name, "sequence": seq, "isEnabled": True,
+            "conditions": conditions, "actions": actions,
+        })
+        return {"created": True, "id": r.get("id"), "name": name,
+                "conditions": conditions, "actions": actions}
+
+    def mail_rule_delete(self, rule_id: str) -> dict[str, Any]:
+        """Verwijder een inbox-regel — staande config, definitief weg."""
+        self._delete(f"/me/mailFolders/inbox/messageRules/{rule_id}")
+        return {"deleted": True, "id": rule_id}
+
+    def mail_categories(self) -> list[dict[str, Any]]:
+        """De masterCategories van de mailbox (naam + kleur)."""
+        data = self._get("/me/outlook/masterCategories")
+        return [{"id": c.get("id"), "name": c.get("displayName"),
+                 "color": c.get("color")} for c in data.get("value", [])]
+
+    def categorize_message(self, message_id: str,
+                           categories: list[str]) -> dict[str, Any]:
+        """Ken categorieën toe aan één mail (vervangt de bestaande lijst)."""
+        self._patch(f"/me/messages/{message_id}",
+                    {"categories": [str(c) for c in categories]})
+        return {"id": message_id, "categories": [str(c) for c in categories]}
 
     # -- schrijven (Files.ReadWrite.All / Calendars.ReadWrite) ---------------
 

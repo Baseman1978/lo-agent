@@ -276,6 +276,19 @@ def execute_approval(item: dict[str, Any], o365: Any, llm: Any = None,
     if item["action"] == "mail_forward_send":
         return o365.forward_mail(payload["message_id"], payload["to"],
                                  body=payload.get("body", ""))
+    if item["action"] == "mail_rule_create":
+        return o365.mail_rule_create(
+            payload["name"],
+            from_contains=payload.get("from_contains", ""),
+            subject_contains=payload.get("subject_contains", ""),
+            move_to_folder=payload.get("move_to_folder", ""),
+            mark_read=payload.get("mark_read", False),
+            categories=payload.get("categories") or None,
+        )
+    if item["action"] == "mail_rule_delete":
+        return o365.mail_rule_delete(payload["rule_id"])
+    if item["action"] == "teams_chat_send":
+        return o365.teams_chat_send(payload["chat_id"], payload["text"])
     if item["action"] == "file_delete":
         return o365.delete_file(payload["item_id"])
     if item["action"] == "file_share_link":
