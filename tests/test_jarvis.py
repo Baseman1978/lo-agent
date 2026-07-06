@@ -149,6 +149,73 @@ class TestAgentInbox:
         assert inbox.resolve(iid, "rejected") is None  # geen tweede transitie
         assert inbox.get(iid)["status"] == "done"  # status verandert niet meer
 
+    def test_event_delete_wacht_op_goedkeuring(self):
+        # agenda-mutaties zijn extern zichtbaar (Outlook mailt genodigden) ->
+        # bij autonomy=ask altijd via de Agent Inbox, met leesbare titel
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        o365 = MagicMock()
+        o365.event_get.return_value = {"subject": "Weekstart", "start": "2026-07-08T09:00:00",
+                                       "attendees": ["a@lomans.nl", "b@lomans.nl"]}
+        tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
+                     o365=o365, inbox=inbox, autonomy={"event": "ask"})
+        result = tb.dispatch("o365_event_delete", {"event_id": "ev-1"})
+        assert "queued" in result
+        o365.delete_event.assert_not_called()
+        item = inbox.snapshot()[0]
+        assert item["action"] == "event_delete"
+        assert "Weekstart" in item["title"] and "2 genodigden" in item["title"]
+
+    def test_event_update_auto_voert_direct_uit(self):
+        from span.jarvis.ambient import AgentInbox
+        o365 = MagicMock()
+        o365.update_event.return_value = {"updated": True}
+        tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
+                     o365=o365, inbox=AgentInbox(), autonomy={"event": "auto"})
+        result = tb.dispatch("o365_event_update",
+                             {"event_id": "ev-1", "start": "2026-07-08T10:00:00"})
+        assert "updated" in result
+        o365.update_event.assert_called_once()
+
+    def test_event_respond_kaal_direct_met_comment_gequeued(self):
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        o365 = MagicMock()
+        o365.event_get.return_value = {"subject": "BIM-overleg", "start": "2026-07-09T13:00:00",
+                                       "attendees": []}
+        o365.respond_event.return_value = {"sent": True}
+        tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
+                     o365=o365, inbox=inbox, autonomy={"event": "ask"})
+        assert "sent" in tb.dispatch("o365_event_respond",
+                                     {"event_id": "ev-1", "response": "accept"})
+        result = tb.dispatch("o365_event_respond",
+                             {"event_id": "ev-1", "response": "decline",
+                              "comment": "Lukt niet, druk met storing."})
+        assert "queued" in result and inbox.open_count() == 1
+
+    def test_execute_approval_agenda_branches(self):
+        from span.jarvis.ambient import execute_approval
+        o365 = MagicMock()
+        execute_approval({"action": "event_delete", "kind": "action",
+                          "payload": {"event_id": "ev-9"}}, o365)
+        o365.delete_event.assert_called_once_with("ev-9")
+        execute_approval({"action": "event_cancel", "kind": "action",
+                          "payload": {"event_id": "ev-9", "comment": "Verzet naar volgende week"}}, o365)
+        o365.cancel_event.assert_called_once_with("ev-9", comment="Verzet naar volgende week")
+        execute_approval({"action": "todo_delete", "kind": "action",
+                          "payload": {"task_id": "t-1", "list_id": ""}}, o365)
+        o365.todo_delete.assert_called_once_with("t-1", list_id="")
+
+    def test_agenda_mutaties_geclassificeerd_als_hoog(self):
+        # zonder expliciete TOOL_RISK-entry zou de med-fallback delete/update
+        # ZONDER Agent Inbox laten draaien — dit pint de classificatie vast
+        from span.safety.risk import risk_for
+        for naam in ("o365_event_update", "o365_event_delete",
+                     "o365_event_cancel", "o365_todo_delete"):
+            assert risk_for(naam) == "high", naam
+        for naam in ("o365_event_get", "o365_event_instances", "o365_free_slots"):
+            assert risk_for(naam) == "low", naam
+
     def test_persistent_schrijft_en_herstelt(self):
         # met een brein erbij: add/resolve schrijven door, en een nieuwe
         # inbox (herstart) laadt de items terug met doorlopende teller

@@ -22,7 +22,9 @@ TOOL_RISK: dict[str, str] = {
     "o365_archive_folder": "low", "o365_excel_sheets": "low", "o365_excel_read": "low",
     "o365_unanswered_sent": "low", "o365_enrich_archive": "low",
     "o365_mail_mark_read": "low", "o365_mail_flag": "low",
-    "o365_todo_list": "low", "asana_my_tasks": "low", "asana_search": "low",
+    "o365_event_get": "low", "o365_event_instances": "low", "o365_free_slots": "low",
+    "o365_todo_list": "low", "o365_todo_lists": "low",
+    "asana_my_tasks": "low", "asana_search": "low",
     "asana_projects": "low", "inbox_open": "low", "fireflies_meetings": "low",
     "cron_list": "low", "triage_rules_get": "low",
     # eigen brein schrijven — laag (alleen-eigen, omkeerbaar)
@@ -33,6 +35,7 @@ TOOL_RISK: dict[str, str] = {
     "mail_archive_folder": "med",   # leest mail -> eigen brein (omkeerbaar)
     # eigen taken / concepten — midden
     "o365_draft_reply": "med", "o365_todo_create": "med", "o365_todo_complete": "med",
+    "o365_todo_update": "med",
     "o365_mail_move": "med", "o365_mail_delete": "med",
     "o365_mail_forward_draft": "med", "o365_mail_reply_all_draft": "med",
     "o365_excel_write": "med", "o365_file_create": "med", "o365_event_respond": "med",
@@ -41,6 +44,11 @@ TOOL_RISK: dict[str, str] = {
     "fireflies_sync": "med",
     # naar buiten / onomkeerbaar / voert namens Bas uit — hoog
     "o365_mail_send": "high", "o365_event_create": "high",
+    # agenda-mutaties: Outlook mailt genodigden automatisch bij wijzigen/
+    # verwijderen/annuleren; todo_delete is definitief (geen prullenbak).
+    # Zonder expliciete entry zou de med-fallback ze ZONDER Agent Inbox draaien.
+    "o365_event_update": "high", "o365_event_delete": "high",
+    "o365_event_cancel": "high", "o365_todo_delete": "high",
     # cron_create: med — plannen is op zich omkeerbaar; een execute-cron draait
     # later via een volwaardige agent-beurt mét eigen Agent Inbox-poort, dus de
     # gevoelige actie wordt dáár alsnog afgevangen. high zou ook onschuldige

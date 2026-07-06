@@ -19,7 +19,9 @@ _OUTBOUND = {"o365_mail_send", "o365_event_create"}
 # zélf honoreren. Een high/crit-tool die hier NIET in staat en 'approval' krijgt,
 # wordt geblokkeerd — de guard dwingt af, hij adviseert niet alleen. MCP-schrijf-
 # tools (mcp__…) hebben sinds de MCP-koppeling ook een queue-pad (zie dispatch).
-_HAS_QUEUE_PATH = {"o365_mail_send", "o365_event_create"}
+_HAS_QUEUE_PATH = {"o365_mail_send", "o365_event_create",
+                   "o365_event_update", "o365_event_delete", "o365_event_cancel",
+                   "o365_event_respond", "o365_todo_delete"}
 
 
 def _has_queue_path(name: str) -> bool:

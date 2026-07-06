@@ -28,7 +28,8 @@ _UNTRUSTED_OUTPUT_TOOLS = {"o365_mail_inbox", "o365_thread_summary", "fireflies_
                            "o365_teams_search", "o365_attachment_read", "o365_excel_read",
                            "o365_unanswered_sent", "o365_powerbi_reports",
                            "o365_powerbi_dashboards", "o365_powerbi_datasets",
-                           "o365_powerbi_tables", "o365_powerbi_query"}
+                           "o365_powerbi_tables", "o365_powerbi_query",
+                           "o365_event_get"}  # uitnodigings-body is door derden geschreven
 
 
 class ToolBox:
@@ -138,7 +139,8 @@ class ToolBox:
         autonomy-sleutel kan dus nooit per ongeluk een tool vrijgeven."""
         if name == "o365_mail_send":
             return self._autonomy.get("mail", "ask") == "auto"
-        if name == "o365_event_create":
+        if name in ("o365_event_create", "o365_event_update", "o365_event_delete",
+                    "o365_event_cancel", "o365_event_respond", "o365_todo_delete"):
             return self._autonomy.get("event", "ask") == "auto"
         return False
 
@@ -505,9 +507,100 @@ class ToolBox:
     def _tool_o365_file_create(self, name: str, content: str, folder_path: str = "") -> Any:
         return self._require_o365().create_file(name, content, folder_path=folder_path)
 
+    def _event_kop(self, event_id: str) -> str:
+        """Mens-leesbare kop voor de Agent Inbox: 'Weekstart · 2026-07-08T09:00 · 3 genodigden'.
+        De HUD toont geen payload, dus de titel moet het verhaal vertellen."""
+        try:
+            ev = self._require_o365().event_get(event_id)
+            kop = f"{ev.get('subject') or '(zonder titel)'} · {(ev.get('start') or '')[:16]}"
+            n = len(ev.get("attendees") or [])
+            return kop + (f" · {n} genodigden" if n else "")
+        except Exception:
+            return event_id
+
+    def _event_wacht_op_akkoord(self) -> bool:
+        return self._inbox is not None and (self._autonomy.get("event", "ask") != "auto"
+                                            or getattr(self, "_forced_approval", False))
+
     def _tool_o365_event_respond(self, event_id: str, response: str,
-                                 comment: str = "") -> Any:
-        return self._require_o365().respond_event(event_id, response, comment=comment)
+                                 comment: str = "", proposed_start: str = "",
+                                 proposed_end: str = "") -> Any:
+        # kale accept/decline was altijd al direct; mét opmerking of tegenvoorstel
+        # gaat er een boodschap naar de organisator -> via de Agent Inbox
+        if (comment or proposed_start) and self._event_wacht_op_akkoord():
+            item_id = self._inbox.add(
+                owner=self._owner,
+                kind="action", action="event_respond",
+                title=f"Uitnodiging {response}: {self._event_kop(event_id)}",
+                detail=(comment or "") + (f" · tegenvoorstel {proposed_start[:16]}" if proposed_start else ""),
+                payload={"event_id": event_id, "response": response, "comment": comment,
+                         "proposed_start": proposed_start, "proposed_end": proposed_end},
+                origin="agent",
+            )
+            return {"queued": item_id,
+                    "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
+        return self._require_o365().respond_event(
+            event_id, response, comment=comment,
+            proposed_start=proposed_start, proposed_end=proposed_end)
+
+    def _tool_o365_event_get(self, event_id: str) -> Any:
+        return self._require_o365().event_get(event_id)
+
+    def _tool_o365_event_instances(self, event_id: str, start: str, end: str) -> Any:
+        return self._require_o365().event_instances(event_id, start, end)
+
+    def _tool_o365_free_slots(self, emails: list[str], start: str, end: str,
+                              interval_min: int = 30) -> Any:
+        return self._require_o365().get_schedule(emails, start, end, interval_min=interval_min)
+
+    def _tool_o365_event_update(self, event_id: str, subject: str = "", start: str = "",
+                                end: str = "", location: str = "", body: str = "") -> Any:
+        wijzig = {k: v for k, v in [("subject", subject), ("start", start), ("end", end),
+                                    ("location", location), ("body", body)] if v}
+        if not wijzig:
+            return {"error": "Niets te wijzigen — geef subject/start/end/location/body."}
+        if self._event_wacht_op_akkoord():
+            item_id = self._inbox.add(
+                owner=self._owner,
+                kind="action", action="event_update",
+                title=f"Afspraak wijzigen: {self._event_kop(event_id)}",
+                detail=" · ".join(f"{k} → {str(v)[:60]}" for k, v in wijzig.items())[:220],
+                payload={"event_id": event_id, **wijzig},
+                origin="agent",
+            )
+            return {"queued": item_id,
+                    "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
+        return self._require_o365().update_event(
+            event_id, subject=subject, start_iso=start, end_iso=end,
+            location=location, body=body)
+
+    def _tool_o365_event_delete(self, event_id: str) -> Any:
+        if self._event_wacht_op_akkoord():
+            item_id = self._inbox.add(
+                owner=self._owner,
+                kind="action", action="event_delete",
+                title=f"Afspraak verwijderen: {self._event_kop(event_id)}",
+                detail="Naar Verwijderde items (herstelbaar); genodigden krijgen automatisch bericht.",
+                payload={"event_id": event_id},
+                origin="agent",
+            )
+            return {"queued": item_id,
+                    "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
+        return self._require_o365().delete_event(event_id)
+
+    def _tool_o365_event_cancel(self, event_id: str, comment: str = "") -> Any:
+        if self._event_wacht_op_akkoord():
+            item_id = self._inbox.add(
+                owner=self._owner,
+                kind="action", action="event_cancel",
+                title=f"Meeting annuleren: {self._event_kop(event_id)}",
+                detail=f"Bericht aan genodigden: {comment[:160]}" if comment else "Zonder toelichting.",
+                payload={"event_id": event_id, "comment": comment},
+                origin="agent",
+            )
+            return {"queued": item_id,
+                    "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
+        return self._require_o365().cancel_event(event_id, comment=comment)
 
     def _tool_o365_doc_generate(self, kind: str, title: str, content: str,
                                 template_query: str = "", folder: str = "",
@@ -670,11 +763,36 @@ class ToolBox:
     def _tool_o365_todo_list(self, top: int = 20) -> Any:
         return self._require_o365().todo_tasks(top=top)
 
+    def _tool_o365_todo_lists(self) -> Any:
+        return self._require_o365().todo_lists()
+
     def _tool_o365_todo_create(self, title: str, due: str = "", body: str = "") -> Any:
         return self._require_o365().todo_create(title=title, due=due, body=body)
 
     def _tool_o365_todo_complete(self, task_id: str) -> Any:
         return self._require_o365().todo_complete(task_id)
+
+    def _tool_o365_todo_update(self, task_id: str, title: str = "", due: str = "",
+                               body: str = "", list_id: str = "") -> Any:
+        return self._require_o365().todo_update(task_id, title=title, due=due,
+                                                body=body, list_id=list_id)
+
+    def _tool_o365_todo_delete(self, task_id: str, title: str = "",
+                               list_id: str = "") -> Any:
+        # definitief (geen prullenbak in de To Do-API) -> altijd via de Agent Inbox
+        if self._inbox is not None and (self._autonomy.get("event", "ask") != "auto"
+                                        or getattr(self, "_forced_approval", False)):
+            item_id = self._inbox.add(
+                owner=self._owner,
+                kind="action", action="todo_delete",
+                title=f"Taak verwijderen: {title or task_id}",
+                detail="Definitief — To Do kent geen prullenbak.",
+                payload={"task_id": task_id, "list_id": list_id},
+                origin="agent",
+            )
+            return {"queued": item_id,
+                    "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
+        return self._require_o365().todo_delete(task_id, list_id=list_id)
 
     def _tool_asana_my_tasks(self, top: int = 20) -> Any:
         return self._require_asana().my_tasks(top=top)
