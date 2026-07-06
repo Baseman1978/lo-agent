@@ -303,17 +303,54 @@ class O365Client:
             for m in data.get("value", [])
         ]
 
-    def send_mail(self, to: list[str], subject: str, body: str) -> dict[str, Any]:
-        payload = {
-            "message": {
-                "subject": subject,
-                "body": {"contentType": "Text", "content": body},
-                "toRecipients": [{"emailAddress": {"address": addr}} for addr in to],
-            },
-            "saveToSentItems": True,
+    def send_mail(self, to: list[str], subject: str, body: str,
+                  cc: list[str] | None = None,
+                  bcc: list[str] | None = None) -> dict[str, Any]:
+        message: dict[str, Any] = {
+            "subject": subject,
+            "body": {"contentType": "Text", "content": body},
+            "toRecipients": [{"emailAddress": {"address": addr}} for addr in to],
         }
+        if cc:
+            message["ccRecipients"] = [{"emailAddress": {"address": a}} for a in cc]
+        if bcc:
+            message["bccRecipients"] = [{"emailAddress": {"address": a}} for a in bcc]
+        payload = {"message": message, "saveToSentItems": True}
         self._post("/me/sendMail", payload, idempotent=False)
-        return {"sent": True, "to": to, "subject": subject}
+        out: dict[str, Any] = {"sent": True, "to": to, "subject": subject}
+        if cc:
+            out["cc"] = cc
+        if bcc:
+            out["bcc"] = bcc
+        return out
+
+    def message_brief(self, message_id: str) -> dict[str, Any]:
+        """Onderwerp + afzender van één mail — voor een leesbare Agent Inbox-titel
+        (de HUD toont geen payload, dus de titel moet het verhaal vertellen)."""
+        m = self._get(f"/me/messages/{message_id}", {"$select": "subject,from"})
+        return {"subject": m.get("subject"),
+                "from": (m.get("from") or {}).get("emailAddress", {}).get("name")}
+
+    def reply_mail(self, message_id: str, body: str,
+                   reply_all: bool = False) -> dict[str, Any]:
+        """Beantwoord een mail en VERSTUUR direct (reply of allen-beantwoorden) —
+        dit gaat meteen naar de oorspronkelijke afzender(s). Voor een concept
+        in Drafts: draft_reply / draft_reply_all."""
+        action = "replyAll" if reply_all else "reply"
+        self._post(f"/me/messages/{message_id}/{action}", {"comment": body},
+                   idempotent=False)
+        return {"sent": True, "id": message_id, "reply_all": bool(reply_all)}
+
+    def forward_mail(self, message_id: str, to: list[str],
+                     body: str = "") -> dict[str, Any]:
+        """Stuur een mail direct DOOR naar de opgegeven adressen, met optionele
+        toelichting erboven. Voor een concept: draft_forward."""
+        payload: dict[str, Any] = {
+            "toRecipients": [{"emailAddress": {"address": a}} for a in to],
+            "comment": body,
+        }
+        self._post(f"/me/messages/{message_id}/forward", payload, idempotent=False)
+        return {"forwarded": True, "id": message_id, "to": to}
 
     # -- agenda ---------------------------------------------------------------
 
@@ -709,6 +746,89 @@ class O365Client:
             out["note"] = "Office/binair bestand — open via de link of voeg toe aan het geheugen."
         return out
 
+    def drive_browse(self, folder_path: str = "") -> list[dict[str, Any]]:
+        """Blader door OneDrive: de inhoud van één map (leeg pad = hoofdmap).
+        Geeft per item het id terug voor verplaatsen/kopiëren/verwijderen."""
+        from urllib.parse import quote
+        rel = folder_path.strip("/")
+        path = (f"/me/drive/root:/{quote(rel)}:/children" if rel
+                else "/me/drive/root/children")
+        data = self._get(path, {
+            "$top": 50,
+            "$select": "id,name,size,folder,file,lastModifiedDateTime,webUrl",
+        })
+        return [{
+            "id": it.get("id"), "name": it.get("name"), "size": it.get("size"),
+            "is_folder": "folder" in it,
+            "children": (it.get("folder") or {}).get("childCount"),
+            "modified": it.get("lastModifiedDateTime"), "link": it.get("webUrl"),
+        } for it in data.get("value", [])]
+
+    def create_folder(self, name: str, parent_path: str = "") -> dict[str, Any]:
+        """Nieuwe map in OneDrive (in de hoofdmap of onder parent_path). Bestaat
+        de naam al, dan geeft Graph bewust een 409 — geen stille overschrijving."""
+        from urllib.parse import quote
+        rel = parent_path.strip("/")
+        path = (f"/me/drive/root:/{quote(rel)}:/children" if rel
+                else "/me/drive/root/children")
+        j = self._post(path, {"name": name, "folder": {},
+                              "@microsoft.graph.conflictBehavior": "fail"})
+        return {"created": j.get("name"), "id": j.get("id"), "link": j.get("webUrl")}
+
+    def move_rename_file(self, item_id: str, new_name: str = "",
+                         new_parent_path: str = "") -> dict[str, Any]:
+        """Hernoem en/of verplaats een OneDrive-item — minstens één van beide.
+        new_parent_path is het doelpad vanaf de hoofdmap (bv. 'Verslagen/2026')."""
+        payload: dict[str, Any] = {}
+        if new_name:
+            payload["name"] = new_name
+        if new_parent_path:
+            payload["parentReference"] = {
+                "path": f"/drive/root:/{new_parent_path.strip('/')}"}
+        if not payload:
+            raise ValueError("Niets te doen — geef new_name en/of new_parent_path.")
+        j = self._patch(f"/me/drive/items/{item_id}", payload)
+        return {"updated": True, "id": item_id,
+                "name": j.get("name") or new_name, "link": j.get("webUrl")}
+
+    def copy_file(self, item_id: str, new_name: str = "",
+                  parent_path: str = "") -> dict[str, Any]:
+        """Kopieer een OneDrive-item, optioneel met nieuwe naam of naar een
+        andere map. Graph doet dit asynchroon (202 + monitor-URL): niet pollen,
+        het kopie verschijnt vanzelf."""
+        payload: dict[str, Any] = {}
+        if new_name:
+            payload["name"] = new_name
+        if parent_path:
+            payload["parentReference"] = {
+                "path": f"/drive/root:/{parent_path.strip('/')}"}
+        self._post(f"/me/drive/items/{item_id}/copy", payload)
+        return {"copy_gestart": True,
+                "let_op": "kopiëren loopt async — het bestand verschijnt zo in OneDrive"}
+
+    def delete_file(self, item_id: str) -> dict[str, Any]:
+        """Verwijder een OneDrive-item (naar de prullenbak — herstelbaar)."""
+        self._delete(f"/me/drive/items/{item_id}")
+        return {"deleted": True, "id": item_id,
+                "note": "Naar de OneDrive-prullenbak (herstelbaar)."}
+
+    def share_link(self, item_id: str, edit: bool = False) -> dict[str, Any]:
+        """Maak een deel-link voor een OneDrive-item — ALTIJD scope organization
+        (alleen Lomans-collega's), nooit anonymous. 403 = delen staat uit."""
+        try:
+            j = self._post(f"/me/drive/items/{item_id}/createLink",
+                           {"type": "edit" if edit else "view",
+                            "scope": "organization"})
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 403:
+                raise RuntimeError(
+                    "Deel-link geweigerd (403) — delen buiten de eigen persoon "
+                    "staat voor dit item of deze tenant uit; deel dan handmatig "
+                    "via OneDrive.") from exc
+            raise
+        return {"link": (j.get("link") or {}).get("webUrl"),
+                "type": "edit" if edit else "view", "scope": "organization"}
+
     # -- SharePoint -----------------------------------------------------------
 
     def search_sharepoint(self, query: str, top: int = 15) -> list[dict[str, Any]]:
@@ -719,6 +839,41 @@ class O365Client:
             "from": 0, "size": min(int(top), 25),
         }]})
         return _search_hits(data)
+
+    def sharepoint_lists(self, site_query: str) -> dict[str, Any]:
+        """Zoek een SharePoint-site op naam en toon z'n lijsten. Neemt de beste
+        hit; systeemlijsten (hidden) worden weggefilterd."""
+        sites = self._get("/sites", {
+            "search": site_query, "$select": "id,displayName,webUrl",
+        }).get("value", [])
+        if not sites:
+            raise ValueError(f"Geen SharePoint-site gevonden voor '{site_query}'.")
+        site = sites[0]
+        data = self._get(f"/sites/{site['id']}/lists",
+                         {"$select": "id,displayName,webUrl,list"})
+        return {
+            "site": {"id": site.get("id"), "name": site.get("displayName"),
+                     "link": site.get("webUrl")},
+            "lists": [{"id": li.get("id"), "name": li.get("displayName"),
+                       "link": li.get("webUrl")}
+                      for li in data.get("value", [])
+                      if not (li.get("list") or {}).get("hidden")],
+        }
+
+    def sharepoint_list_items(self, site_id: str, list_id: str,
+                              top: int = 20) -> list[dict[str, Any]]:
+        """Items van een SharePoint-lijst: per item compact de kolomwaarden
+        (fields). Interne @odata/_-sleutels worden weggelaten."""
+        data = self._get(f"/sites/{site_id}/lists/{list_id}/items", {
+            "$expand": "fields", "$top": min(int(top), 50),
+        })
+        out: list[dict[str, Any]] = []
+        for it in data.get("value", []):
+            fields = {k: (v[:300] if isinstance(v, str) else v)
+                      for k, v in (it.get("fields") or {}).items()
+                      if not k.startswith(("@", "_"))}
+            out.append({"id": it.get("id"), "fields": fields})
+        return out
 
     # -- Teams ----------------------------------------------------------------
 

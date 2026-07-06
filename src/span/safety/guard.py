@@ -14,14 +14,18 @@ from span.safety.risk import risk_for
 # Tools die data naar buiten sturen (potentieel exfiltratie-kanaal). draft_reply
 # verstuurt niets (concept) en zit hier bewust NIET in — opname zou schijn-
 # veiligheid geven omdat de recipient niet bekend is bij dispatch.
-_OUTBOUND = {"o365_mail_send", "o365_event_create"}
+_OUTBOUND = {"o365_mail_send", "o365_event_create", "o365_mail_forward_send"}
 # Tools die hun eigen goedkeuringspoort (queue) hebben en een 'approval'-besluit
 # zélf honoreren. Een high/crit-tool die hier NIET in staat en 'approval' krijgt,
 # wordt geblokkeerd — de guard dwingt af, hij adviseert niet alleen. MCP-schrijf-
 # tools (mcp__…) hebben sinds de MCP-koppeling ook een queue-pad (zie dispatch).
 _HAS_QUEUE_PATH = {"o365_mail_send", "o365_event_create",
                    "o365_event_update", "o365_event_delete", "o365_event_cancel",
-                   "o365_event_respond", "o365_todo_delete"}
+                   "o365_event_respond", "o365_todo_delete",
+                   "o365_mail_reply_send", "o365_mail_forward_send",
+                   "o365_file_delete", "o365_file_share_link",
+                   "asana_task_delete", "asana_comment_add",
+                   "fireflies_meeting_delete"}
 
 
 def _has_queue_path(name: str) -> bool:
@@ -29,11 +33,20 @@ def _has_queue_path(name: str) -> bool:
 _INTERNAL_DOMAIN = "lomans.nl"
 
 
-def _recipients(name: str, args: dict[str, Any]) -> list[str]:
-    raw = args.get("to") if name == "o365_mail_send" else args.get("attendees")
+def _as_list(raw: Any) -> list[str]:
     if isinstance(raw, str):
         return [raw]                      # HOOG-1: string -> lijst, geen char-iteratie
     return [str(r) for r in (raw or [])]
+
+
+def _recipients(name: str, args: dict[str, Any]) -> list[str]:
+    if name == "o365_mail_send":
+        # cc/bcc tellen mee: ook een extern cc-adres is een uitgaand kanaal
+        return (_as_list(args.get("to")) + _as_list(args.get("cc"))
+                + _as_list(args.get("bcc")))
+    if name == "o365_mail_forward_send":
+        return _as_list(args.get("to"))
+    return _as_list(args.get("attendees"))
 
 
 def _extract_addr(r: str) -> str:

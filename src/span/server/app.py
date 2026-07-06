@@ -235,6 +235,7 @@ async def ws_chat(ws: WebSocket) -> None:
         disabled_tools=_state.get("disabled_tools"),
         integration_perms=_state.get("integration_perms"),
         fireflies=_state.get("fireflies"),
+        telegram=_state.get("telegram"),
         mcp=_state.get("mcp"),
         shared_brain=ctx.shared,
         tasks=_state.get("tasks"),

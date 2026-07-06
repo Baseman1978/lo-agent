@@ -112,6 +112,33 @@ class TestAsanaClient:
         assert slim == {"gid": "1", "name": "n", "due": "2026-06-13",
                         "projects": ["P"], "url": "u"}
 
+    def test_update_task_stuurt_alleen_meegegeven_velden(self):
+        client = self._client()
+        with patch.object(client, "_request") as req:
+            req.return_value = {"name": "Nieuw"}
+            out = client.update_task("t-1", due_on="2026-07-10")
+        assert req.call_args.args[0] == "PUT"
+        assert req.call_args.args[1] == "/tasks/t-1"
+        assert req.call_args.args[2] == {"due_on": "2026-07-10"}
+        assert out["updated"] and out["fields"] == ["due_on"]
+
+    def test_update_task_geen_wist_deadline(self):
+        client = self._client()
+        with patch.object(client, "_request") as req:
+            req.return_value = {}
+            client.update_task("t-1", due_on="geen")
+        assert req.call_args.args[2] == {"due_on": None}
+
+    def test_move_task_raakt_juiste_pad(self):
+        client = self._client()
+        with patch.object(client, "_request") as req:
+            req.return_value = {}
+            out = client.move_task("t-1", "sec-9")
+        assert req.call_args.args[0] == "POST"
+        assert req.call_args.args[1] == "/sections/sec-9/addTask"
+        assert req.call_args.args[2] == {"task": "t-1"}
+        assert out["moved"] and out["section"] == "sec-9"
+
 
 class TestAgentInbox:
     def test_actie_wacht_op_goedkeuring(self):
@@ -216,6 +243,186 @@ class TestAgentInbox:
         for naam in ("o365_event_get", "o365_event_instances", "o365_free_slots"):
             assert risk_for(naam) == "low", naam
 
+    def test_file_delete_wacht_op_goedkeuring(self):
+        # bestanden kennen geen autonomy-categorie -> mét inbox ALTIJD goedkeuren
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        o365 = MagicMock()
+        tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
+                     o365=o365, inbox=inbox)
+        result = tb.dispatch("o365_file_delete",
+                             {"item_id": "f-1", "name": "rapport.docx"})
+        assert "queued" in result
+        o365.delete_file.assert_not_called()
+        item = inbox.snapshot()[0]
+        assert item["action"] == "file_delete"
+        assert "rapport.docx" in item["title"]
+        assert item["payload"]["item_id"] == "f-1"
+
+    def test_file_share_link_wacht_op_goedkeuring(self):
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        o365 = MagicMock()
+        tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
+                     o365=o365, inbox=inbox)
+        result = tb.dispatch("o365_file_share_link",
+                             {"item_id": "f-2", "name": "begroting.xlsx", "edit": True})
+        assert "queued" in result
+        o365.share_link.assert_not_called()
+        item = inbox.snapshot()[0]
+        assert item["action"] == "file_share_link"
+        assert "begroting.xlsx" in item["title"]
+        assert item["payload"]["edit"] is True
+
+    def test_mail_reply_send_wacht_op_goedkeuring_met_leesbare_titel(self):
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        o365 = MagicMock()
+        o365.message_brief.return_value = {"subject": "Offerte W-installatie",
+                                           "from": "Jan de Vries"}
+        tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
+                     o365=o365, inbox=inbox, autonomy={"mail": "ask"})
+        result = tb.dispatch("o365_mail_reply_send",
+                             {"message_id": "m-1", "body": "Akkoord, plan maar in."})
+        assert "queued" in result
+        o365.reply_mail.assert_not_called()
+        item = inbox.snapshot()[0]
+        assert item["action"] == "mail_reply_send"
+        assert "Offerte W-installatie" in item["title"]
+        assert "Jan de Vries" in item["title"]
+
+    def test_execute_approval_bestand_en_mail_branches(self):
+        from span.jarvis.ambient import execute_approval
+        o365 = MagicMock()
+        execute_approval({"action": "file_delete", "kind": "action",
+                          "payload": {"item_id": "f-9"}}, o365)
+        o365.delete_file.assert_called_once_with("f-9")
+        execute_approval({"action": "file_share_link", "kind": "action",
+                          "payload": {"item_id": "f-9", "edit": True}}, o365)
+        o365.share_link.assert_called_once_with("f-9", edit=True)
+        execute_approval({"action": "mail_reply_send", "kind": "action",
+                          "payload": {"message_id": "m-9", "body": "Prima",
+                                      "reply_all": True}}, o365)
+        o365.reply_mail.assert_called_once_with("m-9", "Prima", reply_all=True)
+        execute_approval({"action": "mail_forward_send", "kind": "action",
+                          "payload": {"message_id": "m-9", "to": ["x@lomans.nl"],
+                                      "body": "fyi"}}, o365)
+        o365.forward_mail.assert_called_once_with("m-9", ["x@lomans.nl"], body="fyi")
+
+    def test_bestand_en_mail_tools_geclassificeerd(self):
+        # zonder expliciete TOOL_RISK-entry zou de med-fallback file_delete
+        # ZONDER Agent Inbox laten draaien — dit pint de classificatie vast
+        from span.safety.risk import risk_for
+        for naam in ("o365_file_delete", "o365_file_share_link",
+                     "o365_mail_reply_send", "o365_mail_forward_send"):
+            assert risk_for(naam) == "high", naam
+        for naam in ("o365_drive_browse", "o365_sharepoint_lists",
+                     "o365_sharepoint_list_items"):
+            assert risk_for(naam) == "low", naam
+
+    def test_asana_task_delete_wacht_op_goedkeuring(self):
+        # Asana kent geen autonomy-categorie -> mét inbox ALTIJD goedkeuren
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        asana = MagicMock()
+        tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
+                     asana=asana, inbox=inbox)
+        result = tb.dispatch("asana_task_delete",
+                             {"task_gid": "t-1", "name": "Offerte nabellen"})
+        assert "queued" in result
+        asana.delete_task.assert_not_called()
+        item = inbox.snapshot()[0]
+        assert item["action"] == "asana_task_delete"
+        assert "Offerte nabellen" in item["title"]
+        assert item["payload"]["task_gid"] == "t-1"
+
+    def test_asana_comment_add_wacht_op_goedkeuring_met_taaknaam(self):
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        asana = MagicMock()
+        asana.task_detail.return_value = {"name": "Werkvoorbereiding W-installatie"}
+        tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
+                     asana=asana, inbox=inbox)
+        result = tb.dispatch("asana_comment_add",
+                             {"task_gid": "t-2", "text": "Materiaal is besteld."})
+        assert "queued" in result
+        asana.add_comment.assert_not_called()
+        item = inbox.snapshot()[0]
+        assert item["action"] == "asana_comment_add"
+        assert "Werkvoorbereiding W-installatie" in item["title"]
+        assert item["payload"]["text"] == "Materiaal is besteld."
+
+    def test_execute_approval_asana_branches(self):
+        # let op: execute_approval krijgt asana als keyword-parameter
+        from span.jarvis.ambient import execute_approval
+        asana = MagicMock()
+        execute_approval({"action": "asana_task_delete", "kind": "action",
+                          "payload": {"task_gid": "t-9"}}, MagicMock(), asana=asana)
+        asana.delete_task.assert_called_once_with("t-9")
+        execute_approval({"action": "asana_comment_add", "kind": "action",
+                          "payload": {"task_gid": "t-9", "text": "Akkoord"}},
+                         MagicMock(), asana=asana)
+        asana.add_comment.assert_called_once_with("t-9", "Akkoord")
+
+    def test_asana_delete_en_comment_geclassificeerd_als_hoog(self):
+        # zonder expliciete TOOL_RISK-entry zou de med-fallback task_delete
+        # en comment_add ZONDER Agent Inbox laten draaien — dit pint het vast
+        from span.safety.risk import risk_for
+        for naam in ("asana_task_delete", "asana_comment_add"):
+            assert risk_for(naam) == "high", naam
+        for naam in ("asana_task_detail", "asana_project_tasks", "asana_subtasks",
+                     "asana_comments", "asana_sections", "asana_teams"):
+            assert risk_for(naam) == "low", naam
+
+    def test_fireflies_meeting_delete_wacht_op_goedkeuring(self):
+        # verwijderen is definitief (geen prullenbak); er is geen autonomy-
+        # categorie voor meetings -> mét inbox ALTIJD eerst goedkeuren
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        ff = MagicMock()
+        tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
+                     fireflies=ff, inbox=inbox)
+        result = tb.dispatch("fireflies_meeting_delete",
+                             {"meeting_id": "m-1", "title": "Bouwoverleg"})
+        assert "queued" in result
+        ff.delete_transcript.assert_not_called()
+        item = inbox.snapshot()[0]
+        assert item["action"] == "fireflies_meeting_delete"
+        assert "Bouwoverleg" in item["title"]
+        assert "definitief" in item["detail"].lower()
+        assert item["payload"]["meeting_id"] == "m-1"
+
+    def test_execute_approval_fireflies_branch(self):
+        # de fireflies-client komt uit de serverstaat (zoals de broker bij
+        # integration_run), niet uit de parameterlijst
+        from span.jarvis.ambient import execute_approval
+        ff = MagicMock()
+        ff.delete_transcript.return_value = {"deleted": True, "id": "m-9"}
+        with patch.dict("span.server.state._state", {"fireflies": ff}):
+            out = execute_approval({"action": "fireflies_meeting_delete",
+                                    "kind": "action",
+                                    "payload": {"meeting_id": "m-9"}}, MagicMock())
+        assert out["deleted"]
+        ff.delete_transcript.assert_called_once_with("m-9")
+
+    def test_execute_approval_fireflies_zonder_client_nette_fout(self):
+        from span.jarvis.ambient import execute_approval
+        with patch.dict("span.server.state._state", {}, clear=True):
+            out = execute_approval({"action": "fireflies_meeting_delete",
+                                    "kind": "action",
+                                    "payload": {"meeting_id": "m-9"}}, MagicMock())
+        assert "error" in out
+
+    def test_fireflies_en_telegram_geclassificeerd(self):
+        # zonder expliciete TOOL_RISK-entry zou de med-fallback meeting_delete
+        # ZONDER Agent Inbox laten draaien ('delete' is geen high-trefwoord in
+        # _default_tier) — dit pint de classificatie vast
+        from span.safety.risk import risk_for
+        assert risk_for("fireflies_meeting_delete") == "high"
+        assert risk_for("telegram_notify") == "med"
+        for naam in ("fireflies_search", "fireflies_transcript_detail"):
+            assert risk_for(naam) == "low", naam
+
     def test_persistent_schrijft_en_herstelt(self):
         # met een brein erbij: add/resolve schrijven door, en een nieuwe
         # inbox (herstart) laadt de items terug met doorlopende teller
@@ -278,6 +485,45 @@ class TestAgentInbox:
         assert "injectie" in out["summary"].lower()
 
 
+class TestTelegramNotify:
+    def test_stuurt_via_bridge(self):
+        tg = MagicMock()
+        tg.linked = True
+        tg.send.return_value = True
+        tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
+                     telegram=tg)
+        result = json.loads(tb.dispatch("telegram_notify", {"text": "Klaar!"}))
+        assert result["sent"] is True
+        tg.send.assert_called_once_with("Klaar!")
+
+    def test_nette_fout_zonder_bridge(self):
+        tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s")
+        result = json.loads(tb.dispatch("telegram_notify", {"text": "Klaar!"}))
+        assert "Geen gekoppelde Telegram-chat" in result["error"]
+
+    def test_nette_fout_bridge_niet_gekoppeld(self):
+        # fail-closed: bridge geconfigureerd maar geen /koppel gedaan -> niets sturen
+        tg = MagicMock()
+        tg.linked = False
+        tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
+                     telegram=tg)
+        result = json.loads(tb.dispatch("telegram_notify", {"text": "Klaar!"}))
+        assert "error" in result
+        tg.send.assert_not_called()
+
+    def test_zichtbaarheid_volgt_bridge(self):
+        tb = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s")
+        assert "telegram_notify" not in _tool_names(tb)
+        assert "fireflies_search" not in _tool_names(tb)  # geen fireflies-client
+        tg = MagicMock()
+        tg.linked = True
+        tb2 = ToolBox(brain=MagicMock(), fragments=MagicMock(), session_id="s",
+                      telegram=tg, fireflies=MagicMock())
+        names = _tool_names(tb2)
+        assert {"telegram_notify", "fireflies_search", "fireflies_transcript_detail",
+                "fireflies_meeting_delete"} <= names
+
+
 class TestInboxTools:
     def _toolbox_met_item(self):
         from span.jarvis.ambient import AgentInbox
@@ -300,7 +546,7 @@ class TestInboxTools:
         item_id = inbox.snapshot()[0]["id"]
         result = json.loads(tb.dispatch("inbox_approve", {"item_id": item_id}))
         assert result["approved"] is True
-        o365.send_mail.assert_called_once_with(["x@y.nl"], "S", "B")
+        o365.send_mail.assert_called_once_with(["x@y.nl"], "S", "B", cc=[], bcc=[])
         assert inbox.open_count() == 0
 
     def test_inbox_reject(self):
@@ -861,7 +1107,7 @@ class TestAuditFixes:
         with patch("span.cli.console") as fake_console:
             fake_console.input.return_value = "j"
             _handle_inbox(inbox, o365, None, MagicMock(), MagicMock())
-        o365.send_mail.assert_called_once_with("jan@x.nl", "s", "b")
+        o365.send_mail.assert_called_once_with("jan@x.nl", "s", "b", cc=[], bcc=[])
         assert inbox.snapshot()[0]["status"] == "approved"
 
 

@@ -24,8 +24,14 @@ TOOL_RISK: dict[str, str] = {
     "o365_mail_mark_read": "low", "o365_mail_flag": "low",
     "o365_event_get": "low", "o365_event_instances": "low", "o365_free_slots": "low",
     "o365_todo_list": "low", "o365_todo_lists": "low",
+    "o365_drive_browse": "low", "o365_sharepoint_lists": "low",
+    "o365_sharepoint_list_items": "low",
     "asana_my_tasks": "low", "asana_search": "low",
-    "asana_projects": "low", "inbox_open": "low", "fireflies_meetings": "low",
+    "asana_projects": "low", "asana_task_detail": "low",
+    "asana_project_tasks": "low", "asana_subtasks": "low",
+    "asana_comments": "low", "asana_sections": "low", "asana_teams": "low",
+    "inbox_open": "low", "fireflies_meetings": "low",
+    "fireflies_search": "low", "fireflies_transcript_detail": "low",
     "cron_list": "low", "triage_rules_get": "low",
     # eigen brein schrijven — laag (alleen-eigen, omkeerbaar)
     "remember": "low", "quest_upsert": "low", "triage_rules_set": "low",
@@ -40,8 +46,16 @@ TOOL_RISK: dict[str, str] = {
     "o365_mail_forward_draft": "med", "o365_mail_reply_all_draft": "med",
     "o365_excel_write": "med", "o365_file_create": "med", "o365_event_respond": "med",
     "o365_doc_generate": "med",
+    # OneDrive-huishouden: omkeerbaar en binnen de eigen drive — midden
+    "o365_folder_create": "med", "o365_file_move_rename": "med",
+    "o365_file_copy": "med",
     "asana_task_create": "med", "asana_task_complete": "med",
+    "asana_task_update": "med", "asana_task_move": "med",
+    "asana_project_create": "med",
     "fireflies_sync": "med",
+    # telegram_notify: med — stuurt alleen naar Bas' eigen gekoppelde chat
+    # (fail-closed zonder koppeling), geen kanaal naar derden.
+    "telegram_notify": "med",
     # naar buiten / onomkeerbaar / voert namens Bas uit — hoog
     "o365_mail_send": "high", "o365_event_create": "high",
     # agenda-mutaties: Outlook mailt genodigden automatisch bij wijzigen/
@@ -49,6 +63,19 @@ TOOL_RISK: dict[str, str] = {
     # Zonder expliciete entry zou de med-fallback ze ZONDER Agent Inbox draaien.
     "o365_event_update": "high", "o365_event_delete": "high",
     "o365_event_cancel": "high", "o365_todo_delete": "high",
+    # reply/forward VERSTUREN direct; file_delete is destructief; een deel-link
+    # maakt een bestand organisatie-breed zichtbaar. Zonder expliciete entry
+    # zou de med-fallback file_delete ZONDER Agent Inbox draaien.
+    "o365_mail_reply_send": "high", "o365_mail_forward_send": "high",
+    "o365_file_delete": "high", "o365_file_share_link": "high",
+    # Asana: task_delete is destructief (wel 30 dagen prullenbak); een comment
+    # is extern zichtbaar voor het hele team. Zonder expliciete entry zou de
+    # med-fallback ze ZONDER Agent Inbox draaien.
+    "asana_task_delete": "high", "asana_comment_add": "high",
+    # Fireflies: deleteTranscript verwijdert het transcript DEFINITIEF (geen
+    # prullenbak). Zonder expliciete entry zou de med-fallback dit ZONDER
+    # Agent Inbox draaien ('delete' is geen high-trefwoord in _default_tier).
+    "fireflies_meeting_delete": "high",
     # cron_create: med — plannen is op zich omkeerbaar; een execute-cron draait
     # later via een volwaardige agent-beurt mét eigen Agent Inbox-poort, dus de
     # gevoelige actie wordt dáár alsnog afgevangen. high zou ook onschuldige
@@ -60,6 +87,10 @@ TOOL_RISK: dict[str, str] = {
     "inbox_approve": "med",
     "inbox_reject": "med",
     "cron_delete": "med",
+    # interne acties zonder extern effect: expliciet med i.p.v. de naam-
+    # heuristiek-fallback (een sub-agent-taak heeft zijn eigen Inbox-poort)
+    "skill_create": "med", "spawn_task": "med", "spawn_team": "med",
+    "task_cancel": "med",
 }
 
 VALID_TIERS = ("low", "med", "high", "crit")

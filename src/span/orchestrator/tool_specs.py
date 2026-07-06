@@ -135,8 +135,47 @@ TOOL_SPECS: list[dict[str, Any]] = [
                     "to": {"type": "array", "items": {"type": "string"}, "description": "E-mailadressen"},
                     "subject": {"type": "string"},
                     "body": {"type": "string", "description": "Platte tekst"},
+                    "cc": {"type": "array", "items": {"type": "string"}, "description": "CC-adressen (optioneel)"},
+                    "bcc": {"type": "array", "items": {"type": "string"}, "description": "BCC-adressen (optioneel)"},
                 },
                 "required": ["to", "subject", "body"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_mail_reply_send",
+            "description": "Beantwoord een mail en VERSTUUR het antwoord direct naar de "
+            "oorspronkelijke afzender (reply_all=true = allen-beantwoorden). Vat eerst samen "
+            "wat je gaat sturen. Wacht op goedkeuring in de Agent Inbox. Voor een concept "
+            "in Drafts: o365_draft_reply.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message_id": {"type": "string", "description": "Mail-id (graph_id uit inbox/zoeken)"},
+                    "body": {"type": "string", "description": "Antwoordtekst (platte tekst)"},
+                    "reply_all": {"type": "boolean", "description": "Allen beantwoorden (default false)"},
+                },
+                "required": ["message_id", "body"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_mail_forward_send",
+            "description": "Stuur een mail direct DOOR naar andere ontvangers, met optionele "
+            "toelichting erboven. Wacht op goedkeuring in de Agent Inbox. Voor een concept: "
+            "o365_mail_forward_draft.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message_id": {"type": "string", "description": "Mail-id (graph_id uit inbox/zoeken)"},
+                    "to": {"type": "array", "items": {"type": "string"}, "description": "E-mailadressen"},
+                    "body": {"type": "string", "description": "Toelichting boven de doorgestuurde mail (optioneel)"},
+                },
+                "required": ["message_id", "to"],
             },
         },
     },
@@ -390,6 +429,106 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "o365_drive_browse",
+            "description": "Blader door OneDrive: de inhoud van één map (bestanden + submappen, "
+            "met id's, grootte en laatst gewijzigd). Leeg folder_path = de hoofdmap. Gebruik dit "
+            "om te zien wat er staat vóór verplaatsen, kopiëren of opruimen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "folder_path": {"type": "string", "description": "Map-pad vanaf de hoofdmap, bv. 'Verslagen/2026' (leeg = hoofdmap)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_folder_create",
+            "description": "Maak een nieuwe map in OneDrive (in de hoofdmap of onder parent_path). "
+            "Bestaat de naam al, dan mislukt het bewust — geen stille overschrijving.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Mapnaam"},
+                    "parent_path": {"type": "string", "description": "Bovenliggend pad, bv. 'Verslagen' (leeg = hoofdmap)"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_file_move_rename",
+            "description": "Hernoem en/of verplaats een OneDrive-bestand of -map: geef new_name "
+            "(hernoemen), new_parent_path (verplaatsen) of allebei. Id uit o365_drive_browse of "
+            "o365_files_search.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Bestand/map-id"},
+                    "new_name": {"type": "string", "description": "Nieuwe naam incl. extensie (optioneel)"},
+                    "new_parent_path": {"type": "string", "description": "Doelmap-pad vanaf de hoofdmap, bv. 'Verslagen/2026' (optioneel)"},
+                },
+                "required": ["item_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_file_copy",
+            "description": "Kopieer een OneDrive-bestand of -map, optioneel met nieuwe naam of naar "
+            "een andere map. Het kopiëren loopt asynchroon: het kopie verschijnt even later in OneDrive.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Bestand/map-id"},
+                    "new_name": {"type": "string", "description": "Naam van het kopie (optioneel)"},
+                    "parent_path": {"type": "string", "description": "Doelmap-pad vanaf de hoofdmap (optioneel, leeg = zelfde map)"},
+                },
+                "required": ["item_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_file_delete",
+            "description": "Verwijder een OneDrive-bestand of -map (naar de prullenbak — herstelbaar). "
+            "Wacht op goedkeuring in de Agent Inbox. Geef name mee zodat de goedkeuring leesbaar is.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Bestand/map-id"},
+                    "name": {"type": "string", "description": "Bestandsnaam (voor de goedkeuringsweergave)"},
+                },
+                "required": ["item_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_file_share_link",
+            "description": "Maak een deel-link voor een OneDrive-bestand — altijd alleen voor "
+            "Lomans-collega's (scope organization, nooit anoniem). edit=true geeft bewerkrechten "
+            "in plaats van alleen lezen. Wacht op goedkeuring in de Agent Inbox.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Bestand-id"},
+                    "name": {"type": "string", "description": "Bestandsnaam (voor de goedkeuringsweergave)"},
+                    "edit": {"type": "boolean", "description": "Bewerkrechten (default false = alleen lezen)"},
+                },
+                "required": ["item_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "o365_event_respond",
             "description": "Reageer op een afspraak-uitnodiging: accepteren, afwijzen of onder voorbehoud. "
             "Dit stuurt een reactie naar de organisator — vat samen om welke afspraak het gaat. "
@@ -620,6 +759,38 @@ TOOL_SPECS: list[dict[str, Any]] = [
                     "top": {"type": "integer", "description": "Aantal (default 15, max 25)"},
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_sharepoint_lists",
+            "description": "Zoek een SharePoint-site op naam en toon de lijsten erop (id + naam, "
+            "zonder systeemlijsten). Gebruik daarna o365_sharepoint_list_items om de items te lezen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "site_query": {"type": "string", "description": "Sitenaam of trefwoord, bv. 'Projecten'"},
+                },
+                "required": ["site_query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_sharepoint_list_items",
+            "description": "Lees items uit een SharePoint-lijst: per item de kolomwaarden. "
+            "site_id en list_id komen uit o365_sharepoint_lists.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "site_id": {"type": "string", "description": "Site-id (uit o365_sharepoint_lists)"},
+                    "list_id": {"type": "string", "description": "Lijst-id (uit o365_sharepoint_lists)"},
+                    "top": {"type": "integer", "description": "Aantal items (default 20, max 50)"},
+                },
+                "required": ["site_id", "list_id"],
             },
         },
     },
@@ -945,6 +1116,176 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "asana_task_detail",
+            "description": "Volledige details van één Asana-taak: notities, deadline, "
+            "toegewezene, projecten, subtaak-teller en link.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_gid": {"type": "string", "description": "Asana task gid"},
+                },
+                "required": ["task_gid"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "asana_project_tasks",
+            "description": "Open (niet-afgevinkte) taken van een Asana-project, in "
+            "projectvolgorde. Zoek de project-gid via asana_projects.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_gid": {"type": "string", "description": "Asana project gid"},
+                    "top": {"type": "integer", "description": "Aantal taken (default 20)"},
+                },
+                "required": ["project_gid"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "asana_subtasks",
+            "description": "Subtaken van een Asana-taak (naam, deadline, gid).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_gid": {"type": "string", "description": "Asana task gid"},
+                },
+                "required": ["task_gid"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "asana_comments",
+            "description": "Comments op een Asana-taak (auteur, tekst, datum) — "
+            "door teamleden geschreven.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_gid": {"type": "string", "description": "Asana task gid"},
+                    "top": {"type": "integer", "description": "Aantal comments (default 10)"},
+                },
+                "required": ["task_gid"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "asana_sections",
+            "description": "Secties (kolommen) van een Asana-project, met gid — "
+            "nodig voor asana_task_move.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_gid": {"type": "string", "description": "Asana project gid"},
+                },
+                "required": ["project_gid"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "asana_teams",
+            "description": "Teams in de Asana-workspace (naam + gid) — nodig voor "
+            "asana_project_create in een team.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "asana_task_update",
+            "description": "Werk een Asana-taak bij: naam, notities, deadline en/of "
+            "toegewezene. Alleen meegegeven velden worden gewijzigd; "
+            "due_on 'geen' haalt de deadline weg.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_gid": {"type": "string", "description": "Asana task gid"},
+                    "name": {"type": "string", "description": "Nieuwe taaknaam (optioneel)"},
+                    "notes": {"type": "string", "description": "Nieuwe omschrijving (optioneel)"},
+                    "due_on": {"type": "string", "description": "Deadline YYYY-MM-DD, of 'geen' om te wissen (optioneel)"},
+                    "assignee": {"type": "string", "description": "User-gid of 'me' (optioneel)"},
+                },
+                "required": ["task_gid"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "asana_task_move",
+            "description": "Verplaats een Asana-taak naar een andere sectie (kolom) "
+            "binnen z'n project. Zoek de sectie-gid via asana_sections.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_gid": {"type": "string", "description": "Asana task gid"},
+                    "section_gid": {"type": "string", "description": "Doel-sectie gid (zie asana_sections)"},
+                },
+                "required": ["task_gid", "section_gid"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "asana_project_create",
+            "description": "Maak een nieuw Asana-project in de workspace, optioneel "
+            "binnen een team (gid via asana_teams).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Projectnaam"},
+                    "team_gid": {"type": "string", "description": "Team-gid (optioneel, zie asana_teams)"},
+                    "notes": {"type": "string", "description": "Projectomschrijving (optioneel)"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "asana_comment_add",
+            "description": "Plaats een comment op een Asana-taak. Extern zichtbaar "
+            "voor het hele team — gaat altijd eerst via de Agent Inbox.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_gid": {"type": "string", "description": "Asana task gid"},
+                    "text": {"type": "string", "description": "Commenttekst"},
+                },
+                "required": ["task_gid", "text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "asana_task_delete",
+            "description": "Verwijder een Asana-taak (30 dagen herstelbaar via de "
+            "prullenbak). Gaat altijd eerst via de Agent Inbox.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_gid": {"type": "string", "description": "Asana task gid"},
+                    "name": {"type": "string", "description": "Taaknaam, voor een leesbare goedkeuringsvraag (optioneel)"},
+                },
+                "required": ["task_gid"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "inbox_open",
             "description": "Toon open items in de Agent Inbox (acties die op goedkeuring "
             "wachten + meldingen). Gebruik bij 'wat staat er in mijn inbox/wachtrij'.",
@@ -1032,6 +1373,77 @@ TOOL_SPECS: list[dict[str, Any]] = [
                 "properties": {
                     "deep": {"type": "boolean", "description": "Hele historie i.p.v. recentste"},
                 },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fireflies_search",
+            "description": "Zoek vergadertranscripties (Fireflies) op zoekterm. "
+            "Doorzoekt titel + samenvatting (overzicht, actiepunten, bullets) van de "
+            "recentste meetings; de API biedt geen full-text search over de gesproken "
+            "zinnen — gebruik fireflies_transcript_detail om één meeting diep te lezen. "
+            "Geeft per hit id, titel, datum, deelnemers en de matchende snippet.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Zoekterm"},
+                    "top": {"type": "integer", "description": "Max aantal hits (default 10)"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fireflies_transcript_detail",
+            "description": "Haal van één Fireflies-meeting de samenvatting + (een deel "
+            "van) de transcript-zinnen op. meeting_id komt uit fireflies_meetings of "
+            "fireflies_search.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "meeting_id": {"type": "string", "description": "Fireflies transcript-id"},
+                    "max_chars": {"type": "integer",
+                                  "description": "Max tekens transcript (default 4000)"},
+                },
+                "required": ["meeting_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fireflies_meeting_delete",
+            "description": "Verwijder een Fireflies-meeting (transcript) DEFINITIEF — "
+            "onomkeerbaar, geen prullenbak. Gaat altijd eerst via de Agent Inbox ter "
+            "goedkeuring. Geef title mee voor een leesbare goedkeuringstitel.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "meeting_id": {"type": "string", "description": "Fireflies transcript-id"},
+                    "title": {"type": "string",
+                              "description": "Titel van de meeting (voor de goedkeuring)"},
+                },
+                "required": ["meeting_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "telegram_notify",
+            "description": "Stuur een bericht naar Bas' gekoppelde Telegram-chat "
+            "(alleen zijn eigen telefoon). Handig voor meldingen of resultaten die "
+            "Bas onderweg moet zien.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "De berichttekst"},
+                },
+                "required": ["text"],
             },
         },
     },
@@ -1383,7 +1795,11 @@ O365_TOOLS = {"o365_mail_inbox", "o365_mail_send", "o365_calendar", "o365_event_
               "o365_powerbi_tables", "o365_powerbi_query",
               "o365_event_get", "o365_event_instances", "o365_event_update",
               "o365_event_delete", "o365_event_cancel", "o365_free_slots",
-              "o365_todo_lists", "o365_todo_update", "o365_todo_delete"}
+              "o365_todo_lists", "o365_todo_update", "o365_todo_delete",
+              "o365_drive_browse", "o365_folder_create", "o365_file_move_rename",
+              "o365_file_copy", "o365_file_delete", "o365_file_share_link",
+              "o365_sharepoint_lists", "o365_sharepoint_list_items",
+              "o365_mail_reply_send", "o365_mail_forward_send"}
 
 # Permissie-registry: groep + lezen/schrijven, voor de instellingenpagina.
 TOOL_META: dict[str, tuple[str, str]] = {
@@ -1409,6 +1825,8 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "o365_mail_delete": ("O365 Mail", "write"),
     "o365_mail_forward_draft": ("O365 Mail", "write"),
     "o365_mail_reply_all_draft": ("O365 Mail", "write"),
+    "o365_mail_reply_send": ("O365 Mail", "write"),
+    "o365_mail_forward_send": ("O365 Mail", "write"),
     "o365_calendar": ("O365 Agenda", "read"),
     "o365_calendar_search": ("O365 Agenda", "read"),
     "o365_event_get": ("O365 Agenda", "read"),
@@ -1420,6 +1838,12 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "o365_event_cancel": ("O365 Agenda", "write"),
     "o365_files_search": ("O365 Bestanden", "read"),
     "o365_file_read": ("O365 Bestanden", "read"),
+    "o365_drive_browse": ("O365 Bestanden", "read"),
+    "o365_folder_create": ("O365 Bestanden", "write"),
+    "o365_file_move_rename": ("O365 Bestanden", "write"),
+    "o365_file_copy": ("O365 Bestanden", "write"),
+    "o365_file_delete": ("O365 Bestanden", "write"),
+    "o365_file_share_link": ("O365 Bestanden", "write"),
     "o365_excel_sheets": ("O365 Excel", "read"),
     "o365_excel_read": ("O365 Excel", "read"),
     "o365_excel_write": ("O365 Excel", "write"),
@@ -1427,6 +1851,8 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "o365_doc_generate": ("O365 Bestanden", "write"),
     "o365_event_respond": ("O365 Agenda", "write"),
     "o365_sharepoint_search": ("O365 SharePoint", "read"),
+    "o365_sharepoint_lists": ("O365 SharePoint", "read"),
+    "o365_sharepoint_list_items": ("O365 SharePoint", "read"),
     "o365_teams_search": ("O365 Teams", "read"),
     "o365_powerbi_reports": ("Power BI", "read"),
     "o365_powerbi_dashboards": ("Power BI", "read"),
@@ -1443,8 +1869,19 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "asana_my_tasks": ("Asana", "read"),
     "asana_search": ("Asana", "read"),
     "asana_projects": ("Asana", "read"),
+    "asana_task_detail": ("Asana", "read"),
+    "asana_project_tasks": ("Asana", "read"),
+    "asana_subtasks": ("Asana", "read"),
+    "asana_comments": ("Asana", "read"),
+    "asana_sections": ("Asana", "read"),
+    "asana_teams": ("Asana", "read"),
     "asana_task_create": ("Asana", "write"),
     "asana_task_complete": ("Asana", "write"),
+    "asana_task_update": ("Asana", "write"),
+    "asana_task_move": ("Asana", "write"),
+    "asana_project_create": ("Asana", "write"),
+    "asana_comment_add": ("Asana", "write"),
+    "asana_task_delete": ("Asana", "write"),
     "inbox_open": ("Agent Inbox", "read"),
     "inbox_approve": ("Agent Inbox", "write"),
     "inbox_reject": ("Agent Inbox", "write"),
@@ -1452,6 +1889,10 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "weather": ("Weer", "read"),
     "fireflies_meetings": ("Fireflies", "read"),
     "fireflies_sync": ("Fireflies", "write"),
+    "fireflies_search": ("Fireflies", "read"),
+    "fireflies_transcript_detail": ("Fireflies", "read"),
+    "fireflies_meeting_delete": ("Fireflies", "write"),
+    "telegram_notify": ("Telegram", "write"),
     "triage_rules_get": ("O365 Mail", "read"),
     "triage_rules_set": ("O365 Mail", "write"),
     "cron_create": ("Planning", "write"),
@@ -1473,4 +1914,8 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "report_progress": ("Achtergrondtaken", "read"),
 }
 ASANA_TOOLS = {"asana_my_tasks", "asana_task_create", "asana_task_complete",
-               "asana_search", "asana_projects"}
+               "asana_search", "asana_projects",
+               "asana_task_detail", "asana_project_tasks", "asana_subtasks",
+               "asana_comments", "asana_sections", "asana_teams",
+               "asana_task_update", "asana_task_move", "asana_project_create",
+               "asana_comment_add", "asana_task_delete"}
