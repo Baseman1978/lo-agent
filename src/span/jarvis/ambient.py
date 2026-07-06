@@ -254,8 +254,32 @@ def execute_approval(item: dict[str, Any], o365: Any, llm: Any = None,
             name=payload["name"], notes=payload.get("notes", ""),
             due_on=payload.get("due_on", ""),
         )
+    if item["action"] == "asana_task_delete" and asana is not None:
+        return asana.delete_task(payload["task_gid"])
+    if item["action"] == "asana_comment_add" and asana is not None:
+        return asana.add_comment(payload["task_gid"], payload["text"])
+    if item["action"] == "fireflies_meeting_delete":
+        # de fireflies-client zit niet in de parameterlijst (die is al breed);
+        # pak hem uit de serverstaat, zoals de integration_run-branch de broker
+        from span.server.state import _state
+        fireflies = _state.get("fireflies")
+        if fireflies is None:
+            return {"error": "Fireflies niet geconfigureerd."}
+        return fireflies.delete_transcript(payload["meeting_id"])
     if item["action"] == "mail_send":
-        return o365.send_mail(payload["to"], payload["subject"], payload["body"])
+        return o365.send_mail(payload["to"], payload["subject"], payload["body"],
+                              cc=payload.get("cc") or [],
+                              bcc=payload.get("bcc") or [])
+    if item["action"] == "mail_reply_send":
+        return o365.reply_mail(payload["message_id"], payload["body"],
+                               reply_all=payload.get("reply_all", False))
+    if item["action"] == "mail_forward_send":
+        return o365.forward_mail(payload["message_id"], payload["to"],
+                                 body=payload.get("body", ""))
+    if item["action"] == "file_delete":
+        return o365.delete_file(payload["item_id"])
+    if item["action"] == "file_share_link":
+        return o365.share_link(payload["item_id"], edit=payload.get("edit", False))
     if item["action"] == "event_create":
         return o365.create_event(
             payload["subject"], payload["start"], payload["end"],

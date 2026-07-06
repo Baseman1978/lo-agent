@@ -150,6 +150,7 @@ class TelegramBridge:
                 autonomy=self._state.get("autonomy"),
                 disabled_tools=self._state.get("disabled_tools"),
                 fireflies=self._state.get("fireflies"),
+                telegram=self,  # de bridge zelf: telegram_notify werkt ook hier
             )
             self._session_id = start_session(self._state["brain"])
             self._agent.begin(self._session_id)

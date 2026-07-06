@@ -639,6 +639,7 @@ def _broker_dispatch(ctx: Any):
         llm=_state["llm"], light_model=_effective_settings().model_light,
         disabled=_state.get("disabled_tools"), perms=_state.get("integration_perms"),
         fireflies=_state.get("fireflies"),
+        telegram=_state.get("telegram"),
         security=_state.get("security"), mcp=_state.get("mcp"),
         shared=getattr(ctx, "shared", None))
     return tb.dispatch

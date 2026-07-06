@@ -122,6 +122,7 @@ class SpanAgent:
         integration_perms: dict | None = None,
         user_location: dict[str, float] | None = None,
         fireflies: Any = None,
+        telegram: Any = None,
         mcp: Any = None,
         shared_brain: BrainDB | None = None,
         tasks: Any = None,
@@ -142,6 +143,7 @@ class SpanAgent:
         self._integration_perms = integration_perms
         self.user_location = user_location  # browser-GPS; mag later gezet worden
         self._fireflies = fireflies
+        self._telegram = telegram
         self.last_touched: list[str] = []
         # instelbare beveiliging uit de Config-node (veilige defaults)
         from span.safety.settings import load_security
@@ -190,6 +192,7 @@ class SpanAgent:
             perms=self._integration_perms,
             user_location=self.user_location,
             fireflies=self._fireflies,
+            telegram=self._telegram,
             security=self._security,
             mcp=self._mcp,
             shared=self._shared,

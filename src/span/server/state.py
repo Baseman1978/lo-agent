@@ -222,6 +222,7 @@ def _tools_overview() -> list[dict[str, Any]]:
         "Werkdata": _state.get("work") is not None,
         "Weer": True,
         "Fireflies": _state.get("fireflies") is not None,
+        "Telegram": bool(_state.get("telegram")) and _state["telegram"].linked,
         "Planning": True,
     }
     return [

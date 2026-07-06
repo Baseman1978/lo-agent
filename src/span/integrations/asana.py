@@ -113,6 +113,123 @@ class AsanaClient:
         )
         return [self._slim(t) for t in hits]
 
+    def task_detail(self, task_gid: str) -> dict[str, Any]:
+        """Volledige detailweergave van één taak, incl. notities, toegewezene
+        en subtaak-teller."""
+        t = self._get(
+            f"/tasks/{task_gid}",
+            {"opt_fields": "name,notes,due_on,assignee.name,projects.name,"
+                           "completed,permalink_url,num_subtasks"},
+        )
+        return {
+            "gid": t.get("gid"),
+            "name": t.get("name"),
+            "notes": (t.get("notes") or "")[:2000],
+            "due": t.get("due_on"),
+            "completed": t.get("completed"),
+            "assignee": (t.get("assignee") or {}).get("name"),
+            "projects": [p.get("name") for p in t.get("projects") or []],
+            "subtasks": t.get("num_subtasks"),
+            "url": t.get("permalink_url"),
+        }
+
+    def project_tasks(self, project_gid: str, top: int = 20) -> list[dict[str, Any]]:
+        """Onvoltooide taken van een project, in projectvolgorde."""
+        tasks = self._get(
+            f"/projects/{project_gid}/tasks",
+            {
+                "completed_since": "now",  # alleen onvoltooide taken
+                "limit": min(int(top), 50),
+                "opt_fields": TASK_FIELDS,
+            },
+        )
+        return [self._slim(t) for t in tasks if not t.get("completed")]
+
+    def subtasks(self, task_gid: str) -> list[dict[str, Any]]:
+        """Subtaken van een taak."""
+        items = self._get(f"/tasks/{task_gid}/subtasks",
+                          {"opt_fields": TASK_FIELDS})
+        return [self._slim(t) for t in items]
+
+    def comments(self, task_gid: str, top: int = 10) -> list[dict[str, Any]]:
+        """Comments op een taak (stories van type 'comment'), oudste eerst."""
+        stories = self._get(
+            f"/tasks/{task_gid}/stories",
+            {"opt_fields": "type,text,created_at,created_by.name"},
+        )
+        out = [
+            {"author": (s.get("created_by") or {}).get("name"),
+             "text": (s.get("text") or "")[:1000],
+             "at": s.get("created_at")}
+            for s in stories
+            if s.get("type") == "comment"
+        ]
+        return out[-min(int(top), 50):]
+
+    def sections(self, project_gid: str) -> list[dict[str, Any]]:
+        """Secties (kolommen) van een project, voor asana_task_move."""
+        items = self._get(f"/projects/{project_gid}/sections",
+                          {"opt_fields": "name"})
+        return [{"gid": s["gid"], "name": s.get("name")} for s in items]
+
+    def teams(self) -> list[dict[str, Any]]:
+        """Teams in de workspace (gid + naam), voor asana_project_create."""
+        self._ensure_context()
+        items = self._get(f"/workspaces/{self._workspace}/teams",
+                          {"opt_fields": "name"})
+        return [{"gid": t["gid"], "name": t.get("name")} for t in items]
+
+    def update_task(self, task_gid: str, name: str = "", notes: str = "",
+                    due_on: str = "", assignee: str = "") -> dict[str, Any]:
+        """Werk alleen de meegegeven velden bij; due_on='geen' haalt de
+        deadline weg (stuurt null)."""
+        payload: dict[str, Any] = {}
+        if name:
+            payload["name"] = name
+        if notes:
+            payload["notes"] = notes
+        if due_on:
+            payload["due_on"] = (None if due_on.strip().lower() == "geen"
+                                 else due_on)
+        if assignee:
+            payload["assignee"] = assignee
+        if not payload:
+            raise ValueError("Niets te wijzigen — geef name/notes/due_on/assignee.")
+        task = self._request("PUT", f"/tasks/{task_gid}", payload)
+        return {"updated": True, "gid": task_gid, "name": task.get("name"),
+                "fields": sorted(payload)}
+
+    def move_task(self, task_gid: str, section_gid: str) -> dict[str, Any]:
+        """Verplaats een taak naar een sectie (kolom) binnen z'n project."""
+        self._request("POST", f"/sections/{section_gid}/addTask",
+                      {"task": task_gid})
+        return {"moved": True, "task": task_gid, "section": section_gid}
+
+    def create_project(self, name: str, team_gid: str = "",
+                       notes: str = "") -> dict[str, Any]:
+        """Maak een nieuw project in de workspace (optioneel binnen een team)."""
+        self._ensure_context()
+        payload: dict[str, Any] = {"name": name, "workspace": self._workspace}
+        if team_gid:
+            payload["team"] = team_gid
+        if notes:
+            payload["notes"] = notes
+        project = self._request("POST", "/projects", payload, idempotent=False)
+        return {"created": True, "gid": project["gid"],
+                "name": project.get("name"), "url": project.get("permalink_url")}
+
+    def add_comment(self, task_gid: str, text: str) -> dict[str, Any]:
+        """Plaats een comment op een taak — extern zichtbaar voor het team."""
+        story = self._request("POST", f"/tasks/{task_gid}/stories",
+                              {"text": text}, idempotent=False)
+        return {"commented": True, "gid": story.get("gid"), "task": task_gid}
+
+    def delete_task(self, task_gid: str) -> dict[str, Any]:
+        """Verwijder een taak — 30 dagen herstelbaar via de Asana-prullenbak."""
+        self._request("DELETE", f"/tasks/{task_gid}", {})
+        return {"deleted": True, "gid": task_gid,
+                "note": "30 dagen herstelbaar via de Asana-prullenbak."}
+
     def projects(self, top: int = 30) -> list[dict[str, Any]]:
         self._ensure_context()
         items = self._get(

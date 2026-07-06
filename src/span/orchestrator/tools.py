@@ -24,12 +24,16 @@ from span.orchestrator.tool_specs import (  # noqa: F401  (re-export)
 # Tools die door-derden-bestuurbare inhoud teruggeven; hun output wordt als
 # DATA omkaderd richting het hoofdmodel (review M4, prompt-injectie-blootstelling).
 _UNTRUSTED_OUTPUT_TOOLS = {"o365_mail_inbox", "o365_thread_summary", "fireflies_meetings",
+                           # transcript-inhoud is door derden gesproken tekst
+                           "fireflies_search", "fireflies_transcript_detail",
                            "o365_mail_search", "o365_file_read", "o365_sharepoint_search",
                            "o365_teams_search", "o365_attachment_read", "o365_excel_read",
                            "o365_unanswered_sent", "o365_powerbi_reports",
                            "o365_powerbi_dashboards", "o365_powerbi_datasets",
                            "o365_powerbi_tables", "o365_powerbi_query",
-                           "o365_event_get"}  # uitnodigings-body is door derden geschreven
+                           "o365_event_get",  # uitnodigings-body is door derden geschreven
+                           "o365_sharepoint_list_items",  # lijstitems zijn door derden ingevuld
+                           "asana_comments"}  # comments zijn door derden geschreven
 
 
 class ToolBox:
@@ -49,6 +53,7 @@ class ToolBox:
         perms: dict[str, Any] | None = None,
         user_location: dict[str, float] | None = None,
         fireflies: Any = None,
+        telegram: Any = None,
         security: dict[str, Any] | None = None,
         mcp: Any = None,
         shared: BrainDB | None = None,
@@ -75,6 +80,7 @@ class ToolBox:
         self._perms = perms or {}      # rechten per integratie: {key: {read, write}}
         self._user_location = user_location  # {lat, lon} uit de browser
         self._fireflies = fireflies
+        self._telegram = telegram      # TelegramBridge (gekoppelde chat) of None
         self.touched: list[str] = []   # mf-ids geraadpleegd deze beurt (hologram)
         self._on_memory = None         # live leescascade-callback (per beurt gezet)
 
@@ -91,7 +97,10 @@ class ToolBox:
         if self._progress_cb is None:  # alleen zinvol als deze agent een taak ís
             hidden.add("report_progress")
         if self._fireflies is None:
-            hidden |= {"fireflies_meetings", "fireflies_sync"}
+            hidden |= {"fireflies_meetings", "fireflies_sync", "fireflies_search",
+                       "fireflies_transcript_detail", "fireflies_meeting_delete"}
+        if self._telegram is None:
+            hidden.add("telegram_notify")
         if self._o365 is None:
             hidden |= O365_TOOLS
         if self._asana is None:
@@ -137,7 +146,8 @@ class ToolBox:
         M17: alleen mail/event kennen een 'auto'-stand; elke andere tool valt
         bewust terug op False (fail-closed -> ask/queue). Een onbekende
         autonomy-sleutel kan dus nooit per ongeluk een tool vrijgeven."""
-        if name == "o365_mail_send":
+        if name in ("o365_mail_send", "o365_mail_reply_send",
+                    "o365_mail_forward_send"):
             return self._autonomy.get("mail", "ask") == "auto"
         if name in ("o365_event_create", "o365_event_update", "o365_event_delete",
                     "o365_event_cancel", "o365_event_respond", "o365_todo_delete"):
@@ -416,7 +426,9 @@ class ToolBox:
     def _tool_o365_mail_inbox(self, top: int = 10, unread_only: bool = False) -> Any:
         return self._require_o365().inbox(top=top, unread_only=unread_only)
 
-    def _tool_o365_mail_send(self, to: list[str], subject: str, body: str) -> Any:
+    def _tool_o365_mail_send(self, to: list[str], subject: str, body: str,
+                             cc: list[str] | None = None,
+                             bcc: list[str] | None = None) -> Any:
         # queue bij autonomy=ask OF wanneer de veiligheidslaag goedkeuring forceert
         # (F1.2 exfiltratie-vangnet kan 'auto' overrulen)
         if self._inbox is not None and (self._autonomy.get("mail", "ask") != "auto"
@@ -424,14 +436,65 @@ class ToolBox:
             item_id = self._inbox.add(
                 owner=self._owner,
                 kind="action", action="mail_send",
-                title=f"Mail aan {', '.join(to)}",
+                title=f"Mail aan {', '.join(to)}" + (f" (cc {', '.join(cc)})" if cc else ""),
                 detail=f"{subject} — {body[:120]}",
-                payload={"to": to, "subject": subject, "body": body},
+                payload={"to": to, "subject": subject, "body": body,
+                         "cc": cc or [], "bcc": bcc or []},
                 origin="agent",  # door Span gequeued → alleen Bas mag goedkeuren
             )
             return {"queued": item_id,
                     "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
-        return self._require_o365().send_mail(to=to, subject=subject, body=body)
+        return self._require_o365().send_mail(to=to, subject=subject, body=body,
+                                              cc=cc or [], bcc=bcc or [])
+
+    def _mail_kop(self, message_id: str) -> tuple[str, str]:
+        """(onderwerp, afzender) van een mail — voor een leesbare Agent Inbox-
+        titel. De HUD toont geen payload, dus de titel moet het verhaal vertellen."""
+        try:
+            m = self._require_o365().message_brief(message_id)
+            return m.get("subject") or "(zonder onderwerp)", m.get("from") or ""
+        except Exception:
+            return message_id, ""
+
+    def _tool_o365_mail_reply_send(self, message_id: str, body: str,
+                                   reply_all: bool = False) -> Any:
+        # verstuurt DIRECT naar de oorspronkelijke afzender(s) -> zelfde
+        # goedkeuringslijn als o365_mail_send (autonomy-sleutel "mail")
+        if self._inbox is not None and (self._autonomy.get("mail", "ask") != "auto"
+                                        or getattr(self, "_forced_approval", False)):
+            subject, sender = self._mail_kop(message_id)
+            title = f"Antwoord op: {subject}" + (f" · aan {sender}" if sender else "")
+            if reply_all:
+                title += " (allen)"
+            item_id = self._inbox.add(
+                owner=self._owner,
+                kind="action", action="mail_reply_send",
+                title=title[:140],
+                detail=body[:200],
+                payload={"message_id": message_id, "body": body,
+                         "reply_all": bool(reply_all)},
+                origin="agent",
+            )
+            return {"queued": item_id,
+                    "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
+        return self._require_o365().reply_mail(message_id, body, reply_all=reply_all)
+
+    def _tool_o365_mail_forward_send(self, message_id: str, to: list[str],
+                                     body: str = "") -> Any:
+        if self._inbox is not None and (self._autonomy.get("mail", "ask") != "auto"
+                                        or getattr(self, "_forced_approval", False)):
+            subject, _ = self._mail_kop(message_id)
+            item_id = self._inbox.add(
+                owner=self._owner,
+                kind="action", action="mail_forward_send",
+                title=f"Doorsturen: {subject} · aan {', '.join(to)}"[:140],
+                detail=body[:200] or "Zonder toelichting.",
+                payload={"message_id": message_id, "to": to, "body": body},
+                origin="agent",
+            )
+            return {"queued": item_id,
+                    "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
+        return self._require_o365().forward_mail(message_id, to, body=body)
 
     def _tool_o365_draft_reply(self, message_id: str, body: str) -> Any:
         return self._require_o365().draft_reply(message_id=message_id, body=body)
@@ -506,6 +569,63 @@ class ToolBox:
 
     def _tool_o365_file_create(self, name: str, content: str, folder_path: str = "") -> Any:
         return self._require_o365().create_file(name, content, folder_path=folder_path)
+
+    def _tool_o365_drive_browse(self, folder_path: str = "") -> Any:
+        return self._require_o365().drive_browse(folder_path=folder_path)
+
+    def _tool_o365_folder_create(self, name: str, parent_path: str = "") -> Any:
+        return self._require_o365().create_folder(name, parent_path=parent_path)
+
+    def _tool_o365_file_move_rename(self, item_id: str, new_name: str = "",
+                                    new_parent_path: str = "") -> Any:
+        return self._require_o365().move_rename_file(
+            item_id, new_name=new_name, new_parent_path=new_parent_path)
+
+    def _tool_o365_file_copy(self, item_id: str, new_name: str = "",
+                             parent_path: str = "") -> Any:
+        return self._require_o365().copy_file(item_id, new_name=new_name,
+                                              parent_path=parent_path)
+
+    def _tool_o365_file_delete(self, item_id: str, name: str = "") -> Any:
+        # destructief; er is geen autonomy-categorie voor bestanden ->
+        # mét inbox ALTIJD eerst goedkeuren
+        if self._inbox is not None:
+            queued_id = self._inbox.add(
+                owner=self._owner,
+                kind="action", action="file_delete",
+                title=f"Bestand verwijderen: {name or item_id}"[:140],
+                detail="Naar de OneDrive-prullenbak (herstelbaar).",
+                payload={"item_id": item_id},
+                origin="agent",
+            )
+            return {"queued": queued_id,
+                    "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
+        return self._require_o365().delete_file(item_id)
+
+    def _tool_o365_file_share_link(self, item_id: str, name: str = "",
+                                   edit: bool = False) -> Any:
+        # een deel-link maakt het bestand zichtbaar voor de hele organisatie ->
+        # mét inbox ALTIJD eerst goedkeuren (geen autonomy-categorie voor bestanden)
+        if self._inbox is not None:
+            queued_id = self._inbox.add(
+                owner=self._owner,
+                kind="action", action="file_share_link",
+                title=f"Deel-link maken: {name or item_id}"[:140],
+                detail=("Bewerkrechten" if edit else "Alleen lezen")
+                       + " — alleen voor Lomans-collega's (organization, nooit anoniem).",
+                payload={"item_id": item_id, "edit": bool(edit)},
+                origin="agent",
+            )
+            return {"queued": queued_id,
+                    "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
+        return self._require_o365().share_link(item_id, edit=edit)
+
+    def _tool_o365_sharepoint_lists(self, site_query: str) -> Any:
+        return self._require_o365().sharepoint_lists(site_query)
+
+    def _tool_o365_sharepoint_list_items(self, site_id: str, list_id: str,
+                                         top: int = 20) -> Any:
+        return self._require_o365().sharepoint_list_items(site_id, list_id, top=top)
 
     def _event_kop(self, event_id: str) -> str:
         """Mens-leesbare kop voor de Agent Inbox: 'Weekstart · 2026-07-08T09:00 · 3 genodigden'.
@@ -813,6 +933,79 @@ class ToolBox:
     def _tool_asana_projects(self) -> Any:
         return self._require_asana().projects()
 
+    def _tool_asana_task_detail(self, task_gid: str) -> Any:
+        return self._require_asana().task_detail(task_gid)
+
+    def _tool_asana_project_tasks(self, project_gid: str, top: int = 20) -> Any:
+        return self._require_asana().project_tasks(project_gid, top=top)
+
+    def _tool_asana_subtasks(self, task_gid: str) -> Any:
+        return self._require_asana().subtasks(task_gid)
+
+    def _tool_asana_comments(self, task_gid: str, top: int = 10) -> Any:
+        return self._require_asana().comments(task_gid, top=top)
+
+    def _tool_asana_sections(self, project_gid: str) -> Any:
+        return self._require_asana().sections(project_gid)
+
+    def _tool_asana_teams(self) -> Any:
+        return self._require_asana().teams()
+
+    def _tool_asana_task_update(self, task_gid: str, name: str = "", notes: str = "",
+                                due_on: str = "", assignee: str = "") -> Any:
+        return self._require_asana().update_task(
+            task_gid, name=name, notes=notes, due_on=due_on, assignee=assignee)
+
+    def _tool_asana_task_move(self, task_gid: str, section_gid: str) -> Any:
+        return self._require_asana().move_task(task_gid, section_gid)
+
+    def _tool_asana_project_create(self, name: str, team_gid: str = "",
+                                   notes: str = "") -> Any:
+        return self._require_asana().create_project(name, team_gid=team_gid,
+                                                    notes=notes)
+
+    def _asana_taaknaam(self, task_gid: str) -> str:
+        """Taaknaam voor een leesbare Agent Inbox-titel; de HUD toont geen
+        payload, dus de titel moet het verhaal vertellen."""
+        try:
+            t = self._require_asana().task_detail(task_gid)
+            return t.get("name") or task_gid
+        except Exception:
+            return task_gid
+
+    def _tool_asana_comment_add(self, task_gid: str, text: str) -> Any:
+        # extern zichtbaar voor het hele team; er is geen autonomy-categorie
+        # voor Asana -> mét inbox ALTIJD eerst goedkeuren
+        if self._inbox is not None:
+            queued_id = self._inbox.add(
+                owner=self._owner,
+                kind="action", action="asana_comment_add",
+                title=f"Asana-comment op taak: {self._asana_taaknaam(task_gid)}"[:140],
+                detail=text[:200],
+                payload={"task_gid": task_gid, "text": text},
+                origin="agent",
+            )
+            return {"queued": queued_id,
+                    "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
+        return self._require_asana().add_comment(task_gid, text)
+
+    def _tool_asana_task_delete(self, task_gid: str, name: str = "") -> Any:
+        # destructief én teamzichtbaar; er is geen autonomy-categorie voor
+        # Asana -> mét inbox ALTIJD eerst goedkeuren
+        if self._inbox is not None:
+            queued_id = self._inbox.add(
+                owner=self._owner,
+                kind="action", action="asana_task_delete",
+                title=f"Asana-taak verwijderen: {name or self._asana_taaknaam(task_gid)}"[:140],
+                detail="Naar de Asana-prullenbak (30 dagen herstelbaar); "
+                       "zichtbaar voor het team.",
+                payload={"task_gid": task_gid},
+                origin="agent",
+            )
+            return {"queued": queued_id,
+                    "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
+        return self._require_asana().delete_task(task_gid)
+
     def _tool_inbox_open(self) -> Any:
         return [
             {"id": i["id"], "kind": i["kind"], "title": i["title"], "detail": i["detail"]}
@@ -978,6 +1171,51 @@ class ToolBox:
         if self._fireflies is None:
             return {"error": "Fireflies niet geconfigureerd (FIREFLIES_API_KEY leeg)."}
         return self._fireflies.recent_transcripts(limit=limit)
+
+    def _tool_fireflies_search(self, query: str, top: int = 10) -> Any:
+        if self._fireflies is None:
+            return {"error": "Fireflies niet geconfigureerd (FIREFLIES_API_KEY leeg)."}
+        return self._fireflies.search_transcripts(query, top=min(int(top), 25))
+
+    def _tool_fireflies_transcript_detail(self, meeting_id: str,
+                                          max_chars: int = 4000) -> Any:
+        if self._fireflies is None:
+            return {"error": "Fireflies niet geconfigureerd (FIREFLIES_API_KEY leeg)."}
+        return self._fireflies.transcript_detail(meeting_id,
+                                                 max_chars=min(int(max_chars), 12000))
+
+    def _tool_fireflies_meeting_delete(self, meeting_id: str, title: str = "") -> Any:
+        # destructief en onomkeerbaar (geen prullenbak bij Fireflies); er is geen
+        # autonomy-categorie voor meetings -> mét inbox ALTIJD eerst goedkeuren
+        if self._inbox is not None:
+            queued_id = self._inbox.add(
+                owner=self._owner,
+                kind="action", action="fireflies_meeting_delete",
+                title=f"Fireflies-meeting verwijderen: {title or meeting_id}"[:140],
+                detail="Verwijdert het transcript DEFINITIEF bij Fireflies "
+                       "(onomkeerbaar, geen prullenbak).",
+                payload={"meeting_id": meeting_id},
+                origin="agent",
+            )
+            return {"queued": queued_id,
+                    "status": "Wacht op goedkeuring in de Agent Inbox (HUD)."}
+        if self._fireflies is None:
+            return {"error": "Fireflies niet geconfigureerd (FIREFLIES_API_KEY leeg)."}
+        return self._fireflies.delete_transcript(meeting_id)
+
+    def _tool_telegram_notify(self, text: str) -> Any:
+        # stuurt alleen naar Bas' eigen gekoppelde chat -> direct (geen Inbox);
+        # fail-closed: zonder gekoppelde chat gaat er niets de deur uit
+        if self._telegram is None or not getattr(self._telegram, "linked", False):
+            return {"error": "Geen gekoppelde Telegram-chat: koppel eerst via "
+                             "/koppel <SPAN_AUTH_TOKEN> in de bot."}
+        text = (text or "").strip()
+        if not text:
+            return {"error": "Leeg bericht — niets verstuurd."}
+        sent = self._telegram.send(text)
+        if not sent:
+            return {"error": "Versturen via Telegram mislukt (zie serverlog)."}
+        return {"sent": True}
 
     def _tool_fireflies_sync(self, deep: bool = False) -> Any:
         from types import SimpleNamespace
