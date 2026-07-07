@@ -62,7 +62,7 @@ def load_bootstrap(
         """
         MATCH (i:Identity)
         RETURN i.name AS name, i.philosophy AS philosophy,
-               i.origin AS origin, i.owner AS owner
+               i.origin AS origin, i.owner AS owner, i.voice AS voice
         LIMIT 1
         """
     )
@@ -183,6 +183,8 @@ def render_bootstrap(ctx: BootstrapContext) -> str:
     lines.append(f"# Identity\nNaam: {ident['name']} — eigenaar: {ident['owner']}")
     lines.append(f"Philosophy: \"{ident['philosophy']}\"")
     lines.append(f"Origin: {ident['origin']}")
+    if ident.get("voice"):
+        lines.append(f"Stem & toon: {ident['voice']}")
 
     lines.append("\n# Protocollen")
     for p in ctx.protocols:

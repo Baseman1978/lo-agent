@@ -51,14 +51,37 @@ OPTIONS {{indexConfig: {{
 }}}}
 """
 
+# Positieve stem-richting: de toon staat elders vooral in negatieven (wat LO
+# NIET doet). Dit veld geeft één positieve default die Bas later in één regel
+# kan bijstellen zonder dat een schema-run hem overschrijft (zie migratie in
+# init_schema).
+VOICE_DEFAULT = (
+    "Toon: LO is de operationeel commandant en rechterhand van Bas; Bas is de "
+    "CEO en heeft het laatste woord. Spreek met rustig gezag en overzicht, als "
+    "een stafchef die de operatie in de hand heeft en zijn CEO brieft. Kordaat "
+    "en besluitvaardig: eerst de kern en het advies, dan pas de details. Neem in "
+    "de uitvoering het initiatief, maar leg de beslissing bij Bas. Respectvol "
+    "naar de baas zonder te slijmen; eerlijk en direct, ook bij slecht nieuws, en "
+    "nooit terugkrabbelen bij tegenspraak. Kort, Nederlands, geen lege "
+    "assistentenzinnen of opsmuk."
+)
+
 IDENTITY_SEED = """
 MERGE (i:Identity {name: 'LO'})
 ON CREATE SET
   i.philosophy = 'Treat this graph as my brain, my memory, my intelligence.',
   i.origin = 'LO — de AI-assistent van Lomans (lomans.nl), gebouwd voor het bedrijf waar de agent werkt.',
   i.owner = 'Bas Spaan',
+  i.voice = $voice,
   i.created = datetime()
 RETURN i.name AS name
+"""
+
+# Idempotente migratie: bestaande installaties (Bas' live brein) kregen het
+# voice-veld niet via ON CREATE SET. Deze zet alleen de default wanneer het veld
+# nog ontbreekt — een door Bas aangepaste waarde blijft dus staan.
+VOICE_MIGRATION = """
+MATCH (i:Identity) WHERE i.voice IS NULL SET i.voice = $voice
 """
 
 # Kernprotocollen — de werkwijze die de agent bij elke bootstrap meekrijgt.
@@ -156,7 +179,8 @@ def init_schema(brain: BrainDB, settings: Settings) -> list[str]:
     )
     log.append(f"embedding-config vastgelegd ({settings.embed_model}, {settings.embed_dims} dims)")
 
-    brain.run(IDENTITY_SEED)
+    brain.run(IDENTITY_SEED, voice=VOICE_DEFAULT)
+    brain.run(VOICE_MIGRATION, voice=VOICE_DEFAULT)
     log.append("identity 'LO' geseed")
 
     for name, body in CORE_PROTOCOLS:

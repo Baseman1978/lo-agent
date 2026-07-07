@@ -77,6 +77,42 @@ class TestBriefing:
         assert b["unread_mail"] == [{"subject": "hoi", "unread": True}]
 
 
+class TestVloeiender:
+    """Thema VLOEIENDER: agentnaam in prompts + positief stem-veld."""
+
+    def test_daily_prompts_gebruiken_agentnaam_niet_span(self):
+        from span import AGENT_NAME
+        from span.jarvis import daily
+        for prompt in (daily.SPOKEN_PROMPT, daily.EVENING_PROMPT,
+                       daily.WEEKREVIEW_PROMPT):
+            assert AGENT_NAME in prompt
+            assert "Je bent Span" not in prompt
+
+    def test_voice_komt_in_bootstrap_persona(self):
+        from span.memory.bootstrap import BootstrapContext, render_bootstrap
+        ctx = BootstrapContext(
+            identity={"name": "LO", "owner": "Bas Spaan",
+                      "philosophy": "brain", "origin": "Lomans",
+                      "voice": "Toon: rustig gezag, stafchef die zijn CEO brieft."},
+            protocols=[], quests=[], decisions=[], anti_patterns=[],
+            soul=[], skills=[],
+        )
+        rendered = render_bootstrap(ctx)
+        assert "Stem & toon:" in rendered
+        assert "stafchef die zijn CEO brieft" in rendered
+
+    def test_voice_ontbreekt_geen_crash(self):
+        from span.memory.bootstrap import BootstrapContext, render_bootstrap
+        ctx = BootstrapContext(
+            identity={"name": "LO", "owner": "Bas Spaan",
+                      "philosophy": "brain", "origin": "Lomans"},
+            protocols=[], quests=[], decisions=[], anti_patterns=[],
+            soul=[], skills=[],
+        )
+        rendered = render_bootstrap(ctx)
+        assert "Stem & toon:" not in rendered
+
+
 class TestAsanaClient:
     def _client(self) -> AsanaClient:
         client = AsanaClient(token="x", workspace_gid="ws-1")
