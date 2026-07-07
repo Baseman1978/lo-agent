@@ -78,7 +78,6 @@ def _pick_formal(
     try:
         embedding = fragments.embed(first_message)
         pinned = recency_rows[:pin]
-        pin_ids = {r["id"] for r in pinned}
 
         # relevantie-geordende kandidaten (hoogste cosine eerst), ontdubbeld
         relevant: list[dict[str, Any]] = []
