@@ -198,7 +198,11 @@ class SpanAgent:
         shared_brain: BrainDB | None = None,
         tasks: Any = None,
         progress_cb: Any = None,
+        tool_retrieval: bool = True,
+        tool_retrieval_k: int = 24,
     ):
+        self._tool_retrieval = bool(tool_retrieval)  # per-beurt tool-subset aan/uit
+        self._tool_retrieval_k = int(tool_retrieval_k)
         self._progress_cb = progress_cb  # alleen in taak-modus: report_progress -> TaskManager
         self._tasks = tasks  # TaskManager (achtergrondtaken); None = uit (geen recursie)
         self._mcp = mcp
@@ -269,6 +273,8 @@ class SpanAgent:
             shared=self._shared,
             tasks=self._tasks,
             progress_cb=self._progress_cb,
+            tool_retrieval=self._tool_retrieval,
+            tool_retrieval_k=self._tool_retrieval_k,
         )
         self._bootstrap = load_bootstrap(self._brain, self._fragments, first_message,
                                          shared=self._shared)
@@ -386,6 +392,11 @@ class SpanAgent:
                             MAX_TOOL_ITERATIONS)
             max_secs = 180.0
         budget = RunBudget(max_iterations=steps_cap, max_seconds=max_secs)
+        # Tool-retrieval: bepaal de beurt-subset ÉÉN keer (hergebruik de reeds
+        # berekende RAG-embedding als query-embedding) en bied binnen de beurt
+        # dezelfde lijst aan elke iteratie aan. Bij retrieval-uit/kleine pool/
+        # fout geeft specs_for de volledige lijst terug (geen regressie).
+        turn_tools = self._toolbox.specs_for(user_message, embedding=embedding)
         cancelled = False
         for _ in range(steps_cap):
             # barge-in: de gebruiker begon te praten -> stop vóór de volgende
@@ -404,7 +415,7 @@ class SpanAgent:
                 message = self._llm.chat(
                     self._messages + ([memo_msg] if memo_msg else []),
                     model=self._settings.model_main,
-                    tools=self._toolbox.specs(),
+                    tools=turn_tools,
                     on_text=on_text,
                 )
             except TurnCancelled:

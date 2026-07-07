@@ -66,7 +66,8 @@ async def lifespan(app: FastAPI):
         "RETURN c.model_main AS model_main, c.model_light AS model_light, "
         "       c.autonomy_mail AS autonomy_mail, c.autonomy_event AS autonomy_event, "
         "       c.triage_rules AS triage_rules, c.disabled_tools AS disabled_tools, "
-        "       c.tts_engine AS tts_engine, c.integration_perms AS integration_perms"
+        "       c.tts_engine AS tts_engine, c.integration_perms AS integration_perms, "
+        "       c.tool_retrieval AS tool_retrieval, c.tool_retrieval_k AS tool_retrieval_k"
     )
     cfg = overrides[0] if overrides else {}
     from span.server import tts
@@ -88,6 +89,11 @@ async def lifespan(app: FastAPI):
         triage_rules=cfg.get("triage_rules") or "",
         disabled_tools=set(cfg.get("disabled_tools") or []),
         integration_perms=__import__("json").loads(cfg.get("integration_perms") or "{}"),
+        # tool-retrieval: per beurt alleen relevante tools aanbieden. Default AAN
+        # (None = niet ingesteld -> aan); Bas kan het via de Config-node uitzetten.
+        tool_retrieval=(True if cfg.get("tool_retrieval") is None
+                        else bool(cfg.get("tool_retrieval"))),
+        tool_retrieval_k=int(cfg.get("tool_retrieval_k") or 24),
     )
     from span.safety.settings import load_security
     _state["security"] = load_security(brain)
@@ -239,6 +245,8 @@ async def ws_chat(ws: WebSocket) -> None:
         mcp=_state.get("mcp"),
         shared_brain=ctx.shared,
         tasks=_state.get("tasks"),
+        tool_retrieval=_state.get("tool_retrieval", True),
+        tool_retrieval_k=_state.get("tool_retrieval_k", 24),
     )
     session_id: str | None = None
     loop = asyncio.get_running_loop()

@@ -34,6 +34,8 @@ def make_runners(state: dict[str, Any]) -> tuple[Callable[..., str], Callable[..
             asana=state.get("asana"), inbox=state["inbox"], autonomy=state["autonomy"],
             disabled_tools=state.get("disabled_tools"), fireflies=state.get("fireflies"),
             telegram=state.get("telegram"),
+            tool_retrieval=state.get("tool_retrieval", True),
+            tool_retrieval_k=state.get("tool_retrieval_k", 24),
             mcp=state.get("mcp"), shared_brain=ctx.get("shared"), **extra)
 
     def task_runner(task, set_progress, should_cancel, ctx):
