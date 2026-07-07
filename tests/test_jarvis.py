@@ -1617,3 +1617,100 @@ class TestFeedbackEnProvenance:
         )
         out = render_bootstrap(ctx)
         assert "Feedback-patroon" in out and "mail_send" in out and "80%" in out
+
+
+class TestGroundingGuard:
+    """Thema BETROUWBAARDER: live grounding-guard op recorder + citaten."""
+
+    # -- Item A: _is_grounded ------------------------------------------------
+    def test_is_grounded_dropt_verzonnen_getal(self):
+        from span.orchestrator.agent import _is_grounded
+        # het bedrag 8500 komt nergens in de beurt voor -> hard ongegrond
+        turn = "wat kostte de koelinstallatie? dat weet ik niet uit mijn hoofd"
+        assert _is_grounded("De koelinstallatie kostte 8500 euro", turn) is False
+
+    def test_is_grounded_behoudt_gedekt_getal(self):
+        from span.orchestrator.agent import _is_grounded
+        turn = "wat kostte de koelinstallatie? de koelinstallatie kostte 8500 euro"
+        assert _is_grounded("De koelinstallatie kostte 8500 euro", turn) is True
+
+    def test_is_grounded_tolerant_op_duizendtal_scheiding(self):
+        from span.orchestrator.agent import _is_grounded
+        # 1.500 in het fragment, 1500 in de beurt -> mag geen misser zijn
+        turn = "de offerte was 1500 euro voor het hele project totaal"
+        assert _is_grounded("De offerte was 1.500 euro", turn) is True
+
+    def test_is_grounded_dropt_bij_te_lage_woord_overlap(self):
+        from span.orchestrator.agent import _is_grounded
+        turn = "hoe laat is het ongeveer nu op deze mooie dag"
+        # geen getallen, maar de betekenisdragers komen niet in de beurt voor
+        assert _is_grounded(
+            "Warmtepomp storing gemeld tijdens onderhoudsbezoek", turn) is False
+
+    # -- Item A: _record_turn dropt ongegrond fragment -----------------------
+    def _make_agent(self):
+        from span.orchestrator.agent import SpanAgent
+        brain = MagicMock()
+        llm = MagicMock()
+        agent = SpanAgent(MagicMock(model_light="m"), brain, llm)
+        agent._session_id = "session-x"
+        agent._fragments = MagicMock()
+        agent._fragments.write.return_value = "mf-1"
+        return agent, brain, llm
+
+    def test_record_turn_dropt_ongegrond_fragment(self):
+        agent, brain, llm = self._make_agent()
+        llm.chat_json.return_value = {"fragments": [
+            {"type": "observation", "content": "De omzet was 99999 euro",
+             "grounded": True, "entities": []}]}
+        agent._record_turn("wat was de omzet", "geen idee, niet opgezocht")
+        agent._fragments.write.assert_not_called()  # 99999 niet in de beurt
+
+    def test_record_turn_dropt_model_grounded_false(self):
+        agent, brain, llm = self._make_agent()
+        # inhoud is wél gedekt, maar het model zet grounded=false -> eerste gate
+        llm.chat_json.return_value = {"fragments": [
+            {"type": "observation", "content": "de koffie was lekker vandaag",
+             "grounded": False, "entities": []}]}
+        agent._record_turn("de koffie was lekker vandaag", "fijn dat de koffie lekker was")
+        agent._fragments.write.assert_not_called()
+
+    def test_record_turn_bewaart_gegrond_fragment(self):
+        agent, brain, llm = self._make_agent()
+        llm.chat_json.return_value = {"fragments": [
+            {"type": "decision", "content": "Bas kiest voor de koelinstallatie van 8500 euro",
+             "grounded": True, "entities": []}]}
+        stored = agent._record_turn(
+            "koelinstallatie kopen?", "prima, de koelinstallatie van 8500 euro is akkoord")
+        agent._fragments.write.assert_called_once()
+        assert stored == ["mf-1"]
+
+    # -- Item B: citatie-verificatie ----------------------------------------
+    def test_verify_citations_betrapt_verzonnen_id(self):
+        agent, brain, llm = self._make_agent()
+        brain.run.return_value = []  # _valid_sources vindt niets -> id bestaat niet
+        brain.vector_search.return_value = []  # geen dedup-hit -> node wordt geschreven
+        llm.embed_one.return_value = [0.1] * 8
+        agent._verify_citations("Zoals eerder besproken (mf-999-x-abcdef).", touched=[])
+        # er is een Mistake-node weggeschreven via het reflect-pad
+        queries = [c.args[0] for c in brain.run.call_args_list if c.args]
+        assert any("MERGE (n:Mistake" in q for q in queries)
+
+    def test_verify_citations_accepteert_geraadpleegd_id(self):
+        agent, brain, llm = self._make_agent()
+        brain.run.return_value = [{"id": "mf-123-o-abcdef"}]  # bestaat
+        agent._verify_citations("Op basis van mf-123-o-abcdef klopt dit.",
+                                touched=["mf-123-o-abcdef"])
+        # bestaat én geraadpleegd -> geen Mistake weggeschreven
+        queries = [c.args[0] for c in brain.run.call_args_list if c.args]
+        assert not any("MERGE (n:Mistake" in q for q in queries)
+
+    def test_verify_citations_betrapt_niet_geraadpleegd_id(self):
+        agent, brain, llm = self._make_agent()
+        brain.run.return_value = [{"id": "mf-123-o-abcdef"}]  # bestaat wel
+        brain.vector_search.return_value = []  # geen dedup-hit -> node wordt geschreven
+        llm.embed_one.return_value = [0.1] * 8
+        # bestaat, maar zat niet in de deze-beurt-geraadpleegde set
+        agent._verify_citations("Volgens mf-123-o-abcdef.", touched=[])
+        queries = [c.args[0] for c in brain.run.call_args_list if c.args]
+        assert any("MERGE (n:Mistake" in q for q in queries)
