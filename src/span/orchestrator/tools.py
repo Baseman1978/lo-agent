@@ -8,6 +8,7 @@ niet via losse schrijfacties middenin een gesprek.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -36,6 +37,29 @@ _UNTRUSTED_OUTPUT_TOOLS = {"o365_mail_inbox", "o365_thread_summary", "fireflies_
                            "o365_teams_chat_messages",  # chatberichten zijn door derden geschreven
                            "asana_comments"}  # comments zijn door derden geschreven
 
+# -- TOOL-RETRIEVAL (thema) -------------------------------------------------
+# Per beurt bieden we alleen de relevante tools aan het model aan i.p.v. alle
+# ~121. Dat verhoogt de tool-selectie-accuratesse. Conservatief opgezet: bij
+# een kleine pool, retrieval-uit, lege query of welke fout dan ook valt het
+# terug op de VOLLEDIGE (reeds gefilterde) lijst — nooit een regressie, en
+# nooit een door permissie/disabled/hidden uitgesloten tool terug.
+
+# Onder deze poolgrootte heeft retrieval geen zin -> volledige lijst.
+_RETRIEVAL_MIN_POOL = 40
+
+# Kern-toolset: universeel nuttige tools die ELKE beurt mee moeten, ook als de
+# vraag er niet semantisch op lijkt. Klein gehouden (~10). Alleen meegenomen
+# als ze überhaupt in de toegestane pool zitten (permissie/integratie).
+_CORE_TOOLS = {
+    "brain_search", "remember", "jarvis_briefing", "web_search", "web_read",
+    "inbox_open", "skill_list", "skill_use", "o365_calendar", "o365_mail_inbox",
+}
+
+# In-memory embedding-cache voor tool-descriptions, gedeeld over sessies.
+# Sleutel = (naam, hash-van-description): een gewijzigde (MCP-)description
+# krijgt vanzelf een nieuwe embedding, oude blijven onaangeroerd.
+_TOOL_EMB_CACHE: dict[tuple[str, str], list[float]] = {}
+
 
 class ToolBox:
     def __init__(
@@ -60,7 +84,12 @@ class ToolBox:
         shared: BrainDB | None = None,
         tasks: Any = None,
         progress_cb: Any = None,
+        tool_retrieval: bool = True,
+        tool_retrieval_k: int = 24,
     ):
+        self._tool_retrieval = bool(tool_retrieval)  # per-beurt tool-subset aan/uit
+        self._tool_retrieval_k = int(tool_retrieval_k)  # top-k semantische hits
+        self._used_tools: set[str] = set()  # deze sessie aangeroepen -> blijven aangeboden
         self._security = security or {}
         self._progress_cb = progress_cb  # alleen in taak-modus: report_progress
         self._tasks = tasks            # TaskManager (achtergrondtaken) of None
@@ -118,6 +147,97 @@ class ToolBox:
                       and self._perm_allowed(t["function"]["name"])]
         return specs
 
+    def specs_for(self, query: str | None,
+                  embedding: list[float] | None = None) -> list[dict[str, Any]]:
+        """Beurt-subset: alleen de relevante tools aan het model aanbieden.
+
+        Begint met de VOLLEDIGE toegestane pool (`specs()`, dus ná hidden/
+        disabled/permissie-filtering — retrieval brengt NOOIT een geblokkeerde
+        tool terug). Geeft de volledige pool terug (identiek aan `specs()`) als
+        retrieval uit staat, de query leeg is, de pool klein is, of er iets
+        misgaat in de embed/rank-tak. Anders: de top-k semantisch dichtste
+        tools + de kern-toolset + de deze-sessie gebruikte tools (ontdubbeld).
+
+        `embedding` is de reeds berekende query-embedding (agent.py hergebruikt
+        de RAG-embedding), zodat de beurt de query niet dubbel embed."""
+        pool = self.specs()
+        if (not self._tool_retrieval or not query or not query.strip()
+                or len(pool) <= _RETRIEVAL_MIN_POOL):
+            return pool
+        try:
+            ranked = self._rank_tools(pool, query, embedding)
+            if not ranked:
+                return pool
+            by_name = {t["function"]["name"]: t for t in pool}
+            k = max(1, int(self._tool_retrieval_k))
+            keep: dict[str, dict[str, Any]] = {}
+            for name in ranked[:k]:
+                keep[name] = by_name[name]
+            # ALTIJD erbij: kern-tools + deze sessie gebruikte tools, maar alleen
+            # als ze in de toegestane pool zitten (nooit een geblokkeerde terug).
+            for name in _CORE_TOOLS | self._used_tools:
+                spec = by_name.get(name)
+                if spec is not None:
+                    keep.setdefault(name, spec)
+            return list(keep.values())
+        except Exception as exc:  # vangnet: retrieval mag een beurt nooit breken
+            print(f"[retrieval] terugval op volledige toollijst: "
+                  f"{type(exc).__name__}: {exc}", flush=True)
+            return pool
+
+    def _rank_tools(self, pool: list[dict[str, Any]], query: str,
+                    embedding: list[float] | None) -> list[str] | None:
+        """Rangschik de pool-tools op cosine-gelijkenis (naam + description)
+        tegen de query-embedding. Geeft toolnamen, hoogste eerst; None bij een
+        onbruikbare embedding (dan valt specs_for terug op de volledige pool)."""
+        if self._llm is None:
+            return None
+        from math import sqrt
+        qvec = embedding if embedding is not None else self._llm.embed_one(query)
+        if not qvec:
+            return None
+        qn = sqrt(sum(x * x for x in qvec))
+        if qn == 0.0:
+            return None
+        embs = self._tool_embeddings(pool)
+        if not embs:
+            return None
+        scored: list[tuple[float, str]] = []
+        for name, vec in embs.items():
+            vn = sqrt(sum(x * x for x in vec))
+            if vn == 0.0:
+                continue
+            dot = sum(a * b for a, b in zip(qvec, vec))
+            scored.append((dot / (qn * vn), name))
+        scored.sort(key=lambda t: t[0], reverse=True)
+        return [name for _, name in scored]
+
+    def _tool_embeddings(self, pool: list[dict[str, Any]]) -> dict[str, list[float]]:
+        """Embeddings van de tool-descriptions, gecachet op (naam, hash). Embed
+        alleen de nog-onbekende descriptions, in één batch-call per beurt."""
+        result: dict[str, list[float]] = {}
+        plan: list[tuple[str, tuple[str, str]]] = []  # (naam, cache-sleutel)
+        texts: list[str] = []
+        for t in pool:
+            fn = t.get("function") or {}
+            name = fn.get("name") or ""
+            desc = fn.get("description") or ""
+            if not name:
+                continue
+            key = (name, hashlib.sha1(desc.encode("utf-8")).hexdigest()[:16])
+            cached = _TOOL_EMB_CACHE.get(key)
+            if cached is not None:
+                result[name] = cached
+            else:
+                plan.append((name, key))
+                texts.append(f"{name}: {desc}")
+        if texts:
+            vecs = self._llm.embed(texts)
+            for (name, key), vec in zip(plan, vecs):
+                _TOOL_EMB_CACHE[key] = vec
+                result[name] = vec
+        return result
+
     def _perm_key_rw(self, name: str) -> tuple[str | None, str | None]:
         """Integratie-sleutel + read/write van een tool, voor het rechtenmodel.
         Built-ins: TOOL_META-groep; MCP: 'mcp:<server>' + capability-classifier."""
@@ -156,6 +276,9 @@ class ToolBox:
         return False
 
     def dispatch(self, name: str, arguments: dict[str, Any]) -> str:
+        # deze sessie aangeroepen -> blijft in de beurt-subset (tool-retrieval),
+        # zodat een vervolgvraag een net-gebruikte tool niet plots mist
+        self._used_tools.add(name)
         if name in self._disabled:
             return json.dumps({"error": f"Tool '{name}' is door Bas uitgeschakeld "
                                "in de instellingen."}, ensure_ascii=False)

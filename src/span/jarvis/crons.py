@@ -161,6 +161,8 @@ def _execute(state: dict[str, Any], prompt: str) -> str:
             disabled_tools=state.get("disabled_tools"),
             fireflies=state.get("fireflies"),
             telegram=state.get("telegram"),
+            tool_retrieval=state.get("tool_retrieval", True),
+            tool_retrieval_k=state.get("tool_retrieval_k", 24),
         )
         session_id = start_session(state["brain"])
         agent.begin(session_id, first_message=prompt)
