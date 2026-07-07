@@ -8,6 +8,7 @@ doen: kleine observaties wegschrijven als MemoryFragments.
 from __future__ import annotations
 
 import json
+import re
 import threading
 from typing import Any, Callable
 
@@ -98,13 +99,83 @@ Schrijf 0 tot 2 fragmenten. Waardevol = besluiten, ontdekkingen, voorkeuren
 van de gebruiker, valkuilen, open eindjes, persoonlijkheidsmomenten.
 Niet waardevol = smalltalk, herhaling van bestaande kennis, vragen zonder uitkomst.
 
+GEWORTELDHEID (streng): elk fragment mag UITSLUITEND feiten bevatten die letterlijk
+in deze beurt (gebruiker + antwoord) staan. Vul NIETS aan uit je eigen kennis —
+geen getallen, datums, namen of gevolgtrekkingen die niet in de tekst voorkomen.
+Kun je een fragment niet volledig op de beurt-tekst baseren, zet dan
+"grounded": false (het wordt dan niet opgeslagen). Bij een geheel gegrond
+fragment: "grounded": true.
+
 Benoem per fragment ook de entiteiten (personen, projecten, bedrijven) die erin
 voorkomen — alleen concrete eigennamen, geen generieke woorden.
 
 Antwoord met uitsluitend JSON:
-{"fragments": [{"type": "<een van: %s>", "content": "<beknopte observatie>", "context": "<optioneel>", "event_date": "<YYYY-MM-DD indien het over een concreet moment gaat, anders leeg>", "entities": [{"name": "<eigennaam>", "etype": "person|project|company"}]}]}
+{"fragments": [{"type": "<een van: %s>", "content": "<beknopte observatie>", "context": "<optioneel>", "event_date": "<YYYY-MM-DD indien het over een concreet moment gaat, anders leeg>", "grounded": true, "entities": [{"name": "<eigennaam>", "etype": "person|project|company"}]}]}
 Bij niets waardevols: {"fragments": []}
 """ % ", ".join(sorted(MF_TYPES))
+
+
+# -- Grounding-guard (thema BETROUWBAARDER) ---------------------------------
+# Een fragment wordt alleen opgeslagen als het aantoonbaar in de beurt-tekst
+# geworteld is. 's Nachts weigert reflect.py al ongegronde formele kennis; deze
+# helper trekt diezelfde strengheid naar de live-ingest, zodat gehallucineerde
+# feiten (vooral getallen/datums) het geheugen niet vervuilen en later via RAG
+# terugkomen (compounding silent errors — het #1 faalmodel van zelflerende agents).
+
+# Getallen/datums/tijden: cijferreeksen met scheidingstekens (decimaal, duizendtal,
+# ISO-datum, tijd). Dit is de hoogste-risicoklasse: één verzonnen bedrag/datum is
+# een hard, toetsbaar onwaar feit.
+_NUM_RE = re.compile(r"\d+(?:[.,:/\-]\d+)*")
+_WORD_RE = re.compile(r"[0-9a-zà-ÿ]+", re.IGNORECASE)
+# MF-id-citaten in een live-antwoord (vorm: mf-<ts>-<code>-<hex>, tolerant geparset)
+_MF_CITE_RE = re.compile(r"mf-[0-9a-zA-Z]+(?:-[0-9a-zA-Z]+)*")
+# kleine set functiewoorden (NL + wat EN); geen betekenisdragers voor de overlap
+_STOPWORDS = {
+    "de", "het", "een", "en", "of", "van", "voor", "met", "dat", "die", "deze",
+    "dit", "aan", "door", "over", "naar", "maar", "ook", "niet", "wel", "wordt",
+    "worden", "werd", "heeft", "hebben", "hebt", "zijn", "was", "waren", "als",
+    "dan", "toen", "omdat", "zodat", "onder", "boven", "tussen", "sinds",
+    "the", "and", "for", "with", "that", "this", "have", "has", "was", "were",
+    "are", "from", "into", "about",
+}
+
+
+def _norm_text(s: str) -> str:
+    """Lowercase + witruimte-collaps: de normalisatie waarop we matchen."""
+    return " ".join((s or "").lower().split())
+
+
+def _is_grounded(content: str, turn_text: str) -> bool:
+    """True als `content` aantoonbaar in `turn_text` geworteld is.
+
+    Twee eisen:
+    1. Getallen/datums/tijden (hoogste risico): elk zo'n token uit `content`
+       moet letterlijk in de beurt voorkomen (genormaliseerd op witruimte;
+       tolerant op groep-/decimaalscheiding, zodat 1.500 ~ 1500 geen misser is).
+       Eén ongedekt getal/datum = direct ongegrond.
+    2. Inhouds-overlap: van de betekenisdragende woorden (>4 tekens, geen
+       stopwoord) moet ≥50% in de beurt terugkomen — een ondergrens tegen
+       fragmenten die grotendeels uit eigen kennis zijn aangevuld.
+    """
+    turn = _norm_text(turn_text)
+    turn_digits = re.sub(r"[^0-9]", "", turn)
+    content = content or ""
+    # 1) getallen/datums: hard vereist
+    for tok in _NUM_RE.findall(content):
+        if tok.lower() in turn:
+            continue
+        digits = re.sub(r"[^0-9]", "", tok)
+        if digits and digits in turn_digits:
+            continue  # 1.500 vs 1500: groepsscheiding mag verschillen
+        return False
+    # 2) inhouds-overlap: minstens de helft van de betekenisdragers gedekt
+    words = [w for w in _WORD_RE.findall(content.lower())
+             if len(w) > 4 and w not in _STOPWORDS]
+    if words:
+        hit = sum(1 for w in set(words) if w in turn)
+        if hit / len(set(words)) < 0.5:
+            return False
+    return True
 
 
 class SpanAgent:
@@ -425,17 +496,31 @@ class SpanAgent:
             recorder.start()
             self._recorders.append(recorder)
 
-        if tools_used or self.last_touched:
+        # de trace-thread doet nu twee dingen: de reasoning-trace schrijven én
+        # live de MF-citaten in het antwoord verifiëren. Draai hem ook als er
+        # geen tool/touch was maar het antwoord wél een mf-id citeert (dan kan
+        # het een verzonnen citatie zijn die we willen betrappen).
+        if tools_used or self.last_touched or _MF_CITE_RE.search(answer or ""):
             trace = threading.Thread(
-                target=self._write_trace, args=(tools_used, self.last_touched), daemon=True
+                target=self._write_trace,
+                args=(tools_used, self.last_touched, answer), daemon=True
             )
             trace.start()
         return answer
 
-    def _write_trace(self, tools_used: list[str], touched: list[str]) -> None:
+    def _write_trace(self, tools_used: list[str], touched: list[str],
+                     answer: str = "") -> None:
         """Reasoning-trace: welke tools en herinneringen droegen bij aan deze
         beurt. :TOUCHED-edges maken het redeneren naspeurbaar (Neo4j
-        agent-memory patroon). Faalt stil."""
+        agent-memory patroon). Faalt stil. Verifieert vooraf de MF-citaten in
+        het antwoord (live grounding-guard)."""
+        try:
+            self._verify_citations(answer, touched)
+        except Exception as exc:
+            print(f"[citaat] verificatie mislukt: {type(exc).__name__}: {exc}",
+                  flush=True)
+        if not (tools_used or touched):
+            return  # niets naspeurbaars om als trace vast te leggen
         try:
             self._brain.run(
                 """
@@ -454,6 +539,42 @@ class SpanAgent:
             )
         except Exception as exc:
             print(f"[trace] schrijven mislukt: {type(exc).__name__}: {exc}", flush=True)
+
+    def _verify_citations(self, answer: str, touched: list[str]) -> None:
+        """Live citatie-verificatie: als LO in zijn antwoord mf-ids citeert,
+        controleer dat die (a) echt bestaan en (b) deze beurt geraadpleegd zijn.
+        Een citatie die niet bestaat of niet is geraadpleegd, is ongegrond —
+        we loggen het en leggen het vast als Mistake (zelfde pad als reflect.py).
+        Faalt stil: breekt nooit de beurt."""
+        if not answer:
+            return
+        cited = list(dict.fromkeys(_MF_CITE_RE.findall(answer)))
+        if not cited:
+            return
+        # hergebruik de bestaande grounding-logica uit de nachtelijke reflect
+        from span.evaluation.reflect import _valid_sources, _write_formal_node
+        existing = set(_valid_sources(self._brain, cited))
+        touched_set = set(touched or [])
+        for mf_id in cited:
+            if mf_id in existing and mf_id in touched_set:
+                continue  # bestaat én deze beurt geraadpleegd -> gegrond
+            reason = "bestaat niet" if mf_id not in existing else "niet geraadpleegd"
+            print(f"[citaat] ongegrond: {mf_id} {reason}", flush=True)
+            try:
+                node_id = (f"mistake-cite-"
+                           f"{self.session_id.removeprefix('session-')}-{mf_id}")
+                props = {
+                    "content": (f"Ongegronde citatie in een live-antwoord: {mf_id} "
+                                f"({reason})."),
+                    "session_id": self.session_id,
+                    "lesson": ("Citeer alleen MF-ids die deze beurt echt bestaan "
+                               "en zijn geraadpleegd; verzin geen bron-ids."),
+                }
+                _write_formal_node(self._brain, self._llm, "Mistake",
+                                   node_id, props, [])
+            except Exception as exc:
+                print(f"[citaat] Mistake-registratie mislukt: "
+                      f"{type(exc).__name__}: {exc}", flush=True)
 
     def flush_recording(self, timeout: float = 20.0) -> None:
         """Wacht op lopende recordings — aanroepen vóór de sessie-evaluatie,
@@ -477,10 +598,27 @@ class SpanAgent:
                 model=self._settings.model_light,
             )
             stored: list[str] = []
+            turn_text = f"{user_message} {answer}"
             for frag in parsed.get("fragments", [])[:2]:
                 mf_type = frag.get("type", "observation")
                 content = (frag.get("content") or "").strip()
                 if mf_type not in MF_TYPES or not content:
+                    continue
+                # eerste gate: het model markeert een niet-gegrond fragment zelf
+                if frag.get("grounded") is False:
+                    print(f"[recorder] ongegrond fragment gedropt (model): "
+                          f"{content[:70]}", flush=True)
+                    continue
+                # tweede gate: server-side verificatie tegen de beurt-tekst.
+                # Faalt de check op een bug, dan liever opslaan dan het gesprek
+                # raken (fail-open) — de recorder mag nooit breken.
+                try:
+                    grounded = _is_grounded(content, turn_text)
+                except Exception:
+                    grounded = True
+                if not grounded:
+                    print(f"[recorder] ongegrond fragment gedropt: "
+                          f"{content[:70]}", flush=True)
                     continue
                 mf_id = self._fragments.write(
                     mf_type=mf_type,
