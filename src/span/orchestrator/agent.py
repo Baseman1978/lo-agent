@@ -496,6 +496,18 @@ class SpanAgent:
             recorder.start()
             self._recorders.append(recorder)
 
+        # Plan-Execute-VERIFY sluiten: toets na een beurt de open stappen van de
+        # actieve plan-quest. Alleen als er deze beurt tools zijn gebruikt (dan
+        # kón er voortgang zijn) — anders is de LLM-call verspild geld. Draait op
+        # de achtergrond (daemon, fail-stil), net als _record_turn.
+        if not cancelled and tools_used:
+            verifier = threading.Thread(
+                target=self._verify_active_quest, args=(user_message, answer),
+                daemon=True,
+            )
+            verifier.start()
+            self._recorders.append(verifier)
+
         # de trace-thread doet nu twee dingen: de reasoning-trace schrijven én
         # live de MF-citaten in het antwoord verifiëren. Draai hem ook als er
         # geen tool/touch was maar het antwoord wél een mf-id citeert (dan kan
@@ -575,6 +587,32 @@ class SpanAgent:
             except Exception as exc:
                 print(f"[citaat] Mistake-registratie mislukt: "
                       f"{type(exc).__name__}: {exc}", flush=True)
+
+    def _verify_active_quest(self, user_message: str, answer: str) -> None:
+        """Verify-stap van een plan-quest sluiten. Er is geen expliciete
+        sessie↔quest-binding in het schema, dus we pakken de meest recent
+        aangemaakte ACTIEVE plan-quest (kind='plan') die nog open stappen heeft —
+        precies de quests die de planner met een done_when-criterium maakt.
+        Faalt stil: een verificatie-fout mag het gesprek nooit raken."""
+        try:
+            rows = self._brain.run(
+                """
+                MATCH (q:Quest {kind: 'plan', status: 'active'})
+                WHERE EXISTS {
+                    MATCH (q)-[:HAS_STEP]->(st:QuestStep {status: 'open'})
+                }
+                RETURN q.id AS id ORDER BY q.created DESC LIMIT 1
+                """
+            )
+            if not rows:
+                return
+            from span.orchestrator.planner import verify_quest_steps
+            context = f"GEBRUIKER:\n{user_message}\n\nAGENT:\n{answer}"
+            verify_quest_steps(self._brain, self._llm,
+                               self._settings.model_light, rows[0]["id"], context)
+        except Exception as exc:
+            print(f"[verify] quest-verificatie mislukt: "
+                  f"{type(exc).__name__}: {exc}", flush=True)
 
     def flush_recording(self, timeout: float = 20.0) -> None:
         """Wacht op lopende recordings — aanroepen vóór de sessie-evaluatie,

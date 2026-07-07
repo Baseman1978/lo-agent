@@ -52,6 +52,56 @@ def end_session(brain: BrainDB, session_id: str, summary: str) -> None:
     )
 
 
+def _pick_formal(
+    brain: BrainDB,
+    fragments: FragmentStore,
+    first_message: str | None,
+    *,
+    recency_query: str,
+    index: str,
+    build_row: Any,
+    limit: int,
+    pin: int = 2,
+) -> list[dict[str, Any]]:
+    """Kies formele kennis (Insight/Mistake) voor de bootstrap.
+
+    Zonder first_message: pure recency (het oude gedrag). Mét first_message:
+    rangschik op relevantie (cosine tegen de eerste vraag via vector_search op
+    `index`), met de meest relevante bovenaan. De `pin` nieuwste items worden
+    sowieso meegenomen (verse lessen mogen niet wegvallen), aangevuld tot
+    `limit`. Fail-safe: elke fout (geen embedding, lege index, ...) valt terug
+    op de recency-query, zodat load_bootstrap nooit harder faalt dan voorheen.
+    """
+    recency_rows = brain.run(recency_query)
+    if not (first_message and first_message.strip()):
+        return recency_rows
+    try:
+        embedding = fragments.embed(first_message)
+        pinned = recency_rows[:pin]
+        pin_ids = {r["id"] for r in pinned}
+
+        # relevantie-geordende kandidaten (hoogste cosine eerst), ontdubbeld
+        relevant: list[dict[str, Any]] = []
+        seen: set[Any] = set()
+        for hit in brain.vector_search(index, embedding, k=limit + pin + 4):
+            row = build_row(hit.get("node") or {})
+            if not row or row["id"] in seen:
+                continue
+            seen.add(row["id"])
+            relevant.append(row)
+
+        # de nieuwste `pin` die niet vanzelf al bij de relevante hits zitten,
+        # reserveren we zodat ze gegarandeerd meekomen
+        missing_pins = [p for p in pinned if p["id"] not in seen]
+        head = relevant[: max(0, limit - len(missing_pins))]
+        picked = (head + missing_pins)[:limit]
+        return picked or recency_rows
+    except Exception as exc:
+        print(f"[bootstrap] relevantie-tak ({index}) mislukt, terug naar recency: "
+              f"{type(exc).__name__}: {exc}", flush=True)
+        return recency_rows
+
+
 def load_bootstrap(
     brain: BrainDB,
     fragments: FragmentStore,
@@ -125,20 +175,41 @@ def load_bootstrap(
         except Exception:
             pass
 
-    # formele kennis uit de evaluatiecirkel — de leeskant van het leren
-    insights = brain.run(
-        """
-        MATCH (n:Insight) WHERE n.content IS NOT NULL
-        RETURN n.id AS id, n.content AS content
-        ORDER BY n.created DESC LIMIT 8
-        """
+    # formele kennis uit de evaluatiecirkel — de leeskant van het leren.
+    # Met een first_message kiezen we op RELEVANTIE (cosine tegen de vraag)
+    # i.p.v. pure recency, zodat de nuttigste les bovenkomt i.p.v. de toevallig
+    # nieuwste — dat scheelt statische context-bloat. Insights én Mistakes hebben
+    # allebei een embedding (reflect._write_formal_node zet n.embedding; indexen
+    # insight_embedding / mistake_embedding), dus beide kunnen relevantie-
+    # gebaseerd. Zonder first_message blijft recency de fallback; elke fout in de
+    # relevantie-tak valt óók terug op recency zodat load_bootstrap nooit harder
+    # faalt dan voorheen. LIMITs blijven 8/6 zodat de prompt niet groeit.
+    insights = _pick_formal(
+        brain, fragments, first_message,
+        recency_query="""
+            MATCH (n:Insight) WHERE n.content IS NOT NULL
+            RETURN n.id AS id, n.content AS content
+            ORDER BY n.created DESC LIMIT 8
+        """,
+        index="insight_embedding",
+        build_row=lambda n: (
+            {"id": n.get("id"), "content": n.get("content")}
+            if n.get("content") is not None else None),
+        limit=8,
     )
-    lessons = brain.run(
-        """
-        MATCH (n:Mistake) WHERE n.content IS NOT NULL
-        RETURN n.id AS id, n.content AS content, coalesce(n.lesson, '') AS lesson
-        ORDER BY n.created DESC LIMIT 6
-        """
+    lessons = _pick_formal(
+        brain, fragments, first_message,
+        recency_query="""
+            MATCH (n:Mistake) WHERE n.content IS NOT NULL
+            RETURN n.id AS id, n.content AS content, coalesce(n.lesson, '') AS lesson
+            ORDER BY n.created DESC LIMIT 6
+        """,
+        index="mistake_embedding",
+        build_row=lambda n: (
+            {"id": n.get("id"), "content": n.get("content"),
+             "lesson": n.get("lesson") or ""}
+            if n.get("content") is not None else None),
+        limit=6,
     )
 
     # F4.4 acceptance-feedback: acties die Bas vaak afwijst -> Span wordt

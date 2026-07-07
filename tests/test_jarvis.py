@@ -1542,6 +1542,121 @@ class TestPlanner:
         assert [c for c in brain.run.call_args_list if "CREATE (q:Quest" in str(c)]
 
 
+class TestBootstrapRelevantie:
+    """Item 1 — Insights/lessen op relevantie i.p.v. pure recency."""
+
+    @staticmethod
+    def _row(node):
+        if node.get("content") is None:
+            return None
+        return {"id": node.get("id"), "content": node.get("content")}
+
+    def test_relevantie_boven_recency_met_first_message(self):
+        from span.memory.bootstrap import _pick_formal
+        recency = [{"id": "i-new", "content": "nieuwste"},
+                   {"id": "i-old", "content": "ouder"}]
+        # vector_search levert het meest relevante inzicht bovenaan
+        hits = [{"node": {"id": "i-rel", "content": "meest relevant"}, "score": 0.9},
+                {"node": {"id": "i-new", "content": "nieuwste"}, "score": 0.4}]
+        brain = MagicMock()
+        brain.run.return_value = recency
+        brain.vector_search.return_value = hits
+        frag = MagicMock(); frag.embed.return_value = [0.1] * 4
+        out = _pick_formal(brain, frag, "waar ging het over?",
+                           recency_query="Q", index="insight_embedding",
+                           build_row=self._row, limit=8)
+        frag.embed.assert_called_once()
+        assert out[0]["id"] == "i-rel"            # relevantie bovenaan, niet i-new
+        assert any(r["id"] == "i-new" for r in out)  # nieuwste toch vastgepind
+
+    def test_zonder_first_message_recency_fallback(self):
+        from span.memory.bootstrap import _pick_formal
+        recency = [{"id": "i-new", "content": "nieuwste"}]
+        brain = MagicMock(); brain.run.return_value = recency
+        frag = MagicMock()
+        out = _pick_formal(brain, frag, None, recency_query="Q",
+                           index="insight_embedding", build_row=self._row, limit=8)
+        assert out == recency
+        frag.embed.assert_not_called()
+        brain.vector_search.assert_not_called()
+
+    def test_fout_in_relevantie_valt_terug_op_recency(self):
+        from span.memory.bootstrap import _pick_formal
+        recency = [{"id": "i-new", "content": "nieuwste"}]
+        brain = MagicMock()
+        brain.run.return_value = recency
+        brain.vector_search.side_effect = RuntimeError("index leeg")
+        frag = MagicMock(); frag.embed.return_value = [0.1] * 4
+        out = _pick_formal(brain, frag, "een vraag", recency_query="Q",
+                           index="insight_embedding", build_row=self._row, limit=8)
+        assert out == recency  # geen crash, terug naar recency
+
+
+def _quest_brain(open_steps, counts):
+    """Fake brein voor verify_quest_steps: routeert op query-inhoud."""
+    calls: dict = {"set": [], "closed": False}
+
+    def run(query, **kw):
+        if "RETURN st.order" in query and "st.status = 'open'" in query:
+            return open_steps
+        if "SET st.status" in query:
+            calls["set"].append(kw)
+            return []
+        if "count(st)" in query:
+            return [counts]
+        if "SET q.status = 'done'" in query:
+            calls["closed"] = True
+            return []
+        return []
+
+    brain = MagicMock()
+    brain.run.side_effect = run
+    brain._calls = calls
+    return brain
+
+
+class TestVerifyQuestSteps:
+    """Item 2 — Verify-stap: open stappen toetsen tegen de beurt."""
+
+    def test_done_zet_stap_en_sluit_quest(self):
+        from span.orchestrator.planner import verify_quest_steps
+        brain = _quest_brain([{"order": 1, "body": "X", "done_when": "X af"}],
+                             {"total": 1, "done": 1})
+        llm = MagicMock()
+        llm.chat_json.return_value = {
+            "stappen": [{"order": 1, "status": "done", "reden": "klaar"}]}
+        out = verify_quest_steps(brain, llm, "m", "quest-plan-a", "ctx")
+        assert out["updated"] == [{"order": 1, "status": "done"}]
+        assert out["closed"] is True
+        assert brain._calls["set"][0]["status"] == "done"
+        assert brain._calls["closed"] is True
+
+    def test_blocked_schrijft_note_en_sluit_niet(self):
+        from span.orchestrator.planner import verify_quest_steps
+        brain = _quest_brain([{"order": 2, "body": "Y", "done_when": "Y af"}],
+                             {"total": 2, "done": 0})
+        llm = MagicMock()
+        llm.chat_json.return_value = {
+            "stappen": [{"order": 2, "status": "blocked", "reden": "wacht op input"}]}
+        out = verify_quest_steps(brain, llm, "m", "quest-plan-b", "ctx")
+        assert out["updated"] == [{"order": 2, "status": "blocked"}]
+        assert out["closed"] is False
+        assert brain._calls["set"][0]["note"] == "wacht op input"
+        assert brain._calls["set"][0]["status"] == "blocked"
+
+    def test_open_verdict_laat_stap_ongewijzigd(self):
+        from span.orchestrator.planner import verify_quest_steps
+        brain = _quest_brain([{"order": 1, "body": "X", "done_when": "X af"}],
+                             {"total": 1, "done": 0})
+        llm = MagicMock()
+        llm.chat_json.return_value = {
+            "stappen": [{"order": 1, "status": "open", "reden": "nog niet"}]}
+        out = verify_quest_steps(brain, llm, "m", "quest-plan-c", "ctx")
+        assert out["updated"] == []
+        assert brain._calls["set"] == []  # geen status-schrijf op 'open'
+        assert out["closed"] is False
+
+
 class TestTelegramInbox:
     def _bridge(self, inbox, o365):
         from span.integrations.telegram import TelegramBridge
