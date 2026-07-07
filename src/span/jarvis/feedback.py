@@ -11,6 +11,37 @@ from __future__ import annotations
 from typing import Any
 
 
+def feedback_action(item: dict[str, Any]) -> str:
+    """Feedback-sleutel voor een Agent Inbox-item. Voor notify-mail keyen we op
+    de afzender ("notify:<afzender>"), zodat er per afzender signaal ontstaat en
+    de triage gericht kan degraderen — niet de hele 'notify'-klasse ineens.
+    Voor andere items blijft het gewoon het actie-type."""
+    if item.get("kind") == "notify":
+        frm = ((item.get("payload") or {}).get("from") or "").strip().lower()
+        if frm:
+            return "notify:" + frm[:120]
+    return item.get("action") or ""
+
+
+def suppressed_notify_senders(
+    feedback: list[dict[str, Any]] | None,
+    min_total: int = 3,
+    threshold: float = 0.5,
+) -> set[str]:
+    """Afzenders wier notify-mail Bas overwegend (≥threshold) wegklikt, met
+    genoeg datapunten (≥min_total). De triage degradeert die van notify naar
+    ignore. Conservatief: needs_reply blijft altijd staan (elders afgedwongen)."""
+    out: set[str] = set()
+    for f in feedback or []:
+        t = f.get("type") or ""
+        if not t.startswith("notify:"):
+            continue
+        total = (f.get("approved") or 0) + (f.get("rejected") or 0)
+        if total >= min_total and (f.get("reject_ratio") or 0) >= threshold:
+            out.add(t[len("notify:"):])
+    return out
+
+
 def record_feedback(brain: Any, kind: str, action: str, outcome: str) -> None:
     """outcome ∈ {approved, rejected}. Zacht falend (feedback mag nooit de
     afhandeling blokkeren)."""

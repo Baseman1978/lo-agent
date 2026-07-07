@@ -27,7 +27,14 @@ from span.config import Settings
 from span.db.brain import BrainDB
 from span.jarvis.ambient import AgentInbox
 from span.jarvis.briefing import build_briefing
-from span.jarvis.daily import briefing_time, generate_daily, set_briefing_time
+from span.jarvis.daily import (
+    briefing_time,
+    generate_daily,
+    quiet_window,
+    set_briefing_time,
+    set_quiet_end,
+    set_quiet_start,
+)
 from span.llm.client import LLMClient
 from span.memory.fragments import FragmentStore
 from span.server.state import (
@@ -139,6 +146,9 @@ async def get_settings(request: Request) -> dict[str, Any]:
         "asana": {"configured": _state.get("asana") is not None},
         "work_db": _state.get("work") is not None,
         "briefing_time": await asyncio.to_thread(briefing_time, _state["brain"]),
+        "quiet_hours": await asyncio.to_thread(
+            lambda: dict(zip(("start", "end"), quiet_window(_state["brain"])))
+        ),
         "autonomy": dict(_state["autonomy"]),
         "triage_rules": await asyncio.to_thread(
             lambda: ((_state["brain"].run(
@@ -270,6 +280,21 @@ async def save_settings(request: Request) -> dict[str, Any]:
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+
+    if "quiet_start" in body or "quiet_end" in body:
+        try:
+            if "quiet_start" in body:
+                await asyncio.to_thread(
+                    set_quiet_start, _state["brain"], str(body["quiet_start"])
+                )
+            if "quiet_end" in body:
+                await asyncio.to_thread(
+                    set_quiet_end, _state["brain"], str(body["quiet_end"])
+                )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        start, end = await asyncio.to_thread(quiet_window, _state["brain"])
+        result["quiet_hours"] = {"start": start, "end": end}
 
     if "model_main" in body or "model_light" in body:
         main = str(body.get("model_main", "")).strip()
@@ -441,9 +466,9 @@ async def inbox_approve(request: Request, item_id: int) -> dict[str, Any]:
     await asyncio.to_thread(_audit, item["action"] or item["kind"], item["title"],
                             getattr(ctx, "upn", ""))
     inbox.resolve(item_id, "done")
-    from span.jarvis.feedback import record_feedback
+    from span.jarvis.feedback import feedback_action, record_feedback
     await asyncio.to_thread(record_feedback, _state["brain"],
-                            item["kind"], item.get("action", ""), "approved")
+                            item["kind"], feedback_action(item), "approved")
     return {"approved": True, "result": result}
 
 
@@ -458,9 +483,9 @@ async def inbox_reject(request: Request, item_id: int) -> dict[str, Any]:
     item = inbox.resolve(item_id, "rejected")
     if item is None:
         raise HTTPException(status_code=404, detail="Item niet gevonden.")
-    from span.jarvis.feedback import record_feedback
+    from span.jarvis.feedback import feedback_action, record_feedback
     await asyncio.to_thread(record_feedback, _state["brain"],
-                            item["kind"], item.get("action", ""), "rejected")
+                            item["kind"], feedback_action(item), "rejected")
     return {"rejected": True}
 
 
@@ -510,9 +535,9 @@ async def inbox_choose(request: Request, item_id: int) -> dict[str, Any]:
     await asyncio.to_thread(_audit, item.get("action") or "choice", item["title"],
                             getattr(ctx, "upn", ""))
     inbox.resolve(item_id, "done")
-    from span.jarvis.feedback import record_feedback
+    from span.jarvis.feedback import feedback_action, record_feedback
     await asyncio.to_thread(record_feedback, _state["brain"],
-                            item["kind"], item.get("action", ""), "approved")
+                            item["kind"], feedback_action(item), "approved")
     return {"chosen": pick, "superseded": losers}
 
 
