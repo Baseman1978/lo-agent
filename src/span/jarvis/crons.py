@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from span.jarvis.daily import now_local, today_local
+from span.jarvis.daily import now_local, send_respecting_quiet, today_local
 
 REPEATS = {"once", "daily", "weekdays", "weekly"}
 WEEKDAYS = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]
@@ -141,7 +141,9 @@ def run_due_crons(state: dict[str, Any]) -> int:
         tg = state.get("telegram")
         if tg is not None and tg.linked:
             try:
-                tg.send(tg_text)
+                # door Bas zelf geplande herinnering (urgency high) -> urgent:
+                # breekt door de stille uren; hij heeft dit tijdstip zelf gekozen
+                send_respecting_quiet(tg, tg_text, brain, urgent=True)
             except Exception:
                 print(f"[cron] telegram-push mislukt voor {cron['id']}", flush=True)
     return ran

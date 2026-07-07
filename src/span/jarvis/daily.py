@@ -64,6 +64,81 @@ def set_briefing_time(brain: BrainDB, value: str) -> str:
     return value
 
 
+# -- Stille uren (thema PROACTIEVER) -----------------------------------------
+# Niet-urgente Telegram-pushes wachten tijdens dit venster; alleen echt urgente
+# meldingen breken door. De Agent Inbox/HUD houdt de items sowieso vast, dus er
+# gaat niets verloren — alleen de ping wacht.
+QUIET_START_DEFAULT = "22:00"
+QUIET_END_DEFAULT = "07:00"
+
+
+def quiet_window(brain: BrainDB) -> tuple[str, str]:
+    """(start, eind) van het stiltevenster uit de runtime-Config (zelfde node
+    als briefing_time), met defaults 22:00–07:00. Zacht falend."""
+    try:
+        rows = brain.run(
+            "MATCH (c:Config {id:'runtime'}) "
+            "RETURN c.quiet_start AS s, c.quiet_end AS e"
+        )
+    except Exception:
+        return QUIET_START_DEFAULT, QUIET_END_DEFAULT
+    row = rows[0] if rows else {}
+    return (row.get("s") or QUIET_START_DEFAULT,
+            row.get("e") or QUIET_END_DEFAULT)
+
+
+def _set_quiet(brain: BrainDB, prop: str, value: str, default: str) -> str:
+    value = value.strip() or default
+    try:
+        datetime.strptime(value, "%H:%M")
+    except ValueError:
+        raise ValueError(f"Ongeldig tijdstip: {value!r} (verwacht HH:MM)")
+    brain.run(
+        f"MERGE (c:Config {{id:'runtime'}}) SET c.{prop} = $t", t=value
+    )
+    return value
+
+
+def set_quiet_start(brain: BrainDB, value: str) -> str:
+    return _set_quiet(brain, "quiet_start", value, QUIET_START_DEFAULT)
+
+
+def set_quiet_end(brain: BrainDB, value: str) -> str:
+    return _set_quiet(brain, "quiet_end", value, QUIET_END_DEFAULT)
+
+
+def quiet_hours_active(brain: BrainDB, now: datetime | None = None) -> bool:
+    """Zit 'now' (default now_local) binnen het stiltevenster? Ondersteunt een
+    venster dat over middernacht loopt (22:00–07:00). Faalt zacht naar False
+    (bij twijfel niet onderdrukken — huidige 24/7-gedrag als vangnet)."""
+    try:
+        start_s, end_s = quiet_window(brain)
+        start = datetime.strptime(start_s, "%H:%M").time()
+        end = datetime.strptime(end_s, "%H:%M").time()
+    except Exception:
+        return False
+    cur = (now or now_local()).time()
+    if start == end:
+        return False  # leeg venster = altijd stil zou pushes doden -> uit
+    if start < end:
+        return start <= cur < end
+    # over middernacht: actief vanaf start tot eind de volgende ochtend
+    return cur >= start or cur < end
+
+
+def send_respecting_quiet(tg: Any, text: str, brain: BrainDB,
+                          urgent: bool = False) -> bool:
+    """Stuur een Telegram-push, maar respecteer de stille uren: een niet-urgente
+    push tijdens het stiltevenster wordt overgeslagen (en gelogd). Urgente
+    pushes breken altijd door. Geeft True terug als er echt verstuurd is."""
+    if not urgent and quiet_hours_active(brain):
+        title = (text or "").strip().splitlines()[0][:60] if text else ""
+        print(f"[quiet] push onderdrukt (stille uren): {title}", flush=True)
+        return False
+    tg.send(text)
+    return True
+
+
 def generate_daily(
     brain: BrainDB,
     llm: LLMClient,
@@ -395,7 +470,10 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
             inbox.add(kind="notify", title="Dagafsluiting", detail=evening["spoken"][:240])
         tg = state.get("telegram")
         if tg is not None and tg.linked:
-            await asyncio.to_thread(tg.send, "🌇 DAGAFSLUITING\n\n" + evening["spoken"])
+            # dagafsluiting mag wachten tot na de stille uren
+            await asyncio.to_thread(send_respecting_quiet, tg,
+                                    "🌇 DAGAFSLUITING\n\n" + evening["spoken"],
+                                    state["brain"])
 
     async def do_consolidate() -> None:
         result = await asyncio.to_thread(
@@ -429,7 +507,10 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
                 inbox.add(kind="notify", title="Weekreview", detail=review[:240])
             tg = state.get("telegram")
             if tg is not None and tg.linked:
-                await asyncio.to_thread(tg.send, "📊 WEEKREVIEW\n\n" + review)
+                # weekreview mag wachten tot na de stille uren
+                await asyncio.to_thread(send_respecting_quiet, tg,
+                                        "📊 WEEKREVIEW\n\n" + review,
+                                        state["brain"])
 
     # interval-administratie: 'elke ~30 min' mag nooit afhangen van het
     # toevallig raken van een specifieke minuut (een trage tick mist die)

@@ -18,7 +18,7 @@ from datetime import datetime
 from typing import Any
 
 from span import AGENT_NAME
-from span.jarvis.daily import now_local
+from span.jarvis.daily import now_local, send_respecting_quiet
 
 TRIAGE_PROMPT = "Je bent het triage-subsysteem van " + AGENT_NAME + """, de JARVIS van Bas Spaan
 (installatietechniek, Lomans). Hieronder één nieuwe e-mail. Classificeer:
@@ -329,8 +329,26 @@ def execute_approval(item: dict[str, Any], o365: Any, llm: Any = None,
     return {}
 
 
+def _degrade_by_feedback(action: str, mail: dict[str, Any],
+                         feedback: list[dict[str, Any]] | None) -> str:
+    """Post-classificatie feedback-lus: degradeer 'notify' naar 'ignore' voor een
+    afzender die Bas structureel wegklikt. needs_reply blijft altijd staan (te
+    belangrijk). Faalt zacht: bij twijfel de originele actie behouden."""
+    if action != "notify" or not feedback:
+        return action
+    try:
+        from span.jarvis.feedback import suppressed_notify_senders
+        frm = (mail.get("from") or "").strip().lower()
+        if frm and frm in suppressed_notify_senders(feedback):
+            return "ignore"
+    except Exception:
+        pass
+    return action
+
+
 def triage_message(llm: Any, light_model: str | None, mail: dict[str, Any],
-                   rules: str = "", injection_scan: bool = True) -> dict[str, Any]:
+                   rules: str = "", injection_scan: bool = True,
+                   feedback: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Eén mail classificeren; faalt zacht naar notify."""
     # F1.4 — deterministische injectie-scan vóór het LLM erover oordeelt. Dit is
     # niet afhankelijk van het model: detecteert een mail die zich tot de AI
@@ -377,7 +395,7 @@ def triage_message(llm: Any, light_model: str | None, mail: dict[str, Any],
                 "urgency": "high",
             }
         return {
-            "action": action,
+            "action": _degrade_by_feedback(action, mail, feedback),
             "summary": parsed.get("summary") or mail.get("subject") or "",
             "urgency": parsed.get("urgency", "normal"),
         }
@@ -434,6 +452,14 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
                 state["triage_rules"] = (rows[0]["r"] if rows else None) or ""
             except Exception:
                 pass
+            # feedback-lus: afzenders die Bas structureel wegklikt laten we de
+            # triage degraderen. Eén keer per tick ophalen (zacht falend).
+            feedback: list[dict[str, Any]] = []
+            try:
+                from span.jarvis.feedback import feedback_summary
+                feedback = feedback_summary(state["brain"])
+            except Exception:
+                feedback = []
             # token-bewaking: silent refresh gebeurt bij elke check; verloopt
             # de koppeling toch (Lomans sign-in frequency, 8u) → één melding
             now_auth = o365 is not None and await asyncio.to_thread(o365.is_authenticated)
@@ -447,10 +473,12 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
                 )
                 tg = state.get("telegram")
                 if tg is not None and tg.linked:
+                    # token verlopen = urgent: breekt door de stille uren heen
                     await asyncio.to_thread(
-                        tg.send,
+                        send_respecting_quiet, tg,
                         "🔐 Je Microsoft 365-login is verlopen (8-uursbeleid van "
                         "Lomans). Stuur /login om opnieuw te koppelen.",
+                        state["brain"], True,
                     )
             state["o365_authenticated"] = now_auth
 
@@ -475,7 +503,10 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
                                   urgency="high", owner=owner_db)
                         tg = state.get("telegram")
                         if tg is not None and tg.linked:
-                            await asyncio.to_thread(tg.send, "📋 MEETING PREP\n" + detail)
+                            # meeting prep mag wachten tot na de stille uren
+                            await asyncio.to_thread(
+                                send_respecting_quiet, tg,
+                                "📋 MEETING PREP\n" + detail, state["brain"])
                 while len(prepped) > 100:  # oudste eruit, niet willekeurig
                     prepped.pop(next(iter(prepped)))
                 mails = await asyncio.to_thread(o365.inbox, 15, True)
@@ -491,6 +522,7 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
                         state["settings"].model_light, mail,
                         state.get("triage_rules", ""),
                         (state.get("security") or {}).get("injection_scan", True),
+                        feedback,
                     )
                     if triage["action"] == "ignore":
                         continue

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -937,6 +938,130 @@ class TestDaily:
         llm.chat.side_effect = RuntimeError("orq down")
         out = generate_daily(brain, llm)
         assert out["spoken"]  # valt terug op greeting
+
+
+class TestStilleUren:
+    """Thema PROACTIEVER — item 1: niet-urgente pushes wachten 's nachts."""
+
+    @staticmethod
+    def _brain(start="22:00", end="07:00"):
+        brain = MagicMock()
+        brain.run.return_value = [{"s": start, "e": end}]
+        return brain
+
+    def test_quiet_hours_active_binnen_venster(self):
+        from span.jarvis.daily import quiet_hours_active
+        now = datetime(2026, 7, 7, 23, 30)  # 23:30 valt binnen 22:00-07:00
+        assert quiet_hours_active(self._brain(), now) is True
+
+    def test_quiet_hours_active_buiten_venster(self):
+        from span.jarvis.daily import quiet_hours_active
+        now = datetime(2026, 7, 7, 12, 0)  # midden op de dag
+        assert quiet_hours_active(self._brain(), now) is False
+
+    def test_quiet_hours_over_middernacht(self):
+        from span.jarvis.daily import quiet_hours_active
+        # venster loopt over middernacht: 03:00 is stil, 07:00 en 21:00 niet
+        assert quiet_hours_active(self._brain(), datetime(2026, 7, 7, 3, 0)) is True
+        assert quiet_hours_active(self._brain(), datetime(2026, 7, 7, 7, 0)) is False
+        assert quiet_hours_active(self._brain(), datetime(2026, 7, 7, 21, 0)) is False
+
+    def test_quiet_hours_niet_over_middernacht(self):
+        from span.jarvis.daily import quiet_hours_active
+        # venster binnen dezelfde dag: 13:00-14:00
+        brain = self._brain("13:00", "14:00")
+        assert quiet_hours_active(brain, datetime(2026, 7, 7, 13, 30)) is True
+        assert quiet_hours_active(brain, datetime(2026, 7, 7, 23, 0)) is False
+
+    def test_quiet_hours_db_fout_valt_terug_op_default_venster(self):
+        from span.jarvis.daily import quiet_hours_active
+        brain = MagicMock()
+        brain.run.side_effect = RuntimeError("db weg")
+        # quiet_window valt zacht terug op 22:00-07:00 -> 03:00 blijft stil
+        assert quiet_hours_active(brain, datetime(2026, 7, 7, 3, 0)) is True
+
+    def test_quiet_hours_kapotte_tijd_faalt_zacht_naar_false(self):
+        from span.jarvis.daily import quiet_hours_active
+        # onparseerbare tijd in de config -> niet onderdrukken (fail-open)
+        assert quiet_hours_active(self._brain("kwart voor", "07:00"),
+                                  datetime(2026, 7, 7, 3, 0)) is False
+
+    def test_send_respecting_quiet_skipt_niet_urgent_in_stilte(self, monkeypatch):
+        from span.jarvis import daily
+        monkeypatch.setattr(daily, "now_local", lambda: datetime(2026, 7, 7, 23, 30))
+        tg = MagicMock()
+        sent = daily.send_respecting_quiet(tg, "🌇 DAGAFSLUITING", self._brain())
+        assert sent is False
+        tg.send.assert_not_called()
+
+    def test_send_respecting_quiet_laat_urgent_door_in_stilte(self, monkeypatch):
+        from span.jarvis import daily
+        monkeypatch.setattr(daily, "now_local", lambda: datetime(2026, 7, 7, 23, 30))
+        tg = MagicMock()
+        sent = daily.send_respecting_quiet(tg, "🔐 login verlopen", self._brain(),
+                                           urgent=True)
+        assert sent is True
+        tg.send.assert_called_once()
+
+    def test_send_respecting_quiet_altijd_door_buiten_stilte(self, monkeypatch):
+        from span.jarvis import daily
+        monkeypatch.setattr(daily, "now_local", lambda: datetime(2026, 7, 7, 12, 0))
+        tg = MagicMock()
+        sent = daily.send_respecting_quiet(tg, "📋 MEETING PREP", self._brain())
+        assert sent is True
+        tg.send.assert_called_once()
+
+
+class TestTriageFeedbackLus:
+    """Thema PROACTIEVER — item 2: afzenders die Bas wegklikt degraderen."""
+
+    @staticmethod
+    def _llm(action):
+        llm = MagicMock()
+        llm.chat_json.return_value = {"action": action, "summary": "s",
+                                      "urgency": "normal"}
+        return llm
+
+    def test_notify_van_weggeklikte_afzender_degradeert_naar_ignore(self):
+        from span.jarvis.ambient import triage_message
+        mail = {"from": "Nieuwsbrief@Shop.com", "subject": "aanbieding",
+                "preview": "korting"}
+        feedback = [{"type": "notify:nieuwsbrief@shop.com", "approved": 1,
+                     "rejected": 4, "reject_ratio": 0.8}]
+        out = triage_message(self._llm("notify"), None, mail, injection_scan=False,
+                             feedback=feedback)
+        assert out["action"] == "ignore"
+
+    def test_notify_zonder_signaal_blijft_notify(self):
+        from span.jarvis.ambient import triage_message
+        mail = {"from": "collega@lomans.nl", "subject": "besluit", "preview": "fyi"}
+        # te weinig datapunten (2 < 3): niet degraderen
+        feedback = [{"type": "notify:collega@lomans.nl", "approved": 0,
+                     "rejected": 2, "reject_ratio": 1.0}]
+        out = triage_message(self._llm("notify"), None, mail, injection_scan=False,
+                             feedback=feedback)
+        assert out["action"] == "notify"
+
+    def test_needs_reply_wordt_nooit_gedegradeerd(self):
+        from span.jarvis.ambient import triage_message
+        mail = {"from": "klant@x.com", "subject": "vraag", "preview": "kun je?"}
+        # zelfs met overweldigend afwijs-signaal blijft needs_reply staan
+        feedback = [{"type": "notify:klant@x.com", "approved": 0, "rejected": 9,
+                     "reject_ratio": 1.0}]
+        out = triage_message(self._llm("needs_reply"), None, mail,
+                             injection_scan=False, feedback=feedback)
+        assert out["action"] == "needs_reply"
+
+    def test_faalt_zacht_bij_lege_en_foute_feedback(self):
+        from span.jarvis.ambient import triage_message
+        mail = {"from": "x@y.com", "subject": "s", "preview": "p"}
+        # geen feedback
+        assert triage_message(self._llm("notify"), None, mail,
+                              injection_scan=False, feedback=None)["action"] == "notify"
+        # kapotte feedback-structuur mag niet crashen
+        out = triage_message(self._llm("notify"), None, mail, injection_scan=False,
+                             feedback=[{"rommel": 1}])
+        assert out["action"] == "notify"
 
 
 class TestZelflerendSysteem:

@@ -65,6 +65,10 @@
       }
 
       if (s.briefing_time) $("set-briefing-time").value = s.briefing_time;
+      if (s.quiet_hours) {
+        if (s.quiet_hours.start) $("set-quiet-start").value = s.quiet_hours.start;
+        if (s.quiet_hours.end) $("set-quiet-end").value = s.quiet_hours.end;
+      }
       if (s.tools) renderToolPerms(s.tools);
       const sp = $("set-sysprompt");
       if (sp && !sp.dataset.touched) {
@@ -147,6 +151,21 @@
     overlay.classList.remove("open");
     SPAN.sys("Dagstart genereren…");
     if (SPAN.playDaily) SPAN.playDaily(true);
+  };
+  $("set-quiet-save").onclick = async () => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { ...SPAN.authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ quiet_start: $("set-quiet-start").value,
+          quiet_end: $("set-quiet-end").value }),
+      });
+      const d = await res.json();
+      if (!res.ok) { SPAN.sys(d.detail || "Stille uren opslaan mislukt", "warn"); return; }
+      const q = d.quiet_hours || {};
+      SPAN.sys(`Stille uren: ${q.start}–${q.end} — niet-urgente pushes wachten dan.`);
+      SPAN.chime(740, .1);
+    } catch (e) { SPAN.sys("Stille uren opslaan mislukt.", "warn"); }
   };
 
   /* -- QR-code: Span op je telefoon ------------------------------------ */
