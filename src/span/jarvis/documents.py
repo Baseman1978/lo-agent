@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from span import AGENT_NAME
 from span.config import PROJECT_ROOT
 
 CHUNK_SIZE = 1400
@@ -31,7 +32,7 @@ MARKITDOWN_TYPES = (".pdf", ".docx", ".pptx", ".xlsx", ".xls", ".html", ".htm",
                     ".eml", ".csv", ".json", ".xml")
 TEXT_TYPES = (".txt", ".md")
 
-META_PROMPT = """Je bent het document-subsysteem van Span. Hieronder het begin van een
+META_PROMPT = "Je bent het document-subsysteem van " + AGENT_NAME + """. Hieronder het begin van een
 document dat Bas aan zijn geheugen toevoegt. Lever:
 1. summary: Nederlandse samenvatting van 3-6 zinnen — waar gaat het over,
    kernpunten, waarom bewaren.

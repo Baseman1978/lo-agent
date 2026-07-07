@@ -12,6 +12,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Any
 
+from span import AGENT_NAME
 # re-export: ambient.py en crons.py importeren de klok van hieruit
 from span.clock import TZ, now_local, today_local  # noqa: F401
 from span.db.brain import BrainDB
@@ -20,18 +21,20 @@ from span.llm.client import LLMClient
 
 DEFAULT_TIME = "07:00"
 
-SPOKEN_PROMPT = """Je bent Span, de JARVIS van Bas. Hieronder de ruwe dagstart-data (JSON).
+SPOKEN_PROMPT = "Je bent " + AGENT_NAME + """, de JARVIS van Bas. Hieronder de ruwe dagstart-data (JSON).
 Schrijf een gesproken ochtendbriefing in het Nederlands: 3 tot 6 zinnen,
-warm maar zakelijk, JARVIS-toon. Noem alleen wat er echt is: afspraken met
+kordaat en met overzicht, als een stafchef die zijn CEO brieft — eerst de kern,
+dan details. Noem alleen wat er echt is: afspraken met
 tijden, agenda-conflicten, urgente mail, onbeantwoorde vragen (followups),
 taken met deadlines, stilgevallen quests (stale). Niets verzinnen;
 lege onderdelen oversla je. Sluit af met één concrete focus-suggestie.
 Antwoord met uitsluitend de gesproken tekst."""
 
-EVENING_PROMPT = """Je bent Span, de JARVIS van Bas. Hieronder de stand van zaken (JSON).
+EVENING_PROMPT = "Je bent " + AGENT_NAME + """, de JARVIS van Bas. Hieronder de stand van zaken (JSON).
 Schrijf een korte gesproken dagafsluiting in het Nederlands: 2 tot 4 zinnen.
 Wat bleef vandaag liggen (onbeantwoorde vragen, open taken), en wat is morgen
-de eerste afspraak. Sluit warm af. Antwoord met uitsluitend de gesproken tekst."""
+de eerste afspraak. Kordaat en met overzicht, als een stafchef die zijn CEO
+brieft — eerst de kern, dan details. Antwoord met uitsluitend de gesproken tekst."""
 
 CONSOLIDATE_PROMPT = """Je bent het slaap-subsysteem van een AI-agent met een Neo4j-geheugen.
 Hieronder recente MemoryFragments (JSON: id, type, content). Doe twee dingen:
@@ -128,7 +131,7 @@ def _store_insight(brain, llm, content: str, source: str) -> str:
     return node_id
 
 
-WEEKREVIEW_PROMPT = """Je bent Span. Hieronder de sessie-samenvattingen en fragmenten van
+WEEKREVIEW_PROMPT = "Je bent " + AGENT_NAME + """. Hieronder de sessie-samenvattingen en fragmenten van
 deze week (JSON). Schrijf een weekreview in het Nederlands: 4-6 zinnen — wat is
 bereikt, wat schoof door, welk patroon valt op. Eerlijk, geen opsmuk.
 Antwoord met uitsluitend de tekst."""

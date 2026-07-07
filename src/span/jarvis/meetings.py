@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from typing import Any
 
-ACTIONS_PROMPT = """Je bent het meeting-subsysteem van Span, de JARVIS van Bas Spaan.
+from span import AGENT_NAME
+
+ACTIONS_PROMPT = "Je bent het meeting-subsysteem van " + AGENT_NAME + """, de JARVIS van Bas Spaan.
 Hieronder de actiepunten-tekst uit een vergadertranscript (Fireflies).
 Filter UITSLUITEND actiepunten die voor Bas zelf zijn (toegewezen aan Bas,
 of duidelijk zijn verantwoordelijkheid). Maak er concrete taaknamen van.

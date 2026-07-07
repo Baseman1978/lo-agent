@@ -39,20 +39,58 @@ SPAN.setState = (next) => {
 };
 
 /* -- "bezig"-indicator in de chat (tijdens denken/tool-aanroepen) -------- */
+// Eerste persoon, alsof LO het zelf zegt tijdens het werk ("Ik zoek even in je
+// mail…"). Puur cosmetisch — de aanroeper plakt er "…" achter.
 const TOOL_LABELS = {
-  o365_mail_search: "🔎 Mail zoeken (alle mappen)", o365_archive_folder: "📥 Mailmap archiveren",
-  o365_attachment_read: "📎 Bijlage lezen", o365_mail_attachments: "📎 Bijlagen ophalen",
-  o365_mail_inbox: "📧 Inbox lezen", o365_mail_folders: "📂 Mappen ophalen",
-  o365_calendar: "📅 Agenda lezen", o365_calendar_search: "📅 Agenda doorzoeken",
-  o365_files_search: "📁 Bestanden zoeken", o365_file_read: "📄 Bestand lezen",
-  o365_sharepoint_search: "🗂️ SharePoint doorzoeken", o365_teams_search: "💬 Teams doorzoeken",
-  o365_people_search: "👤 Personen zoeken", o365_thread_summary: "📧 Mailthread samenvatten",
-  o365_mail_send: "✉️ Mail klaarzetten", o365_event_create: "📅 Afspraak klaarzetten",
-  brain_search: "🧠 Geheugen doorzoeken", brain_cypher: "🧠 Brein bevragen",
-  remember: "🧠 Onthouden", web_search: "🌐 Web zoeken", web_read: "🌐 Webpagina lezen",
-  asana_search: "✅ Asana doorzoeken", jarvis_briefing: "🗞️ Briefing maken",
+  o365_mail_search: "🔎 Ik zoek even in je mail", o365_archive_folder: "📥 Ik archiveer een mailmap",
+  o365_attachment_read: "📎 Ik lees een bijlage", o365_mail_attachments: "📎 Ik pak de bijlagen erbij",
+  o365_mail_inbox: "📧 Ik kijk in je inbox", o365_mail_folders: "📂 Ik haal je mappen op",
+  o365_calendar: "📅 Ik pak je agenda erbij", o365_calendar_search: "📅 Ik zoek in je agenda",
+  o365_files_search: "📁 Ik zoek in je bestanden", o365_file_read: "📄 Ik lees een bestand",
+  o365_sharepoint_search: "🗂️ Ik zoek in SharePoint", o365_teams_search: "💬 Ik zoek in Teams",
+  o365_people_search: "👤 Ik zoek een persoon", o365_thread_summary: "📧 Ik vat de mailthread samen",
+  o365_mail_send: "✉️ Ik zet een mail klaar", o365_event_create: "📅 Ik zet een afspraak klaar",
+  brain_search: "🧠 Ik raadpleeg mijn geheugen", brain_cypher: "🧠 Ik bevraag mijn brein",
+  remember: "🧠 Ik leg dit vast", web_search: "🌐 Ik zoek op het web", web_read: "🌐 Ik lees een webpagina",
+  asana_search: "✅ Ik zoek in Asana", jarvis_briefing: "🗞️ Ik maak je briefing",
+  // afspraken
+  o365_event_get: "📅 Ik pak de afspraak erbij", o365_event_update: "📅 Ik pas de afspraak aan",
+  o365_event_delete: "🗑️ Ik verwijder de afspraak", o365_event_cancel: "📅 Ik zeg de afspraak af",
+  o365_event_respond: "📅 Ik reageer op de uitnodiging",
+  // taken (To Do)
+  o365_todo_list: "✅ Ik kijk in je taken", o365_todo_lists: "✅ Ik haal je takenlijsten op",
+  o365_todo_create: "✅ Ik zet een taak klaar", o365_todo_complete: "✅ Ik vink een taak af",
+  o365_todo_update: "✅ Ik werk een taak bij", o365_todo_delete: "🗑️ Ik verwijder een taak",
+  // bestanden & mappen
+  o365_drive_browse: "📁 Ik blader door je bestanden", o365_file_create: "📄 Ik maak een bestand aan",
+  o365_file_move_rename: "📄 Ik verplaats of hernoem een bestand", o365_file_copy: "📄 Ik kopieer een bestand",
+  o365_file_delete: "🗑️ Ik verwijder een bestand", o365_file_share_link: "🔗 Ik maak een deellink",
+  o365_folder_create: "📂 Ik maak een map aan",
+  // mail-acties
+  o365_mail_reply_send: "✉️ Ik zet een antwoord klaar", o365_mail_forward_send: "✉️ Ik zet een doorstuur-mail klaar",
+  o365_mail_rules_list: "📋 Ik bekijk je mailregels", o365_mail_rule_create: "📋 Ik maak een mailregel",
+  o365_mail_rule_delete: "🗑️ Ik verwijder een mailregel",
+  // SharePoint & contacten
+  o365_sharepoint_lists: "🗂️ Ik bekijk de SharePoint-lijsten", o365_sharepoint_list_items: "🗂️ Ik lees een SharePoint-lijst",
+  o365_contacts_list: "👤 Ik kijk in je contacten", o365_contact_search: "👤 Ik zoek een contact",
+  o365_contact_create: "👤 Ik voeg een contact toe", o365_contact_update: "👤 Ik werk een contact bij",
+  // Teams
+  o365_teams_chats: "💬 Ik kijk in je Teams-chats", o365_teams_chat_messages: "💬 Ik lees een Teams-chat",
+  o365_teams_chat_send: "💬 Ik stuur een Teams-bericht",
+  // Asana
+  asana_my_tasks: "✅ Ik kijk in je Asana-taken", asana_task_create: "✅ Ik zet een Asana-taak klaar",
+  asana_task_complete: "✅ Ik vink een Asana-taak af", asana_task_update: "✅ Ik werk een Asana-taak bij",
+  asana_task_detail: "✅ Ik pak de Asana-taak erbij", asana_projects: "✅ Ik bekijk je Asana-projecten",
+  asana_comment_add: "✅ Ik plaats een opmerking in Asana",
+  // Fireflies
+  fireflies_meetings: "🎙️ Ik haal je meetings op", fireflies_search: "🎙️ Ik zoek in je meetings",
+  fireflies_transcript_detail: "🎙️ Ik lees een meeting-transcript", fireflies_sync: "🎙️ Ik haal nieuwe meetings binnen",
+  fireflies_meeting_delete: "🗑️ Ik verwijder een meeting",
+  // overig
+  telegram_notify: "📱 Ik stuur je een Telegram-bericht",
+  triage_rules_get: "📋 Ik bekijk je triage-regels", triage_rules_set: "📋 Ik werk je triage-regels bij",
 };
-SPAN.toolLabel = (n) => TOOL_LABELS[n] || ("⚙ " + String(n).replace(/^o365_/, "").replace(/_/g, " "));
+SPAN.toolLabel = (n) => TOOL_LABELS[n] || ("Ik gebruik " + String(n).replace(/^o365_/, "").replace(/_/g, " "));
 SPAN.working = (text) => {
   const log = $("log"); if (!log) return;
   let el = document.getElementById("working");
@@ -818,7 +856,7 @@ SPAN.applyPanelLayout(SPAN.panelLayout());
   if (!gl2) { console.warn("[nebula] geen WebGL2 - geen 3D-scene"); return; }
   SPAN._nebula = true;
   document.body.classList.add("nebula-on");
-  import("/static/hud/nebula.js?v=73").then((m) => {
+  import("/static/hud/nebula.js?v=74").then((m) => {
     const center = document.getElementById("center");
     if (!center) return;
     const bg = document.createElement("div");

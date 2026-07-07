@@ -307,7 +307,40 @@
     speakChunk(text, true);
   };
 
-  /* streaming: zinnen voorlezen terwijl het antwoord nog binnenstroomt */
+  /* streaming: zinnen voorlezen terwijl het antwoord nog binnenstroomt.
+     Een naïeve splitser breekt op elke punt — ook na afkortingen ("bijv.",
+     "d.w.z.") en in getallen ("3.14", "1.000") — en dat hakkelt mid-zin.
+     sentenceEnd() breekt daarom alleen op een écht zin-eind: leesteken +
+     witruimte + een nieuwe zin (hoofdletter/cijfer/aanhaling), en nooit vlak
+     na een bekende afkorting of tussen cijfers. */
+  const TTS_ABBREV = new Set([
+    "bijv", "bijvb", "ca", "nr", "o.a", "d.w.z", "dwz", "z.g", "zg", "ing",
+    "dr", "ir", "mr", "drs", "prof", "tel", "resp", "incl", "excl", "max",
+    "min", "evt", "enz", "etc", "blz", "pag", "vgl", "t.o.v", "n.a.v",
+    "i.v.m", "i.p.v", "m.b.t", "a.s", "z.s.m", "jl", "pers",
+  ]);
+  function sentenceEnd(buf) {
+    // vroegste echte zinsgrens; retourneert de te knippen lengte, of -1
+    const re = /[.!?]/g;
+    let m;
+    while ((m = re.exec(buf)) !== null) {
+      const i = m.index;
+      const after = buf.slice(i + 1);
+      const sp = after.match(/^([ \t\n]+)(\S)?/);
+      if (!sp) continue;                 // geen witruimte -> geen grens (3.14)
+      if (sp[2] === undefined) return -1; // nog niets ná de spatie -> wachten
+      if (buf[i] === ".") {
+        const before = buf.slice(0, i).match(/(\S+)$/);
+        const tok = before ? before[1].toLowerCase().replace(/[^a-z.]/g, "") : "";
+        if (TTS_ABBREV.has(tok) || TTS_ABBREV.has(tok.replace(/\.+$/, ""))) continue;
+        if (/\d$/.test(buf.slice(0, i)) && /^\d/.test(after)) continue;  // getal
+      }
+      // een nieuwe zin begint met hoofdletter, cijfer of aanhaling
+      if (!/[A-ZÀ-ÖØ-Þ0-9"'(\[]/.test(sp[2])) continue;
+      return i + 1 + sp[1].length;
+    }
+    return -1;
+  }
   let streamBuf = "", firstChunk = true;
   SPAN.speakDelta = (delta) => {
     if (!SPAN.speakOn || SPAN._muteStream) return;
@@ -318,15 +351,20 @@
       firstChunk = true;   // nieuw antwoord -> eerste fragment snel laten klinken
     }
     streamBuf += delta;
-    // eerste fragment ook op een komma/zinsdeel breken zodat het geluid eerder
-    // begint (XTTS rendert ~evenredig met de lengte); daarna per hele zin
-    const pat = firstChunk ? /^[\s\S]*?[,;:.!?]\s/ : /^[\s\S]*?[.!?]\s/;
     const minLen = firstChunk ? 14 : 30;
-    const m = streamBuf.match(pat);
-    if (m && m[0].length >= minLen) {
-      speakChunk(m[0], false);
+    let cut = sentenceEnd(streamBuf);
+    if (cut < minLen) cut = -1;
+    if (firstChunk) {
+      // eerste fragment ook op een komma/zinsdeel breken zodat het geluid eerder
+      // begint (XTTS rendert ~evenredig met de lengte); daarna per hele zin
+      const early = streamBuf.match(/^[\s\S]*?[,;:]\s/);
+      if (early && early[0].length >= minLen && (cut === -1 || early[0].length < cut))
+        cut = early[0].length;
+    }
+    if (cut >= minLen) {
+      speakChunk(streamBuf.slice(0, cut), false);
       firstChunk = false;
-      streamBuf = streamBuf.slice(m[0].length);
+      streamBuf = streamBuf.slice(cut);
     }
   };
   SPAN.speakFlush = () => {
