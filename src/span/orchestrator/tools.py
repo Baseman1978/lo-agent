@@ -27,7 +27,8 @@ from span.orchestrator.tool_specs import (  # noqa: F401  (re-export)
 _UNTRUSTED_OUTPUT_TOOLS = {"o365_mail_inbox", "o365_thread_summary", "fireflies_meetings",
                            # transcript-inhoud is door derden gesproken tekst
                            "fireflies_search", "fireflies_transcript_detail",
-                           "o365_mail_search", "o365_file_read", "o365_sharepoint_search",
+                           "o365_mail_search", "o365_mail_read", "o365_file_read",
+                           "o365_sharepoint_search",
                            "o365_teams_search", "o365_attachment_read", "o365_excel_read",
                            "o365_unanswered_sent", "o365_powerbi_reports",
                            "o365_powerbi_dashboards", "o365_powerbi_datasets",
@@ -35,6 +36,9 @@ _UNTRUSTED_OUTPUT_TOOLS = {"o365_mail_inbox", "o365_thread_summary", "fireflies_
                            "o365_event_get",  # uitnodigings-body is door derden geschreven
                            "o365_sharepoint_list_items",  # lijstitems zijn door derden ingevuld
                            "o365_teams_chat_messages",  # chatberichten zijn door derden geschreven
+                           # woordelijk gespreksgeheugen: kan door-derden-tekst bevatten
+                           # die de gebruiker ooit citeerde -> als data omkaderen
+                           "conversation_search",
                            "asana_comments"}  # comments zijn door derden geschreven
 
 # -- TOOL-RETRIEVAL (thema) -------------------------------------------------
@@ -379,6 +383,24 @@ class ToolBox:
         # ook via procedures die de regex niet kent
         return self._brain.run_read(query)[:50]
 
+    def _tool_conversation_search(self, query: str, top: int = 8) -> Any:
+        """Zoek in het woordelijke gespreksgeheugen (Message-knopen) — wat is er
+        eerder over en weer gezegd. Semantisch via de message_embedding-index."""
+        embedding = self._fragments.embed(query)
+        hits = self._brain.vector_search("message_embedding", embedding,
+                                         k=min(int(top), 20))
+        out: list[dict[str, Any]] = []
+        for h in hits:
+            node = h.get("node") or {}
+            out.append({
+                "role": node.get("role"),
+                "text": (node.get("text") or "")[:200],
+                "session_id": node.get("session_id"),
+                "date": str(node.get("created") or "")[:10],
+                "score": round(float(h.get("score") or 0.0), 4),
+            })
+        return out
+
     def _tool_remember(self, type: str, content: str, context: str = "",
                        scope: str = "algemeen") -> Any:
         mf_id = self._fragments.write(
@@ -549,6 +571,24 @@ class ToolBox:
 
     def _tool_o365_mail_inbox(self, top: int = 10, unread_only: bool = False) -> Any:
         return self._require_o365().inbox(top=top, unread_only=unread_only)
+
+    def _tool_o365_mail_read(self, message_id: str, to_memory: bool = False) -> Any:
+        """Lees de VOLLEDIGE mailtekst (niet alleen de ~200-teken preview). Bij
+        to_memory=True gaat de mail óók het geheugen in (chunks + samenvatting),
+        net als o365_file_read — de mailinhoud is door derden geschreven, dus de
+        chunks landen als untrusted ingest."""
+        msg = self._require_o365().read_message(message_id)
+        if to_memory:
+            from span.jarvis.documents import ingest_document
+            state = {"brain": self._brain, "llm": self._llm,
+                     "settings": type("S", (), {"model_light": self._light_model})()}
+            naam = f"E-mail — {msg.get('subject') or 'zonder onderwerp'}.txt"
+            tekst = (f"Onderwerp: {msg.get('subject')}\nVan: {msg.get('from')}\n"
+                     f"Ontvangen: {msg.get('received')}\n\n{msg.get('text')}")
+            res = ingest_document(state, naam, tekst.encode("utf-8"))
+            res["mail"] = msg.get("subject")
+            return res
+        return msg
 
     def _tool_o365_mail_send(self, to: list[str], subject: str, body: str,
                              cc: list[str] | None = None,

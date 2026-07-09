@@ -238,6 +238,7 @@ class SpanAgent:
         self._messages: list[dict[str, Any]] = []
         self._bootstrap: BootstrapContext | None = None
         self._recorders: list[threading.Thread] = []
+        self._msg_seq = 0  # oplopend volgnummer per sessie (woordelijk gespreksgeheugen)
 
     @property
     def fragments(self) -> FragmentStore:
@@ -258,6 +259,7 @@ class SpanAgent:
     def begin(self, session_id: str, first_message: str | None = None) -> BootstrapContext:
         """Bootstrap: cirkel rond — vorige sessies komen mee als context."""
         self._session_id = session_id
+        self._msg_seq = 0  # nieuwe sessie -> volgnummer opnieuw vanaf 1
         self._toolbox = ToolBox(
             self._brain, self._fragments, session_id, self._work,
             o365=self._o365, asana=self._asana,
@@ -506,6 +508,14 @@ class SpanAgent:
             )
             recorder.start()
             self._recorders.append(recorder)
+            # woordelijk gespreksgeheugen: naast de gedestilleerde fragmenten van
+            # _record_turn ook de LETTERLIJKE beurt-tekst persisteren (twee
+            # Message-knopen). Zelfde achtergrond-daemon-patroon, fail-stil.
+            persist = threading.Thread(
+                target=self._persist_messages, args=(user_message, answer), daemon=True
+            )
+            persist.start()
+            self._recorders.append(persist)
 
         # Plan-Execute-VERIFY sluiten: toets na een beurt de open stappen van de
         # actieve plan-quest. Alleen als er deze beurt tools zijn gebruikt (dan
@@ -682,6 +692,47 @@ class SpanAgent:
         except Exception as exc:
             print(f"[recorder] beurt niet gelogd: {type(exc).__name__}: {exc}", flush=True)
             return []
+
+    def _persist_messages(self, user_message: str, answer: str) -> None:
+        """Woordelijk gespreksgeheugen: schrijf de user- en assistant-tekst als
+        :Message-knopen aan de sessie, elk met een embedding zodat
+        conversation_search semantisch kan terugzoeken.
+
+        LET OP: dit is letterlijke gebruikers/agent-tekst — GEEN grounding-filter
+        (dat geldt alleen voor de gedestilleerde _record_turn-fragmenten). De
+        embedding faalt zacht: zonder embedding wordt de tekst nog steeds bewaard,
+        alleen niet semantisch vindbaar. De hele methode faalt stil: een
+        schrijf-/embed-fout mag de beurt nooit raken."""
+        sid = self.session_id
+        sid_kort = sid.removeprefix("session-")
+        for role, text in (("user", user_message), ("assistant", answer)):
+            text = (text or "").strip()
+            if not text:
+                continue
+            self._msg_seq += 1
+            seq = self._msg_seq
+            msg_id = f"msg-{sid_kort}-{seq}"
+            embedding = None
+            try:
+                embedding = self._fragments.embed(text)
+            except Exception as exc:
+                print(f"[messages] embedding mislukt ({msg_id}): "
+                      f"{type(exc).__name__}: {exc}", flush=True)
+            try:
+                self._brain.run(
+                    """
+                    MATCH (s:Session {id: $sid})
+                    CREATE (s)-[:HAS_MESSAGE]->(:Message {
+                      id: $id, session_id: $sid, role: $role, text: $text,
+                      seq: $seq, created: datetime(), embedding: $embedding
+                    })
+                    """,
+                    sid=sid, id=msg_id, role=role, text=text, seq=seq,
+                    embedding=embedding,
+                )
+            except Exception as exc:
+                print(f"[messages] schrijven mislukt ({msg_id}): "
+                      f"{type(exc).__name__}: {exc}", flush=True)
 
     def _link_entities(self, mf_id: str, entities: list[dict[str, Any]]) -> None:
         """Personen/projecten/bedrijven als Entity-nodes met MENTIONS-edges —

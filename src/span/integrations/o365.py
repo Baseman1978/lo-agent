@@ -340,6 +340,32 @@ class O365Client:
         return {"subject": m.get("subject"),
                 "from": (m.get("from") or {}).get("emailAddress", {}).get("name")}
 
+    def read_message(self, message_id: str, max_chars: int = 8000) -> dict[str, Any]:
+        """Lees de VOLLEDIGE inhoud van één mail (niet alleen de bodyPreview van
+        ~200 tekens). De body kan HTML zijn (body.contentType == 'html') — die
+        wordt met _strip_html tot platte tekst gekaald en afgekapt op max_chars,
+        met een `afgekapt`-vlag zodat het model weet dat er meer was."""
+        m = self._get(f"/me/messages/{message_id}", {
+            "$select": "subject,from,toRecipients,receivedDateTime,body,webLink",
+        })
+        body = m.get("body") or {}
+        content = body.get("content") or ""
+        text = (self._strip_html(content)
+                if (body.get("contentType") or "").lower() == "html"
+                else " ".join((content or "").split()))
+        cap = max(200, int(max_chars))
+        return {
+            "subject": m.get("subject"),
+            "from": (m.get("from") or {}).get("emailAddress", {}).get("name"),
+            "to": [(r.get("emailAddress") or {}).get("name")
+                   or (r.get("emailAddress") or {}).get("address")
+                   for r in m.get("toRecipients") or []],
+            "received": m.get("receivedDateTime"),
+            "text": text[:cap],
+            "afgekapt": len(text) > cap,
+            "link": m.get("webLink"),
+        }
+
     def reply_mail(self, message_id: str, body: str,
                    reply_all: bool = False) -> dict[str, Any]:
         """Beantwoord een mail en VERSTUUR direct (reply of allen-beantwoorden) —
