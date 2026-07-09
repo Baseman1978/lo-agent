@@ -48,6 +48,24 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "conversation_search",
+            "description": "Zoek in eerdere gesprekken met Bas — wat is er eerder over en "
+            "weer gezegd. Doorzoekt het woordelijke gespreksgeheugen (letterlijke "
+            "gebruikers- en agent-berichten) semantisch; geeft per hit rol, tekst, "
+            "sessie-id en datum.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Zoekvraag in natuurlijke taal"},
+                    "top": {"type": "integer", "description": "Aantal resultaten (default 8)"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "remember",
             "description": "Schrijf direct een MemoryFragment in het brein. Gebruik bij "
             "besluiten, ontdekkingen, valkuilen of persoonlijkheidsmomenten — klein en vaak.",
@@ -120,6 +138,25 @@ TOOL_SPECS: list[dict[str, Any]] = [
                     "top": {"type": "integer", "description": "Aantal mails (default 10, max 25)"},
                     "unread_only": {"type": "boolean", "description": "Alleen ongelezen"},
                 },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "o365_mail_read",
+            "description": "Lees de volledige inhoud van een e-mail op message_id — geef "
+            "eerst een lijst op via o365_mail_search/o365_mail_inbox voor de id. Anders "
+            "dan de inbox/zoek-tools (die alleen ~200 tekens preview geven) haalt dit de "
+            "HELE mailtekst op (HTML wordt naar platte tekst gestript). Zet to_memory=true "
+            "om de mail ook in het geheugen op te slaan (chunks + samenvatting).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message_id": {"type": "string", "description": "graph_id uit o365_mail_search/o365_mail_inbox"},
+                    "to_memory": {"type": "boolean", "description": "Ook in geheugen opslaan (default false)"},
+                },
+                "required": ["message_id"],
             },
         },
     },
@@ -1982,7 +2019,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
 ]
 
 
-O365_TOOLS = {"o365_mail_inbox", "o365_mail_send", "o365_calendar", "o365_event_create",
+O365_TOOLS = {"o365_mail_inbox", "o365_mail_read", "o365_mail_send", "o365_calendar", "o365_event_create",
               "o365_draft_reply", "o365_thread_summary",
               "o365_todo_list", "o365_todo_create", "o365_todo_complete",
               "o365_mail_search", "o365_mail_folders", "o365_calendar_search",
@@ -2015,10 +2052,12 @@ O365_TOOLS = {"o365_mail_inbox", "o365_mail_send", "o365_calendar", "o365_event_
 TOOL_META: dict[str, tuple[str, str]] = {
     "brain_search": ("Brein", "read"),
     "brain_cypher": ("Brein", "read"),
+    "conversation_search": ("Gesprekken", "read"),
     "remember": ("Brein", "write"),
     "quest_upsert": ("Brein", "write"),
     "jarvis_briefing": ("Briefing", "read"),
     "o365_mail_inbox": ("O365 Mail", "read"),
+    "o365_mail_read": ("O365 Mail", "read"),
     "o365_mail_search": ("O365 Mail", "read"),
     "o365_mail_folders": ("O365 Mail", "read"),
     "o365_mail_attachments": ("O365 Mail", "read"),

@@ -27,6 +27,7 @@ class BootstrapContext:
     skills: list[dict[str, Any]]
     relevant: list[dict[str, Any]] = field(default_factory=list)
     recent_sessions: list[dict[str, Any]] = field(default_factory=list)
+    prev_conversation: list[dict[str, Any]] = field(default_factory=list)
     insights: list[dict[str, Any]] = field(default_factory=list)
     lessons: list[dict[str, Any]] = field(default_factory=list)
     feedback: list[dict[str, Any]] = field(default_factory=list)
@@ -230,6 +231,32 @@ def load_bootstrap(
         """
     )
 
+    # continuïteit: de laatste ~4 woordelijke berichten van de MEEST RECENTE
+    # sessie mét gesprekstekst, zodat LO de draad van het vorige gesprek oppakt.
+    # Klein gehouden (max 4 regels, elk afgekapt) tegen prompt-bloat; leeg als er
+    # nog geen Message-knopen zijn. Faalt zacht: een fout mag de bootstrap niet raken.
+    prev_conversation: list[dict[str, Any]] = []
+    try:
+        recent_with_msgs = brain.run(
+            """
+            MATCH (s:Session)-[:HAS_MESSAGE]->(:Message)
+            RETURN s.id AS id ORDER BY s.started DESC LIMIT 1
+            """
+        )
+        if recent_with_msgs:
+            tail = brain.run(
+                """
+                MATCH (:Session {id: $sid})-[:HAS_MESSAGE]->(m:Message)
+                RETURN m.role AS role, m.text AS text, m.seq AS seq
+                ORDER BY m.seq DESC LIMIT 4
+                """,
+                sid=recent_with_msgs[0]["id"],
+            )
+            prev_conversation = list(reversed(tail))  # oudste eerst, leesvolgorde
+    except Exception as exc:
+        print(f"[bootstrap] vorig gesprek ophalen mislukt: "
+              f"{type(exc).__name__}: {exc}", flush=True)
+
     return BootstrapContext(
         identity=identity_rows[0],
         protocols=protocols,
@@ -240,6 +267,7 @@ def load_bootstrap(
         skills=skills,
         relevant=relevant,
         recent_sessions=recent_sessions,
+        prev_conversation=prev_conversation,
         insights=insights,
         lessons=lessons,
         feedback=feedback,
@@ -317,6 +345,12 @@ def render_bootstrap(ctx: BootstrapContext) -> str:
         lines.append("\n# Recente sessies (waar het de laatste tijd over ging)")
         for s in ctx.recent_sessions:
             lines.append(f"- [{s['id']}] {s['summary']}")
+
+    if ctx.prev_conversation:
+        lines.append("\n# Vorig gesprek (kort)")
+        for m in ctx.prev_conversation:
+            wie = ident["owner"] if m.get("role") == "user" else ident["name"]
+            lines.append(f"- {wie}: {(m.get('text') or '')[:160]}")
 
     if ctx.relevant:
         lines.append("\n# Relevant voor deze sessie (vector match op eerste vraag)")

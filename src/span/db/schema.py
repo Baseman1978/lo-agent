@@ -51,6 +51,24 @@ OPTIONS {{indexConfig: {{
 }}}}
 """
 
+# Woordelijk gespreksgeheugen: elke beurt schrijft twee :Message-knopen (user +
+# assistant) met een embedding, zodat conversation_search semantisch kan
+# terugzoeken. Zelfde vorm/dimensie als de andere vector-indexen. De session_id-
+# index versnelt het ophalen van een heel transcript / het laatste gesprek.
+MESSAGE_VECTOR_INDEX = """
+CREATE VECTOR INDEX message_embedding IF NOT EXISTS
+FOR (m:Message) ON (m.embedding)
+OPTIONS {indexConfig: {
+  `vector.dimensions`: $dims,
+  `vector.similarity_function`: 'cosine'
+}}
+"""
+
+MESSAGE_SESSION_INDEX = (
+    "CREATE INDEX message_session IF NOT EXISTS "
+    "FOR (m:Message) ON (m.session_id)"
+)
+
 # Positieve stem-richting: de toon staat elders vooral in negatieven (wat LO
 # NIET doet). Dit veld geeft één positieve default die Bas later in één regel
 # kan bijstellen zonder dat een schema-run hem overschrijft (zie migratie in
@@ -152,6 +170,11 @@ def init_schema(brain: BrainDB, settings: Settings) -> list[str]:
         brain.run(FORMAL_VECTOR_INDEX_TEMPLATE.format(index_name=index_name, label=label),
                   dims=settings.embed_dims)
     log.append(f"{len(FORMAL_VECTOR_INDEXES)} formele vector indexen (Insight/Mistake/Idea)")
+
+    brain.run(MESSAGE_VECTOR_INDEX, dims=settings.embed_dims)
+    brain.run(MESSAGE_SESSION_INDEX)
+    log.append(f"vector index message_embedding ({settings.embed_dims} dims) + session-index "
+               "(woordelijk gespreksgeheugen)")
 
     # embedding-drift: een ander model of andere dims maakt bestaande vectors
     # stil onbruikbaar — dan liever hard falen met een duidelijke melding

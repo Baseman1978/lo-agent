@@ -12,9 +12,11 @@ from __future__ import annotations
 TOOL_RISK: dict[str, str] = {
     # brein / lezen — laag
     "brain_search": "low", "brain_cypher": "low", "work_cypher": "low",
+    "conversation_search": "low",  # woordelijk gespreksgeheugen terugzoeken (eigen data)
     "weather": "low", "jarvis_briefing": "low",
     "web_search": "low", "web_read": "low",   # lezen; output is untrusted -> quarantaine
-    "o365_mail_inbox": "low", "o365_thread_summary": "low", "o365_calendar": "low",
+    "o365_mail_inbox": "low", "o365_mail_read": "low", "o365_thread_summary": "low",
+    "o365_calendar": "low",
     "o365_mail_search": "low", "o365_mail_folders": "low", "o365_calendar_search": "low",
     "o365_files_search": "low", "o365_file_read": "low", "o365_sharepoint_search": "low",
     "o365_teams_search": "low", "o365_people_search": "low",
