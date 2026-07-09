@@ -419,6 +419,40 @@ class O365Client:
             for e in data.get("value", [])
         ]
 
+    def meeting_now(self) -> bool:
+        """Loopt er NU een agenda-afspraak MET minstens één ANDERE genodigde?
+
+        Voor PROACTIEF SPREKEN: alleen een echte meeting/call (andere attendees)
+        mag het hardop spreken blokkeren. Een solo-blok (geen andere genodigden,
+        bv. "Bas Werkt") of een hele-dag-item blokkeert niet. Kijkt naar het
+        exacte huidige moment (calendarView over een venster van 1 minuut, dat
+        ook lopende afspraken teruggeeft)."""
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        data = self._get(
+            "/me/calendarView",
+            {
+                "startDateTime": now.isoformat(),
+                "endDateTime": (now + timedelta(minutes=1)).isoformat(),
+                "$orderby": "start/dateTime",
+                "$top": 10,
+                "$select": "subject,isAllDay,attendees,isCancelled",
+            },
+        )
+        me = (self.account_name() or "").strip().lower()
+        for e in data.get("value", []):
+            if e.get("isAllDay") or e.get("isCancelled"):
+                continue
+            others = 0
+            for a in e.get("attendees") or []:
+                addr = ((a.get("emailAddress") or {}).get("address") or "").strip().lower()
+                if addr and addr != me:
+                    others += 1
+            if others >= 1:
+                return True
+        return False
+
     def event_get(self, event_id: str) -> dict[str, Any]:
         """Details van één afspraak — incl. serie-info (occurrence vs. seriesMaster)
         zodat wijzig/verwijder-tools weten waar ze aan beginnen."""

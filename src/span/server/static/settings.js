@@ -69,6 +69,12 @@
         if (s.quiet_hours.start) $("set-quiet-start").value = s.quiet_hours.start;
         if (s.quiet_hours.end) $("set-quiet-end").value = s.quiet_hours.end;
       }
+      if (typeof s.meeting_prep_lead === "number" && $("set-prep-lead")) {
+        $("set-prep-lead").value = s.meeting_prep_lead;
+      }
+      if ($("set-proactive")) {
+        $("set-proactive").checked = localStorage.getItem("span_proactive") === "1";
+      }
       if (s.tools) renderToolPerms(s.tools);
       const sp = $("set-sysprompt");
       if (sp && !sp.dataset.touched) {
@@ -166,6 +172,39 @@
       SPAN.sys(`Stille uren: ${q.start}–${q.end} — niet-urgente pushes wachten dan.`);
       SPAN.chime(740, .1);
     } catch (e) { SPAN.sys("Stille uren opslaan mislukt.", "warn"); }
+  };
+
+  /* -- PROACTIEF SPREKEN: feature-toggle + meeting-prep-voorsprong -------- */
+  const proToggle = $("set-proactive");
+  if (proToggle) proToggle.onchange = async () => {
+    const on = proToggle.checked;
+    if (on && SPAN.proactive) {
+      const ok = await SPAN.proactive.setEnabled(true);
+      if (!ok) {
+        proToggle.checked = false;
+        SPAN.sys("Proactief spreken heeft microfoon-toegang nodig — niet verleend.", "warn");
+        return;
+      }
+      SPAN.sys("Proactief spreken staat aan — LO praat alleen als het moment veilig is.");
+      SPAN.chime(740, .1);
+    } else if (SPAN.proactive) {
+      SPAN.proactive.setEnabled(false);
+      SPAN.sys("Proactief spreken staat uit.");
+    }
+  };
+  const prepSave = $("set-prep-lead-save");
+  if (prepSave) prepSave.onclick = async () => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { ...SPAN.authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ meeting_prep_lead: parseInt($("set-prep-lead").value, 10) }),
+      });
+      const d = await res.json();
+      if (!res.ok) { SPAN.sys(d.detail || "Voorsprong opslaan mislukt", "warn"); return; }
+      SPAN.sys(`Meeting-prep voorsprong: ${d.meeting_prep_lead} min voor de afspraak.`);
+      SPAN.chime(740, .1);
+    } catch (e) { SPAN.sys("Voorsprong opslaan mislukt.", "warn"); }
   };
 
   /* -- QR-code: Span op je telefoon ------------------------------------ */

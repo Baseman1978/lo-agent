@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LO · Lomans</title>
-<link rel="stylesheet" href="/static/jarvis.css?v=74">
-<link rel="stylesheet" href="/static/effects.css?v=74">
+<link rel="stylesheet" href="/static/jarvis.css?v=75">
+<link rel="stylesheet" href="/static/effects.css?v=75">
 </head>
 <body>
 
@@ -34,6 +34,7 @@
     <button id="palette-btn" class="iconbtn" title="Commando-palet (Ctrl+K)" aria-label="Commando-palet">⌘</button>
     <button id="inbox-btn" class="iconbtn" title="Acties ter goedkeuring (Agent Inbox)" aria-label="Acties ter goedkeuring">✓ <b id="inbox-badge"></b></button>
     <button id="tasks-btn" class="iconbtn" title="Achtergrondtaken" aria-label="Achtergrondtaken">⟳ <b id="tasks-badge"></b></button>
+    <button id="dnd-btn" class="iconbtn hidden" title="Niet storen — LO zwijgt (proactief spreken)" aria-label="Niet storen">🌙 <b id="dnd-badge"></b></button>
     <button id="settings-btn" class="iconbtn" title="Instellingen" aria-label="Instellingen">⚙</button>
     <button id="logout-btn" class="iconbtn hidden" title="Uitloggen (Microsoft)" aria-label="Uitloggen">⏻</button>
   </div>
@@ -222,6 +223,25 @@
       </select>
     </div>
     <div class="setrow"><button id="set-auto-save" class="ghost">autonomie opslaan</button></div>
+
+    <h3>Proactief spreken</h3>
+    <div class="m" style="margin-bottom:6px">LO zegt een paar spreekwaardige
+      meldingen (dagafsluiting, weekreview, meeting-prep en urgente mail) <b>hardop</b> —
+      maar alléén als het moment veilig is: tabblad zichtbaar, je bent aanwezig,
+      geen call of meeting, 'niet storen' uit en LO zelf even stil. Staat een
+      voorwaarde op rood, dan wacht de melding tot het wél kan. Dit vraagt
+      microfoon-toegang, daarom staat het standaard <b>uit</b>.</div>
+    <div class="setrow">
+      <label><input type="checkbox" id="set-proactive"> Proactief spreken aan</label>
+    </div>
+    <div class="setrow">
+      <label for="set-prep-lead">Meeting-prep voorsprong (minuten voor de afspraak)</label>
+      <input type="number" id="set-prep-lead" min="1" max="120" step="1" value="20" style="width:80px">
+      <button id="set-prep-lead-save" class="ghost">voorsprong opslaan</button>
+    </div>
+    <div class="m" style="opacity:.7">Tip: zet 'niet storen' snel aan met de 🌙-knop
+      rechtsboven (verschijnt zodra proactief spreken aan staat), met een timer van
+      15/30/60 min of tot je hem uitzet.</div>
 
     <h3>Beveiliging</h3>
     <div class="m" style="margin-bottom:6px">Bescherming tegen misleiding (prompt-injectie),
@@ -477,11 +497,12 @@
 
 <!-- ?v ophogen bij elke UI-wijziging: dwingt verse bestanden af (geen stale cache) -->
 <script src="/static/vendor/qrcode.js"></script>
-<script src="/static/jarvis.js?v=74"></script>
-<script src="/static/fx.js?v=74"></script>
-<script src="/static/effects.js?v=74"></script>
-<script src="/static/voice.js?v=74"></script>
-<script src="/static/settings.js?v=74"></script>
-<script src="/static/ambient.js?v=74"></script>
+<script src="/static/jarvis.js?v=75"></script>
+<script src="/static/fx.js?v=75"></script>
+<script src="/static/effects.js?v=75"></script>
+<script src="/static/voice.js?v=75"></script>
+<script src="/static/settings.js?v=75"></script>
+<script src="/static/ambient.js?v=75"></script>
+<script src="/static/proactive.js?v=75"></script>
 </body>
 </html>

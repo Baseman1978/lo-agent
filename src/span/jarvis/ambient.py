@@ -18,7 +18,8 @@ from datetime import datetime
 from typing import Any
 
 from span import AGENT_NAME
-from span.jarvis.daily import now_local, send_respecting_quiet
+from span.jarvis.announce import enqueue
+from span.jarvis.daily import meeting_prep_lead, now_local, send_respecting_quiet
 
 TRIAGE_PROMPT = "Je bent het triage-subsysteem van " + AGENT_NAME + """, de JARVIS van Bas Spaan
 (installatietechniek, Lomans). Hieronder één nieuwe e-mail. Classificeer:
@@ -487,6 +488,7 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
                 events = await asyncio.to_thread(o365.calendar, 1)
                 # naive NL-tijd: agenda-starttijden uit Graph zijn ook naive lokaal
                 now = now_local().replace(tzinfo=None)
+                lead = meeting_prep_lead(state["brain"])  # instelbare voorsprong (min)
                 for event in events[:6]:
                     key = f"{event.get('subject')}|{event.get('start')}"
                     start_raw = (event.get("start") or "")[:19]
@@ -496,11 +498,13 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
                         minutes = (datetime.fromisoformat(start_raw) - now).total_seconds() / 60
                     except ValueError:
                         continue
-                    if 0 < minutes <= 20:
+                    if 0 < minutes <= lead:
                         prepped[key] = True
                         detail = await asyncio.to_thread(build_meeting_prep, state, event)
                         inbox.add(kind="notify", title="Meeting prep", detail=detail,
                                   urgency="high", owner=owner_db)
+                        # PROACTIEF SPREKEN: meeting-prep ook hardop
+                        enqueue(state, "meeting_prep", "Meeting prep. " + detail)
                         tg = state.get("telegram")
                         if tg is not None and tg.linked:
                             # meeting prep mag wachten tot na de stille uren
@@ -539,6 +543,11 @@ async def ambient_watcher(state: dict[str, Any], interval: int = 120) -> None:
                         },
                         urgency=triage["urgency"], owner=owner_db,
                     )
+                    # PROACTIEF SPREKEN: alleen high-urgency mail/acties hardop
+                    if triage["urgency"] == "high":
+                        enqueue(state, "urgent", "Urgente mail van "
+                                + (mail.get("from") or "onbekend") + ". "
+                                + (triage["summary"] or mail.get("subject") or ""))
                 while len(seen) > 500:  # oudste eruit, niet willekeurig
                     seen.pop(next(iter(seen)))
                 first_run = False

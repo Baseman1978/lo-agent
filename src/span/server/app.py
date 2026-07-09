@@ -30,6 +30,7 @@ from span.db.work import WorkDB
 from span.evaluation.reflect import reflect_session
 from span.integrations import build_integrations
 from span.jarvis.ambient import AgentInbox, ambient_watcher
+from span.jarvis.announce import AnnouncementQueue
 from span.jarvis.daily import daily_scheduler
 from span.llm.client import LLMClient
 from span.memory.bootstrap import start_session
@@ -86,6 +87,7 @@ async def lifespan(app: FastAPI):
             "event": cfg.get("autonomy_event") or "ask",
         },
         inbox=AgentInbox(brain),  # persistent: open items overleven een deploy
+        announcements=AnnouncementQueue(),  # PROACTIEF SPREKEN: uit-te-spreken items
         triage_rules=cfg.get("triage_rules") or "",
         disabled_tools=set(cfg.get("disabled_tools") or []),
         integration_perms=__import__("json").loads(cfg.get("integration_perms") or "{}"),

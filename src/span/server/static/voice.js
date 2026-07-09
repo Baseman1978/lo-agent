@@ -424,6 +424,12 @@
       let bargeFrames = 0;
       let noiseFloor = 0.02;    // lopende schatting van de omgevingsruis
       SPAN._recentPeak = 0;     // vervalt in ~0,5s: "was er net nabije stem?"
+      // VAD voor PROACTIEF SPREKEN: tijdstip van de laatste aanhoudende spraak,
+      // los van de gespreksmodus (de proactieve lus mag de mic hier enkel voor
+      // openen). SPAN._recentSpeech() -> "praat er net iemand?" (laatste ~4s).
+      const VAD_FRAMES = 6;     // ~100 ms aanhoudend boven de spraakdrempel
+      let vadFrames = 0;
+      SPAN._lastSpeechAt = 0;
       // spraakdrempel = duidelijk bóven de ruisvloer (relatief, niet vast) zodat
       // achtergrondgepraat de mic niet activeert/onderbreekt
       SPAN._speechThr = () => Math.max(0.06, noiseFloor * 2.2 + 0.03);
@@ -442,6 +448,12 @@
           noiseFloor = Math.min(0.35, Math.max(0.005, noiseFloor));
         }
         SPAN._recentPeak = Math.max(raw, SPAN._recentPeak * 0.92);
+        // VAD-vlag: aanhoudende, nabije spraak (niet LO's eigen TTS) markeert het
+        // moment; SPAN._recentSpeech() blijft daarna ~4s waar. Los van 'mode',
+        // zodat de proactieve lus ook werkt met de mic enkel voor dit doel open.
+        if (!speaking && raw > SPAN._speechThr()) {
+          if (++vadFrames >= VAD_FRAMES) SPAN._lastSpeechAt = performance.now();
+        } else if (vadFrames > 0) { vadFrames--; }
         // niveau van LO's eigen stem (echo-bewuste barge-in): tilt de drempel
         // mee omhoog terwijl LO praat, en laat 'm zakken in de stiltes
         if (ttsAnalyser && ttsLevelData) {
@@ -459,9 +471,16 @@
         } else { bargeFrames = 0; barged = false; }  // beurt klaar -> reset
         requestAnimationFrame(loop);
       };
+      SPAN._micSensing = true;   // mic-stream + analyser draaien nu (VAD bruikbaar)
       loop();
     } catch (e) { /* geen mic-permissie: HUD blijft werken */ }
   }
+  // PROACTIEF SPREKEN mag de mic enkel voor VAD openen; hergebruikt de bestaande
+  // stream als wake/gespreksmodus die al open heeft (initMicLevel is idempotent).
+  SPAN.ensureMicSensing = async () => { await initMicLevel(); return !!SPAN._micSensing; };
+  // "praat er net iemand?" — alleen betrouwbaar als de mic echt luistert
+  SPAN._recentSpeech = () => !!SPAN._micSensing
+    && (performance.now() - (SPAN._lastSpeechAt || 0) < 4000);
 
   /* -- waveform-canvas (#57/#58/#60/#62): oscilloscoop bij luisteren,
         gesimuleerde golf bij spreken, platte lijn met ruis bij rust ---------- */
