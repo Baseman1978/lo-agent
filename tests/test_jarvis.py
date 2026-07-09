@@ -213,6 +213,37 @@ class TestAgentInbox:
         assert inbox.resolve(iid, "rejected") is None  # geen tweede transitie
         assert inbox.get(iid)["status"] == "done"  # status verandert niet meer
 
+    def test_attention_count_telt_alleen_todos(self):
+        # de badge-teller telt alleen echte to-do's; pure meldingen niet
+        from span.jarvis.ambient import AgentInbox
+        inbox = AgentInbox()
+        inbox.add(kind="notify", title="melding")
+        inbox.add(kind="needs_reply", title="mail")
+        inbox.add(kind="action", action="mail_send", title="actie")
+        inbox.add(kind="choice", title="keuze")
+        assert inbox.open_count() == 4       # de lijst toont alles
+        assert inbox.attention_count() == 3  # notify telt niet mee
+        # een afgehandelde to-do telt ook niet meer
+        aid = inbox.snapshot()[2]["id"]
+        inbox.resolve(aid, "done")
+        assert inbox.attention_count() == 2
+
+    def test_api_inbox_geeft_open_en_attention(self):
+        # /api/inbox: 'open' = alles, 'attention' = alleen de to-do's
+        import asyncio
+        from span.jarvis.ambient import AgentInbox
+        from span.server import routes
+        inbox = AgentInbox()
+        inbox.add(kind="notify", title="melding")
+        inbox.add(kind="needs_reply", title="mail")
+        ctx = MagicMock(brain=MagicMock(database=""))
+        with patch.dict(routes._state, {"inbox": inbox}, clear=False), \
+             patch.object(routes, "_require_rest_auth", lambda r: None), \
+             patch.object(routes, "_request_context", return_value=ctx):
+            out = asyncio.run(routes.inbox_list(MagicMock()))
+        assert out["open"] == 2 and out["attention"] == 1
+        assert len(out["items"]) == 2  # de lijst toont nog álle items
+
     def test_event_delete_wacht_op_goedkeuring(self):
         # agenda-mutaties zijn extern zichtbaar (Outlook mailt genodigden) ->
         # bij autonomy=ask altijd via de Agent Inbox, met leesbare titel
@@ -1062,6 +1093,68 @@ class TestTriageFeedbackLus:
         out = triage_message(self._llm("notify"), None, mail, injection_scan=False,
                              feedback=[{"rommel": 1}])
         assert out["action"] == "notify"
+
+
+class TestAutomatischeAfzenderVoorfilter:
+    """Punt 1a — harde deterministische vóórfilter voor automatische afzenders."""
+
+    @staticmethod
+    def _llm(action):
+        llm = MagicMock()
+        llm.chat_json.return_value = {"action": action, "summary": "s",
+                                      "urgency": "normal"}
+        return llm
+
+    def test_is_automated_sender_herkent_systeemadressen(self):
+        from span.jarvis.ambient import is_automated_sender
+        assert is_automated_sender("noreply@shop.com")
+        assert is_automated_sender("no-reply@bank.nl")
+        assert is_automated_sender("notifications@github.com")
+        assert is_automated_sender("Mailer <MAILER-DAEMON@server.net>")
+        assert is_automated_sender("Nieuwsbrief <newsletter-nl@shop.com>")
+        assert is_automated_sender("marketing.team@webshop.io")
+
+    def test_is_automated_sender_laat_personen_door(self):
+        from span.jarvis.ambient import is_automated_sender
+        assert not is_automated_sender("bas.spaan@lomans.nl")
+        assert not is_automated_sender("Ron Meijer <ron@klant.com>")
+        assert not is_automated_sender("")
+
+    def test_notify_van_automatische_afzender_wordt_ignore(self):
+        from span.jarvis.ambient import triage_message
+        mail = {"from": "noreply@shop.com", "subject": "aanbieding", "preview": "korting"}
+        out = triage_message(self._llm("notify"), None, mail, injection_scan=False)
+        assert out["action"] == "ignore"
+
+    def test_needs_reply_van_automatisch_adres_blijft_staan(self):
+        # veilige volgorde: een echte vraag wint, óók van een 'noreply'-adres
+        from span.jarvis.ambient import triage_message
+        mail = {"from": "noreply@shop.com", "subject": "vraag", "preview": "kun je?"}
+        out = triage_message(self._llm("needs_reply"), None, mail, injection_scan=False)
+        assert out["action"] == "needs_reply"
+
+    def test_persoon_adres_notify_blijft_notify(self):
+        from span.jarvis.ambient import triage_message
+        mail = {"from": "collega@lomans.nl", "subject": "besluit", "preview": "fyi"}
+        out = triage_message(self._llm("notify"), None, mail, injection_scan=False)
+        assert out["action"] == "notify"
+
+
+class TestSysteemHuishoudingUitInbox:
+    """Punt 1b — interne huishouding vervuilt de inbox niet meer."""
+
+    def test_orphan_reflectie_maakt_geen_inbox_item(self):
+        from span.jarvis.daily import reflect_orphan_sessions
+        brain = MagicMock()
+        brain.run.return_value = [{"id": "session-oud"}]
+        inbox = MagicMock()
+        state = {"brain": brain, "llm": MagicMock(), "inbox": inbox,
+                 "settings": MagicMock()}
+        with patch("span.evaluation.reflect.reflect_session",
+                   return_value={"summary": "ok", "written": {"insights": ["i-1"]}}), \
+             patch("span.memory.fragments.FragmentStore"):
+            assert reflect_orphan_sessions(state) == 1
+        inbox.add.assert_not_called()  # log-only, geen melding
 
 
 class TestZelflerendSysteem:
