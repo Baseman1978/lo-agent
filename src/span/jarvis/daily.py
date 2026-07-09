@@ -436,12 +436,11 @@ def reflect_orphan_sessions(state: dict[str, Any], max_sessions: int = 2) -> int
             result = reflect_session(state["settings"], brain, state["llm"],
                                      fragments, row["id"])
             done += 1
-            inbox = state.get("inbox")
-            if inbox is not None and result.get("written"):
-                inbox.add(
-                    kind="notify", title="Achtergelaten sessie geëvalueerd",
-                    detail=f"{row['id']}: {result['summary'][:160]}",
-                )
+            # puur interne huishouding: log-only, GEEN inbox-item (dit vraagt
+            # geen actie van Bas en zou de inbox alleen vervuilen).
+            if result.get("written"):
+                print(f"[orphan-reflectie] {row['id']} geëvalueerd: "
+                      f"{result['summary'][:160]}", flush=True)
         except Exception as exc:
             print(f"[orphan-reflectie] {row['id']}: {type(exc).__name__}: {exc}", flush=True)
             continue
@@ -515,12 +514,14 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
             consolidate_memory, state["brain"], state["llm"],
             state["settings"].model_light,
         )
+        # De samenvatting (X duplicaten, Y inzichten) is puur intern gepruttel:
+        # log-only, GEEN inbox-item meer. De tegenspraak-keuzes hieronder BLIJVEN
+        # wél — dat is een echte keuze die Bas moet maken.
+        if result["duplicates"] or result["insights"]:
+            log(f"consolidatie: {result['duplicates']} duplicaten samengevoegd, "
+                f"{result['insights']} nieuwe inzichten")
         inbox = state.get("inbox")
         if inbox is not None:
-            if result["duplicates"] or result["insights"]:
-                inbox.add(kind="notify", title="Nachtelijke consolidatie",
-                          detail=f"{result['duplicates']} duplicaten samengevoegd, "
-                                 f"{result['insights']} nieuwe inzichten.")
             for c in result.get("contradictions", []):
                 # keuze-item: de HUD toont beide versies met een knop per
                 # versie; kiezen archiveert de andere (superseded)
@@ -618,15 +619,10 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
                 try:
                     result = await asyncio.to_thread(sync_meetings, state)
                     if result["new"]:
+                        # log-only: het vastleggen zelf vraagt geen actie. De
+                        # actiepunten die sync_meetings genereert komen los als
+                        # eigen inbox-items binnen — dáár zit de eventuele to-do.
                         log(f"fireflies: {result['new']} nieuw, {result['tasks']} taken")
-                        inbox = state.get("inbox")
-                        if inbox is not None:
-                            inbox.add(
-                                kind="notify", title="Meetings vastgelegd",
-                                detail=f"{result['new']} nieuwe meeting(s) in het geheugen; "
-                                       f"{result['tasks']} actiepunt(en) klaar voor Asana "
-                                       "in de Agent Inbox.",
-                            )
                 except Exception as exc:
                     log(f"fireflies: mislukt — {exc}")
         except Exception as exc:

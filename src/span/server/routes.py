@@ -440,7 +440,10 @@ async def inbox_list(request: Request) -> dict[str, Any]:
     _require_rest_auth(request)
     inbox: AgentInbox = _state["inbox"]
     owner = getattr(_request_context(request).brain, "database", "")
-    return {"items": inbox.snapshot(owner), "open": inbox.open_count(owner)}
+    # 'open' = alle open items (de lijst toont ze allemaal); 'attention' = alleen
+    # de echte to-do's (action/needs_reply/choice), die de HUD-badge voeden.
+    return {"items": inbox.snapshot(owner), "open": inbox.open_count(owner),
+            "attention": inbox.attention_count(owner)}
 
 
 @router.post("/api/inbox/{item_id}/approve")

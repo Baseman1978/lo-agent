@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import json
+import re
 import threading
 from datetime import datetime
 from typing import Any
@@ -200,6 +201,20 @@ class AgentInbox:
             return sum(1 for i in self._items
                        if i["status"] == "open" and self._visible(i, owner))
 
+    # kinds die écht om aandacht van Bas vragen (een to-do). Pure "notify"-
+    # meldingen tellen bewust NIET mee: ze blijven zichtbaar in de lijst, maar
+    # jagen de badge niet op — zo voelt de inbox niet als een verplichte lijst.
+    ATTENTION_KINDS = frozenset({"action", "needs_reply", "choice"})
+
+    def attention_count(self, owner: str | None = None) -> int:
+        """Open items die aandacht vereisen (action/needs_reply/choice), dus
+        zónder pure meldingen. Voedt de HUD-badge en de alert-modus."""
+        with self._lock:
+            return sum(1 for i in self._items
+                       if i["status"] == "open"
+                       and i["kind"] in self.ATTENTION_KINDS
+                       and self._visible(i, owner))
+
 
 DRAFT_PROMPT = "Je bent " + AGENT_NAME + """, de JARVIS van Bas Spaan (Lomans, installatietechniek).
 Schrijf een kort, zakelijk Nederlands antwoord-CONCEPT op onderstaande mail,
@@ -347,6 +362,39 @@ def _degrade_by_feedback(action: str, mail: dict[str, Any],
     return action
 
 
+# Local-parts die een automatische/no-reply-afzender verraden. Match op gelijk-
+# aan óf begint-met (zo vangen we ook "noreply-shop", "newsletter-nl", enz.).
+_AUTOMATED_LOCALPARTS = (
+    "noreply", "no-reply", "no_reply", "donotreply", "do-not-reply",
+    "notifications", "notification", "mailer-daemon", "bounce", "postmaster",
+    "automated", "alerts", "alert", "news", "newsletter", "marketing",
+    "billing", "receipts", "updates",
+)
+
+
+def is_automated_sender(from_addr: str) -> bool:
+    """Deterministische herkenning van automatische afzenders: noreply,
+    notifications, mailer-daemon, nieuwsbrieven, marketing, enz. Puur op het
+    adres (onafhankelijk van het model).
+
+    Wordt als harde vóórfilter gebruikt om een 'notify' naar 'ignore' te
+    degraderen; hij raakt NOOIT een needs_reply — dat wordt in triage_message
+    afgedwongen door de filter alleen op zou-notify-worden items toe te passen.
+    Conservatief bij twijfel: lege/rare invoer → False (niet onderdrukken)."""
+    if not from_addr:
+        return False
+    text = from_addr.strip().lower()
+    # pak het adres uit "Naam <adres>"; anders de hele string
+    m = re.search(r"<([^>]+)>", text)
+    addr = (m.group(1) if m else text).strip()
+    # duidelijk systeemadres: bevat noreply/no-reply ergens (ook subdomein)
+    if "noreply" in addr or "no-reply" in addr:
+        return True
+    local = addr.split("@", 1)[0]
+    return any(local == pat or local.startswith(pat)
+               for pat in _AUTOMATED_LOCALPARTS)
+
+
 def triage_message(llm: Any, light_model: str | None, mail: dict[str, Any],
                    rules: str = "", injection_scan: bool = True,
                    feedback: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -395,6 +443,13 @@ def triage_message(llm: Any, light_model: str | None, mail: dict[str, Any],
                            + (parsed.get("summary") or mail.get("subject") or ""),
                 "urgency": "high",
             }
+        # Harde vóórfilter voor het overduidelijke geval: mail van een
+        # automatische afzender (noreply, notifications, nieuwsbrief, ...) is
+        # ruis en hoeft niet in de inbox. VEILIGE VOLGORDE: we passen dit alleen
+        # toe wanneer het model 'notify' zegt — zegt het needs_reply (een echte
+        # vraag van een persoon), dan wint dat altijd en onderdrukken we niets.
+        if action == "notify" and is_automated_sender(mail.get("from") or ""):
+            action = "ignore"
         return {
             "action": _degrade_by_feedback(action, mail, feedback),
             "summary": parsed.get("summary") or mail.get("subject") or "",

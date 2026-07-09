@@ -36,11 +36,15 @@
       const res = await fetch("/api/inbox", { headers: SPAN.authHeaders() });
       if (!res.ok) return;
       const d = await res.json();
-      $("inbox-badge").textContent = d.open || "";
-      $("inbox-btn").classList.toggle("attention", d.open > 0);
+      // badge/alert tellen alleen échte to-do's (d.attention: action/
+      // needs_reply/choice), niet de pure meldingen. Zo springt de teller
+      // alleen aan bij iets dat actie vraagt; meldingen blijven in de lijst.
+      const attention = d.attention || 0;
+      $("inbox-badge").textContent = attention || "";
+      $("inbox-btn").classList.toggle("attention", attention > 0);
       // N3: open acties -> de NEBULA-orb toont de waarschuwingsmodus (rood)
       if (SPAN._nebulaHandle && SPAN._nebulaHandle.setAlert) {
-        SPAN._nebulaHandle.setAlert(d.open > 0);
+        SPAN._nebulaHandle.setAlert(attention > 0);
       }
       for (const item of d.items) {
         if (item.status === "open" && !known.has(item.id) && !firstPoll) {
