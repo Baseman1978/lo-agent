@@ -30,8 +30,11 @@ from span.jarvis.briefing import build_briefing
 from span.jarvis.daily import (
     briefing_time,
     generate_daily,
+    meeting_prep_lead,
+    quiet_hours_active,
     quiet_window,
     set_briefing_time,
+    set_meeting_prep_lead,
     set_quiet_end,
     set_quiet_start,
 )
@@ -149,6 +152,7 @@ async def get_settings(request: Request) -> dict[str, Any]:
         "quiet_hours": await asyncio.to_thread(
             lambda: dict(zip(("start", "end"), quiet_window(_state["brain"])))
         ),
+        "meeting_prep_lead": await asyncio.to_thread(meeting_prep_lead, _state["brain"]),
         "autonomy": dict(_state["autonomy"]),
         "triage_rules": await asyncio.to_thread(
             lambda: ((_state["brain"].run(
@@ -295,6 +299,14 @@ async def save_settings(request: Request) -> dict[str, Any]:
             raise HTTPException(status_code=422, detail=str(exc))
         start, end = await asyncio.to_thread(quiet_window, _state["brain"])
         result["quiet_hours"] = {"start": start, "end": end}
+
+    if "meeting_prep_lead" in body:
+        try:
+            result["meeting_prep_lead"] = await asyncio.to_thread(
+                set_meeting_prep_lead, _state["brain"], body["meeting_prep_lead"]
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
 
     if "model_main" in body or "model_light" in body:
         main = str(body.get("model_main", "")).strip()
@@ -539,6 +551,52 @@ async def inbox_choose(request: Request, item_id: int) -> dict[str, Any]:
     await asyncio.to_thread(record_feedback, _state["brain"],
                             item["kind"], feedback_action(item), "approved")
     return {"chosen": pick, "superseded": losers}
+
+
+# -- PROACTIEF SPREKEN: aankondigingen-wachtrij + agenda-aanwezigheid --------
+@router.get("/api/announcements")
+async def announcements_list(request: Request) -> dict[str, Any]:
+    """Open uit-te-spreken items voor PROACTIEF SPREKEN (id, type, text).
+
+    Tijdens de stille uren blijft de lijst leeg — de items zelf blijven staan
+    (het spreken wacht, er gaat niets verloren). Zo zit de quiet-hours-regel op
+    dezelfde plek als voor Telegram, server-side."""
+    _require_rest_auth(request)
+    q = _state.get("announcements")
+    if q is None:
+        return {"items": []}
+    if await asyncio.to_thread(quiet_hours_active, _state["brain"]):
+        return {"items": []}
+    return {"items": q.open_items()}
+
+
+@router.post("/api/announcements/{item_id}/spoken")
+async def announcements_spoken(request: Request, item_id: int) -> dict[str, Any]:
+    """Markeer een aankondiging als uitgesproken; hij verdwijnt uit de queue
+    zodat hij nooit twee keer klinkt."""
+    _require_rest_auth(request)
+    q = _state.get("announcements")
+    if q is None:
+        raise HTTPException(status_code=404, detail="Geen aankondigingen-wachtrij.")
+    return {"spoken": q.mark_spoken(int(item_id))}
+
+
+@router.get("/api/presence/meeting_now")
+async def presence_meeting_now(request: Request) -> dict[str, Any]:
+    """Loopt er NU een agenda-afspraak MET minstens één andere genodigde?
+
+    blocking=true bij een echte meeting/call (andere attendees). Een solo-blok
+    (geen andere genodigden) of geen event → blocking=false. Faalt zacht naar
+    false als O365 er niet is; de client leunt dan op mic-VAD + DND."""
+    _require_rest_auth(request)
+    o365 = _request_context(request).o365
+    if o365 is None:
+        return {"blocking": False}
+    try:
+        blocking = await asyncio.to_thread(o365.meeting_now)
+    except Exception:
+        return {"blocking": False}
+    return {"blocking": bool(blocking)}
 
 
 # -- Integration Broker: catalogus + acties (onder LO's governance) ---------

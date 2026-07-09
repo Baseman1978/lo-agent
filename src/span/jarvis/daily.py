@@ -16,6 +16,7 @@ from span import AGENT_NAME
 # re-export: ambient.py en crons.py importeren de klok van hieruit
 from span.clock import TZ, now_local, today_local  # noqa: F401
 from span.db.brain import BrainDB
+from span.jarvis.announce import enqueue
 from span.jarvis.briefing import build_briefing
 from span.llm.client import LLMClient
 
@@ -97,6 +98,38 @@ def _set_quiet(brain: BrainDB, prop: str, value: str, default: str) -> str:
         f"MERGE (c:Config {{id:'runtime'}}) SET c.{prop} = $t", t=value
     )
     return value
+
+
+# -- Meeting-prep-voorsprong (thema PROACTIEF SPREKEN) -----------------------
+# Hoeveel minuten vóór een afspraak de ambient watcher een prep-kaart klaarzet
+# (en die ook als gesproken aankondiging inrijgt). Config-node, default 20.
+MEETING_PREP_LEAD_DEFAULT = 20
+
+
+def meeting_prep_lead(brain: BrainDB) -> int:
+    """Voorsprong in minuten voor meeting-prep (1..120). Zacht falend."""
+    try:
+        rows = brain.run(
+            "MATCH (c:Config {id:'runtime'}) RETURN c.meeting_prep_lead AS m"
+        )
+    except Exception:
+        return MEETING_PREP_LEAD_DEFAULT
+    raw = rows[0]["m"] if rows else None
+    try:
+        return max(1, min(120, int(raw)))
+    except (TypeError, ValueError):
+        return MEETING_PREP_LEAD_DEFAULT
+
+
+def set_meeting_prep_lead(brain: BrainDB, value: Any) -> int:
+    try:
+        v = max(1, min(120, int(value)))
+    except (TypeError, ValueError):
+        raise ValueError(f"Ongeldige voorsprong: {value!r} (verwacht minuten 1–120).")
+    brain.run(
+        "MERGE (c:Config {id:'runtime'}) SET c.meeting_prep_lead = $m", m=v
+    )
+    return v
 
 
 def set_quiet_start(brain: BrainDB, value: str) -> str:
@@ -468,6 +501,8 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
         inbox = state.get("inbox")
         if inbox is not None:
             inbox.add(kind="notify", title="Dagafsluiting", detail=evening["spoken"][:240])
+        # PROACTIEF SPREKEN: dagafsluiting ook hardop, zodra het moment veilig is
+        enqueue(state, "evening", evening["spoken"])
         tg = state.get("telegram")
         if tg is not None and tg.linked:
             # dagafsluiting mag wachten tot na de stille uren
@@ -505,6 +540,8 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
             inbox = state.get("inbox")
             if inbox is not None:
                 inbox.add(kind="notify", title="Weekreview", detail=review[:240])
+            # PROACTIEF SPREKEN: weekreview ook hardop, zodra het moment veilig is
+            enqueue(state, "weekreview", review)
             tg = state.get("telegram")
             if tg is not None and tg.linked:
                 # weekreview mag wachten tot na de stille uren
