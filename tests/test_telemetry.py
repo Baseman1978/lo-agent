@@ -48,3 +48,58 @@ def test_record_bad_value_never_raises(tmp_path, monkeypatch):
     # a genuinely valid record still works afterwards
     tel.record("stt", 150.0)
     assert tel.aggregate()["segments"]["stt"]["count"] == 1
+
+
+def test_turn_records_segments(tmp_path, monkeypatch):
+    """turn() legt turn+llm+tool vast zonder de beurt te breken."""
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+
+    from unittest.mock import MagicMock
+    from span.orchestrator.agent import SpanAgent
+
+    agent = SpanAgent.__new__(SpanAgent)  # omzeil __init__: we testen alleen turn-instrumentatie
+
+    tb = MagicMock()
+    tb.specs_for.return_value = []
+    tb.touched = []
+    tb.dispatch.side_effect = lambda name, args: "ok"
+    agent._toolbox = tb
+    agent._messages = []
+    agent._recorders = []
+
+    frag = MagicMock()
+    frag.embed.return_value = [0.0]
+    frag.search.return_value = []
+    frag.search_formal.return_value = []
+    agent._fragments = frag
+
+    settings = MagicMock()
+    settings.model_main = "test-model"
+    agent._settings = settings
+    agent._security = {}
+
+    # achtergrond-helpers stubben zodat turn() geen DB raakt
+    agent._record_turn = lambda *a, **k: None
+    agent._persist_messages = lambda *a, **k: None
+    agent._verify_active_quest = lambda *a, **k: None
+    agent._write_trace = lambda *a, **k: None
+    agent.last_touched = []
+
+    tool_call = MagicMock()
+    tool_call.id = "1"
+    tool_call.function.name = "brain_search"
+    tool_call.function.arguments = "{}"
+    first = MagicMock(); first.content = ""; first.tool_calls = [tool_call]
+    second = MagicMock(); second.content = "antwoord"; second.tool_calls = None
+    llm = MagicMock()
+    llm.chat.side_effect = [first, second]
+    agent._llm = llm
+
+    out = agent.turn("hoi")
+    assert "antwoord" in out
+
+    agg = tel.aggregate()
+    assert agg["segments"]["turn"]["count"] == 1
+    assert agg["segments"]["tool"]["count"] == 1
+    assert agg["segments"]["llm"]["count"] == 1
