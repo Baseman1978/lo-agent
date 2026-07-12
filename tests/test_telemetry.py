@@ -19,3 +19,11 @@ def test_record_and_aggregate(tmp_path, monkeypatch):
     lines = (tmp_path / "t.jsonl").read_text(encoding="utf-8").splitlines()
     row = json.loads(lines[0])
     assert row["seg"] == "stt" and row["ms"] == 100.0 and row["meta"]["backend"] == "cpu-local"
+
+
+def test_flag_off_is_noop(tmp_path, monkeypatch):
+    monkeypatch.setenv("SPAN_TELEMETRY", "off")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+    tel.record("stt", 123.0)
+    assert not (tmp_path / "t.jsonl").exists()
+    assert tel.aggregate()["segments"] == {}
