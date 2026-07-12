@@ -37,10 +37,10 @@ def record(seg: str, ms: float, meta: dict[str, Any] | None = None) -> None:
     """Schrijf één segment-meting weg. Best-effort: slikt elke fout in."""
     if not _enabled():
         return
-    row: dict[str, Any] = {"ts": time.time(), "seg": seg, "ms": round(float(ms), 1)}
-    if meta:
-        row["meta"] = meta
     try:
+        row: dict[str, Any] = {"ts": time.time(), "seg": seg, "ms": round(float(ms), 1)}
+        if meta:
+            row["meta"] = meta
         p = _path()
         with _lock:
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -74,11 +74,13 @@ def aggregate(window_s: float = 86400.0) -> dict[str, Any]:
     for line in lines:
         try:
             row = json.loads(line)
+            ts = float(row.get("ts", 0))
+            ms = float(row.get("ms", 0))
         except Exception:
             continue
-        if float(row.get("ts", 0)) < cutoff:
+        if ts < cutoff:
             continue
-        buckets.setdefault(str(row.get("seg", "?")), []).append(float(row.get("ms", 0)))
+        buckets.setdefault(str(row.get("seg", "?")), []).append(ms)
     segments: dict[str, Any] = {}
     for seg, vals in buckets.items():
         vals.sort()

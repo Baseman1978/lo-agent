@@ -38,3 +38,13 @@ def test_rotation_keeps_file_bounded(tmp_path, monkeypatch):
         tel.record("llm", float(i), {"i": i})
     assert target.stat().st_size <= 200 + 500  # net na rotatie klein
     assert target.with_suffix(".jsonl.prev").exists()
+
+
+def test_record_bad_value_never_raises(tmp_path, monkeypatch):
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+    tel.record("stt", None)  # non-numeric: must be swallowed, not raised
+    tel.record("stt", "oops")
+    # a genuinely valid record still works afterwards
+    tel.record("stt", 150.0)
+    assert tel.aggregate()["segments"]["stt"]["count"] == 1
