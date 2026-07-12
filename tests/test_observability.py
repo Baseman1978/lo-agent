@@ -51,3 +51,19 @@ def test_readyz_503_zonder_brein():
     st._state.pop("brain", None)
     resp = asyncio.run(routes.readyz())
     assert resp.status_code == 503
+
+
+def test_telemetry_endpoint_owner_only(tmp_path, monkeypatch):
+    import span.telemetry as tel
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+    tel.record("turn", 1500.0, {"outcome": "ok"})
+
+    from unittest.mock import MagicMock
+    req = MagicMock()
+    req.query_params = {}
+    monkeypatch.setattr(routes, "_require_owner", lambda request: None)
+
+    out = asyncio.run(routes.telemetry_aggregates(req))
+    assert out["segments"]["turn"]["count"] == 1
+    assert out["window_s"] == 86400.0

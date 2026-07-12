@@ -947,6 +947,22 @@ async def stt_status(request: Request) -> dict[str, Any]:
     return {"available": stt.available(), "model": stt.MODEL_NAME}
 
 
+@router.get("/api/telemetry")
+async def telemetry_aggregates(request: Request) -> dict[str, Any]:
+    """Owner-only: per-segment latency-aggregaten (stt/llm/tool/tts/turn).
+    De meetlat voor de bewijs-gepoorte fase B — welk segment domineert?"""
+    _require_owner(request)
+    from span import telemetry
+    window_s = 86400.0
+    q = request.query_params.get("window_s")
+    if q:
+        try:
+            window_s = max(60.0, min(2_592_000.0, float(q)))  # 1 min .. 30 dagen
+        except ValueError:
+            pass
+    return telemetry.aggregate(window_s=window_s)
+
+
 @router.post("/api/tts")
 async def text_to_speech(request: Request) -> Any:
     """Tekst → gesproken audio (WAV) via server-side Piper. De HUD haalt dit
