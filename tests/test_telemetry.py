@@ -27,3 +27,14 @@ def test_flag_off_is_noop(tmp_path, monkeypatch):
     tel.record("stt", 123.0)
     assert not (tmp_path / "t.jsonl").exists()
     assert tel.aggregate()["segments"] == {}
+
+
+def test_rotation_keeps_file_bounded(tmp_path, monkeypatch):
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    target = tmp_path / "t.jsonl"
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(target))
+    monkeypatch.setattr(tel, "_MAX_BYTES", 200)  # forceer rotatie snel
+    for i in range(50):
+        tel.record("llm", float(i), {"i": i})
+    assert target.stat().st_size <= 200 + 500  # net na rotatie klein
+    assert target.with_suffix(".jsonl.prev").exists()
