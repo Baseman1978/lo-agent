@@ -928,7 +928,11 @@ async def speech_to_text(request: Request) -> dict[str, Any]:
             or head[:3] == b"ID3" or head[:2] == b"\xff\xfb"):  # mp3
         raise HTTPException(status_code=415, detail="Onbekend audioformaat.")
     try:
+        _t0 = time.perf_counter()
         text = await asyncio.to_thread(stt.transcribe, audio)
+        from span import telemetry
+        telemetry.record("stt", (time.perf_counter() - _t0) * 1000.0,
+                         {"backend": stt.backend()})
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Transcriptie mislukt: {exc}")
     import logging

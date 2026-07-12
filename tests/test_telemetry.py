@@ -103,3 +103,34 @@ def test_turn_records_segments(tmp_path, monkeypatch):
     assert agg["segments"]["turn"]["count"] == 1
     assert agg["segments"]["tool"]["count"] == 1
     assert agg["segments"]["llm"]["count"] == 1
+
+
+def test_stt_route_records_stt_segment(tmp_path, monkeypatch):
+    """De echte /api/stt-handler legt een stt-segment vast na een transcriptie."""
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+
+    import asyncio
+
+    from span.server import routes
+    from span.server import stt
+    from span.server.routes import speech_to_text
+
+    # auth uitschakelen zodat we de transcribe-tak bereiken
+    monkeypatch.setattr(routes, "_require_rest_auth", lambda request: None)
+    monkeypatch.setattr(stt, "available", lambda: True)
+    monkeypatch.setattr(stt, "backend", lambda: "cpu-local")
+    monkeypatch.setattr(stt, "transcribe", lambda audio, language="nl": "hallo")
+
+    # minimale request-double: body() async, headers dict-achtig
+    audio = b"\x1aE\xdf\xa3" + b"\x00" * 2000  # EBML-magic + genoeg bytes
+
+    class _Req:
+        headers = {}
+
+        async def body(self):
+            return audio
+
+    result = asyncio.run(speech_to_text(_Req()))
+    assert result["text"] == "hallo"
+    assert tel.aggregate()["segments"]["stt"]["count"] >= 1
