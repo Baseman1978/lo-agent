@@ -134,3 +134,27 @@ def test_stt_route_records_stt_segment(tmp_path, monkeypatch):
     result = asyncio.run(speech_to_text(_Req()))
     assert result["text"] == "hallo"
     assert tel.aggregate()["segments"]["stt"]["count"] >= 1
+
+
+def test_tts_endpoint_records(tmp_path, monkeypatch):
+    import asyncio
+    from unittest.mock import MagicMock
+
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+
+    import span.server.routes as routes
+    import span.server.tts as ttsmod
+
+    monkeypatch.setattr(ttsmod, "available", lambda: True)
+    monkeypatch.setattr(ttsmod, "synthesize", lambda text, **kw: b"RIFF....WAVE")
+    monkeypatch.setattr(routes, "_require_rest_auth", lambda request: None)
+
+    req = MagicMock()
+    async def _json():
+        return {"text": "hallo wereld"}
+    req.json = _json
+
+    asyncio.run(routes.text_to_speech(req))
+    agg = tel.aggregate()
+    assert agg["segments"]["tts"]["count"] == 1

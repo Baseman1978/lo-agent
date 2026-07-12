@@ -980,6 +980,7 @@ async def text_to_speech(request: Request) -> Any:
     if speaker is not None:
         speaker = str(speaker)[:80]
     try:
+        _t0 = time.perf_counter()
         audio = await asyncio.to_thread(
             tts.synthesize, text,
             speaker=speaker,
@@ -989,6 +990,8 @@ async def text_to_speech(request: Request) -> Any:
             noise_w_scale=_num("noise_w_scale", 0.0, 1.5),
             volume=_num("volume", 0.1, 2.0),
         )
+        from span import telemetry
+        telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0, {"mode": "full"})
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"TTS mislukt: {exc}")
     from fastapi.responses import Response
@@ -1021,7 +1024,14 @@ async def tts_stream(request: Request) -> Any:
                                      json=payload) as r:
                 if r.status_code != 200:
                     return
+                _t0 = time.perf_counter()
+                _first = True
                 async for chunk in r.aiter_bytes():
+                    if _first and chunk:
+                        from span import telemetry
+                        telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0,
+                                         {"mode": "stream"})
+                        _first = False
                     if chunk:
                         yield chunk
 
