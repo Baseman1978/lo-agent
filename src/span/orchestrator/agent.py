@@ -324,7 +324,6 @@ class SpanAgent:
         import time as _time
         _turn_t0 = _time.perf_counter()
         _llm_ms = 0.0
-        _tool_ms = 0.0
 
         # RAG-memo is efemeer: alleen voor déze beurt meegegeven, niet in de
         # historie bewaard — voorkomt token-groei en verouderde hints.
@@ -481,7 +480,6 @@ class SpanAgent:
                 _d0 = _time.perf_counter()
                 result = self._toolbox.dispatch(tc.function.name, arguments)
                 _dt = (_time.perf_counter() - _d0) * 1000.0
-                _tool_ms += _dt
                 telemetry.record("tool", _dt, {"name": tc.function.name})
                 if on_tool:
                     try: on_tool(tc.function.name, "done")
