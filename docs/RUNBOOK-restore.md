@@ -13,6 +13,10 @@ Db-namen met koppelteken moeten in Cypher tussen backticks: `` `span-brain` ``.
 
 ## A. Herstel-DRILL (veilig — raakt de productie-DB NIET)
 
+> Geautomatiseerd (community, prod sinds C1): `bash scripts/neo4j-restore-drill.sh`
+> — doet onderstaande in een wegwerp-container en print RTO/RPO. Onderstaande
+> handmatige variant geldt voor de Enterprise-editie (`restoredrill`-database).
+
 Laad een dump in een **wegwerp-database** en tel de nodes. Bewijst restore-baarheid
 zonder `span-brain` (productie) aan te raken.
 
@@ -85,3 +89,39 @@ NB (community, sinds C1): de nachtelijke dump stopt de neo4j-container ~1
 minuut (STOP DATABASE bestaat niet op community); LO's /readyz geeft die
 minuut 503 en herstelt vanzelf. De Synology-klok loopt iets achter — de
 remote retentie heeft daarom 2 dagen marge.
+
+## D. Drill-checklist (maandelijks, ~15 min)
+
+1. [ ] Drill draaien op de z390 (niet tussen 03:00-04:00, dan draaien de
+       nachtdump en de nachttaken): `bash ~/nova/scripts/neo4j-restore-drill.sh`
+       → eindigt met `DRILL GESLAAGD`; noteer de RTO/RPO-regel in de tabel.
+2. [ ] Off-host-kopie vers: `ssh -p 55 Bas_Spaan@192.168.3.6 "ls -lt nova-backups/neo4j | head -3"`
+       → jongste `.enc` is van vannacht.
+3. [ ] Off-host-kopie écht terug te zetten (restore-test — bewijst sleutel én
+       kopie in één keer; parameters uit scripts/neo4j-backup.sh r108-109):
+
+   ```bash
+   mkdir -p /tmp/enc-drill
+   NEWEST="$(ssh -p 55 Bas_Spaan@192.168.3.6 'ls -1t nova-backups/neo4j/span-brain-*.dump.enc | head -1')"
+   scp -P 55 "Bas_Spaan@192.168.3.6:$NEWEST" /tmp/enc-drill/
+   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+     -in "/tmp/enc-drill/$(basename "$NEWEST")" \
+     -out "/tmp/enc-drill/$(basename "$NEWEST" .enc)" \
+     -pass "file:$HOME/.secrets/nova-backup-key"
+   NOVA_BACKUP_DIR=/tmp/enc-drill bash ~/nova/scripts/neo4j-restore-drill.sh
+   rm -rf /tmp/enc-drill
+   ```
+
+   → zelfde `DRILL GESLAAGD` als punt 1, maar nu vanaf de versleutelde
+   off-host kopie.
+4. [ ] Sleutel-kopie: naast `~/.secrets/nova-backup-key` op de z390 (punt 3
+       bewijst dat die werkt) staat er een kopie in de wachtwoordmanager.
+5. [ ] Homelab-lagen buiten dit repo: backrest/restic-snapshot (03:00) en de
+       dagelijkse rsync naar de externe USB (01:00) zijn < 48u oud. Een echte
+       restic/rsync-restore-steekproef (backrest-UI → restore, of
+       `restic check --read-data-subset=2%`) valt buiten A5-scope en hoort
+       bij het homelab-onderhoud — hier alleen versheid.
+
+| datum | RTO (drill-duur) | RPO (dump-leeftijd) | resultaat |
+|-------|------------------|---------------------|-----------|
+|       |                  |                     |           |
