@@ -74,6 +74,22 @@ async def lifespan(app: FastAPI):
     cfg = overrides[0] if overrides else {}
     from span.server import tts
     tts.set_engine_override(cfg.get("tts_engine") or "")  # spraakbron-keuze UI
+    if tts.stream_available():
+        # A2: TTS-prewarm — DNS/TLS/WS-handshake alvast opwarmen zodat de
+        # eerste zin geen cold-start betaalt. Best-effort: een prewarm-fout
+        # mag de serverstart nooit vertragen of breken (patroon mcp-init).
+        from span.server import tts_stream_eleven as _tse
+        import asyncio as _aio
+
+        async def _tts_warm():
+            ok = await _tse.prewarm()
+            print(f"[tts] elevenlabs prewarm: {'ok' if ok else 'overgeslagen'}",
+                  flush=True)
+
+        try:
+            _aio.get_running_loop().create_task(_tts_warm())
+        except RuntimeError:
+            pass
     _state.update(
         settings=settings,
         brain=brain,

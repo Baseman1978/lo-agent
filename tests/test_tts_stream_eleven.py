@@ -98,3 +98,20 @@ def test_voice_id_resolutie(monkeypatch):
     assert tse._voice_id("Daniel") == "d123"
     assert tse._voice_id("Onbekend") == "voice123"   # onbekende naam -> default
     assert tse._voice_id(None) == "voice123"
+
+
+def test_prewarm_best_effort(monkeypatch):
+    ok_ws = FakeWS([])
+
+    async def good(url):
+        return ok_ws
+
+    monkeypatch.setattr(tse, "_connect", good)
+    assert asyncio.run(tse.prewarm()) is True
+    assert ok_ws.closed is True               # handshake netjes weer dicht
+
+    async def bad(url):
+        raise OSError("dns weg")
+
+    monkeypatch.setattr(tse, "_connect", bad)
+    assert asyncio.run(tse.prewarm()) is False  # fout ingeslikt, niets breekt
