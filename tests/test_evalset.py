@@ -1,6 +1,7 @@
 """A7 — eval-set v1: fixture-brain, dataschema, scoring, runner, rapport."""
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -44,3 +45,45 @@ def test_fake_o365_weigert_echt_versturen():
     assert fake.calendar(days=1) == [{"subject": "Weekstart"}]
     with pytest.raises(AssertionError):
         fake.send_mail(to=["x@extern.nl"], subject="s", body="b")
+
+
+def test_datasets_valide_en_ids_uniek():
+    from span.evaluation.evalrun import GEHEUGEN_PATH, TAKEN_PATH, load_items
+
+    geheugen = load_items(GEHEUGEN_PATH, "geheugen")
+    taken = load_items(TAKEN_PATH, "taak")
+    assert len(geheugen) >= 6 and len(taken) >= 5  # Task 6 vult aan tot 50/20
+    ids = [i["id"] for i in geheugen] + [i["id"] for i in taken]
+    assert len(ids) == len(set(ids))
+    assert all(i["id"].startswith("mem-") for i in geheugen)
+    assert all(i["id"].startswith("taak-") for i in taken)
+
+
+def test_validate_item_vangt_gaten():
+    from span.evaluation.evalrun import validate_item
+
+    ok = {"id": "mem-x", "categorie": "feit-recall", "fixtures": {},
+          "scoring": "llm-judge", "vraag": "V?", "verwacht": "A"}
+    assert validate_item(ok, "geheugen") == []
+
+    fouten = validate_item({"id": "", "scoring": "raar"}, "geheugen")
+    assert any("id" in f for f in fouten)
+    assert any("scoring" in f for f in fouten)
+    assert any("vraag" in f for f in fouten)
+
+    fouten = validate_item({"id": "taak-x", "categorie": "mail", "fixtures": {},
+                            "scoring": "tool-match", "opdracht": "doe iets",
+                            "verwacht": {}}, "taak")
+    assert any("tools" in f for f in fouten)
+
+
+def test_load_items_weigert_dubbel_id(tmp_path):
+    from span.evaluation.evalrun import load_items
+
+    p = tmp_path / "dubbel.json"
+    item = {"id": "mem-1", "categorie": "c", "fixtures": {},
+            "scoring": "llm-judge", "vraag": "v?", "verwacht": "a"}
+    p.write_text(json.dumps({"version": 1, "items": [item, dict(item)]}),
+                 encoding="utf-8")
+    with pytest.raises(ValueError, match="dubbel id"):
+        load_items(p, "geheugen")
