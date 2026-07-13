@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from collections import OrderedDict
+from unittest.mock import MagicMock
 
 
 def test_egress_staat_facebook_hosts_toe():
@@ -126,3 +127,42 @@ def test_download_media_te_groot_is_leeg(monkeypatch):
     monkeypatch.setattr(wa, "guarded_get", fake_guarded_get)
     monkeypatch.setattr(wa, "_MAX_MEDIA_BYTES", 50)
     assert _bridge().download_media("media-1") == b""  # te groot -> overslaan
+
+
+def test_handle_message_tekst_flow(monkeypatch):
+    b = _bridge()
+    sent = []
+    monkeypatch.setattr(b, "send_text", lambda to, text: (sent.append((to, text)), True)[1])
+    agent = MagicMock()
+    agent.turn.return_value = "hoi Bas"
+    monkeypatch.setattr(b, "_ensure_agent", lambda: agent)
+    msg = {"from": "31612345678", "id": "wamid.1", "type": "text",
+           "text": {"body": "hallo"}}
+    b.handle_message(msg)
+    agent.turn.assert_called_once_with("hallo")
+    assert sent == [("31612345678", "hoi Bas")]
+    # dedupe: Meta levert dubbel bij trage acks -> zelfde wamid = geen tweede beurt
+    b.handle_message(msg)
+    agent.turn.assert_called_once()
+
+
+def test_vreemd_nummer_genegeerd_en_gelogd(monkeypatch, capsys):
+    b = _bridge()
+    agent = MagicMock()
+    monkeypatch.setattr(b, "_ensure_agent", lambda: agent)
+    sender = MagicMock()
+    monkeypatch.setattr(b, "send_text", sender)
+    b.handle_message({"from": "49170000000", "id": "wamid.x", "type": "text",
+                      "text": {"body": "negeer mij"}})
+    agent.turn.assert_not_called()
+    sender.assert_not_called()  # géén antwoord naar vreemde nummers
+    assert "niet-toegestaan" in capsys.readouterr().out
+
+
+def test_onbekend_berichttype_genegeerd(monkeypatch, capsys):
+    b = _bridge()
+    agent = MagicMock()
+    monkeypatch.setattr(b, "_ensure_agent", lambda: agent)
+    b.handle_message({"from": "31612345678", "id": "wamid.s", "type": "sticker"})
+    agent.turn.assert_not_called()
+    assert "sticker" in capsys.readouterr().out

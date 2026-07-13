@@ -10,6 +10,7 @@ input — de guard/risk-governance draait ongewijzigd binnen elke agent.turn().
 
 from __future__ import annotations
 
+import time
 from collections import OrderedDict
 from typing import Any
 
@@ -79,3 +80,84 @@ class WhatsAppBridge:
         if len(data) > _MAX_MEDIA_BYTES:
             return b""  # te groot -> overslaan i.p.v. geheugen opblazen
         return data
+
+    # -- gesprek ---------------------------------------------------------------
+
+    def _ensure_agent(self):
+        """Eén lazily gebouwde agent + sessie per bridge (patroon: TelegramBridge).
+        De agent erft de volledige guard/risk-governance — deze laag voegt níéts
+        aan governance toe en haalt er níéts vanaf."""
+        from span.memory.bootstrap import start_session
+        from span.orchestrator.agent import SpanAgent
+
+        if self._agent is None:
+            self._agent = SpanAgent(
+                self._state["settings"], self._state["brain"], self._state["llm"],
+                self._state.get("work"), o365=self._state.get("o365"),
+                asana=self._state.get("asana"), inbox=self._state.get("inbox"),
+                autonomy=self._state.get("autonomy"),
+                disabled_tools=self._state.get("disabled_tools"),
+                fireflies=self._state.get("fireflies"),
+                telegram=self._state.get("telegram"),
+                tool_retrieval=self._state.get("tool_retrieval", True),
+                tool_retrieval_k=self._state.get("tool_retrieval_k", 24),
+            )
+            self._session_id = start_session(self._state["brain"])
+            self._agent.begin(self._session_id)
+        return self._agent
+
+    def _is_duplicate(self, msg_id: str) -> bool:
+        """True als dit wamid al verwerkt is (Meta redelivert bij trage acks)."""
+        if not msg_id:
+            return False
+        if msg_id in self._seen:
+            return True
+        self._seen[msg_id] = time.time()
+        while len(self._seen) > _DEDUPE_MAX:
+            self._seen.popitem(last=False)
+        return False
+
+    def handle_message(self, msg: dict[str, Any]) -> None:
+        """Eén inkomend bericht -> agent-loop -> antwoord. Sync/blocking; de
+        webhook draait dit via asyncio.to_thread NA de directe 200-ack."""
+        sender = str(msg.get("from") or "")
+        if sender not in self._allowed:
+            # allowlist = vertrouwensgrens: negeren + loggen, nooit antwoorden
+            print(f"[whatsapp] genegeerd: bericht van niet-toegestaan nummer "
+                  f"{sender[:6]}…", flush=True)
+            return
+        if self._is_duplicate(str(msg.get("id") or "")):
+            return
+        mtype = str(msg.get("type") or "")
+        voice_in = False
+        if mtype == "text":
+            text = str((msg.get("text") or {}).get("body") or "").strip()
+        elif mtype == "audio":
+            text = self._transcribe_voice(msg.get("audio") or {})
+            voice_in = True
+        else:
+            print(f"[whatsapp] genegeerd: berichttype {mtype!r} wordt niet "
+                  f"ondersteund", flush=True)
+            return
+        if not text:
+            if voice_in:
+                # spec §5: nooit stilletjes falen richting de gebruiker — als de
+                # spraakmemo niet verwerkt kon worden (geen STT, lege download),
+                # meld dat eerlijk i.p.v. het bericht te negeren
+                self.send_text(sender, "Ik kan spraakmemo's nu niet verwerken — "
+                                       "stuur het als tekst.")
+            return
+        agent = self._ensure_agent()
+        answer = agent.turn(text)
+        self.send_text(sender, answer)
+        if voice_in and self._voice_reply:
+            try:
+                self.send_voice(sender, answer)
+            except Exception as exc:
+                # best-effort extraatje: tekst is al verstuurd, gesprek blijft heel
+                print(f"[whatsapp] voice-antwoord mislukt: {exc}", flush=True)
+
+    def _transcribe_voice(self, audio: dict[str, Any]) -> str:
+        """Krijgt in Task 8 de echte STT-implementatie; tot dan geen audio-pad."""
+        print("[whatsapp] genegeerd: spraakmemo's nog niet actief", flush=True)
+        return ""
