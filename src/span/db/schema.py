@@ -69,6 +69,45 @@ MESSAGE_SESSION_INDEX = (
     "FOR (m:Message) ON (m.session_id)"
 )
 
+# A4 — range-indexen op properties waar echte queries op filteren of sorteren.
+# Elke regel heeft een bewijsplek in de code; zelfde vorm als message_session,
+# idempotent (IF NOT EXISTS) en goedkoop: init_schema draait bij elke start
+# en per user-brein.
+RANGE_INDEXES: list[tuple[str, str]] = [
+    # fragments.recent() en session_fragments(): ORDER BY mf.created
+    ("mf_created",
+     "CREATE INDEX mf_created IF NOT EXISTS FOR (n:MemoryFragment) ON (n.created)"),
+    # fragments.recent(mf_type=...): WHERE mf.type = $type (3x per bootstrap)
+    ("mf_type",
+     "CREATE INDEX mf_type IF NOT EXISTS FOR (n:MemoryFragment) ON (n.type)"),
+    # bootstrap recent_sessions + prev_conversation: ORDER BY s.started DESC
+    ("session_started",
+     "CREATE INDEX session_started IF NOT EXISTS FOR (n:Session) ON (n.started)"),
+    # bootstrap quests: WHERE q.status IN ['open', 'active']
+    ("quest_status",
+     "CREATE INDEX quest_status IF NOT EXISTS FOR (n:Quest) ON (n.status)"),
+    # agent._verify_active_quest (na elke beurt met tools): ORDER BY q.created DESC
+    ("quest_created",
+     "CREATE INDEX quest_created IF NOT EXISTS FOR (n:Quest) ON (n.created)"),
+    # bootstrap-recency op formele kennis: ORDER BY n.created DESC
+    ("insight_created",
+     "CREATE INDEX insight_created IF NOT EXISTS FOR (n:Insight) ON (n.created)"),
+    ("mistake_created",
+     "CREATE INDEX mistake_created IF NOT EXISTS FOR (n:Mistake) ON (n.created)"),
+    # AgentInbox: laden op n.item_id + opschonen WHERE n.item_id < $min
+    ("inboxitem_item_id",
+     "CREATE INDEX inboxitem_item_id IF NOT EXISTS FOR (n:InboxItem) ON (n.item_id)"),
+]
+
+# A4 — Entity.name uniek: _link_entities MERGE't op naam zonder index (label-scan
+# per recorder-write + dubbele-node-race bij parallelle recorder-threads).
+# Bewust NIET in CONSTRAINTS: bestaande duplicaten laten de creatie falen en de
+# constraints-loop faalt hard -> deze krijgt een eigen fail-soft stap.
+ENTITY_NAME_CONSTRAINT = (
+    "CREATE CONSTRAINT entity_name IF NOT EXISTS "
+    "FOR (n:Entity) REQUIRE n.name IS UNIQUE"
+)
+
 # Positieve stem-richting: de toon staat elders vooral in negatieven (wat LO
 # NIET doet). Dit veld geeft één positieve default die Bas later in één regel
 # kan bijstellen zonder dat een schema-run hem overschrijft (zie migratie in
@@ -175,6 +214,30 @@ def init_schema(brain: BrainDB, settings: Settings) -> list[str]:
     brain.run(MESSAGE_SESSION_INDEX)
     log.append(f"vector index message_embedding ({settings.embed_dims} dims) + session-index "
                "(woordelijk gespreksgeheugen)")
+
+    # A4: range-indexen op de veelgebruikte ORDER BY/WHERE-properties
+    for _name, cypher in RANGE_INDEXES:
+        brain.run(cypher)
+    log.append(f"{len(RANGE_INDEXES)} range-indexen (A4 geheugen-onderhoud)")
+
+    # A4: Entity.name uniek — eerst bestaande duplicaten samenvoegen (anders
+    # faalt de constraint-creatie op het live brein), dan de constraint.
+    # Fail-soft: het brein blijft bruikbaar zonder deze constraint.
+    try:
+        have = brain.run(
+            "SHOW CONSTRAINTS YIELD name WHERE name = 'entity_name' RETURN name")
+        if not have:
+            from span.jarvis.daily import dedup_entities
+            merged = dedup_entities(brain)
+            brain.run(ENTITY_NAME_CONSTRAINT)
+            log.append(f"entity_name-constraint gezet "
+                       f"({merged} duplicaten samengevoegd)")
+        else:
+            log.append("entity_name-constraint al aanwezig")
+    except Exception as exc:
+        print(f"[schema] entity_name-constraint niet gezet: "
+              f"{type(exc).__name__}: {exc}", flush=True)
+        log.append("entity_name-constraint overgeslagen (zie serverlog)")
 
     # embedding-drift: een ander model of andere dims maakt bestaande vectors
     # stil onbruikbaar — dan liever hard falen met een duidelijke melding

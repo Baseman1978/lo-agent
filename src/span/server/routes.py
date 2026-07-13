@@ -963,6 +963,23 @@ async def telemetry_aggregates(request: Request) -> dict[str, Any]:
     return telemetry.aggregate(window_s=window_s)
 
 
+@router.get("/api/brain/health")
+async def brain_health(request: Request) -> dict[str, Any]:
+    """Owner-only: index-gezondheid + brein-latency (A4 geheugen-onderhoud).
+    Naast /api/telemetry: dít is de momentopname, telemetrie is de historie.
+    Faalt zacht: een kapot brein geeft ok=False + de fout, geen 500."""
+    _require_owner(request)
+    ctx = _request_context(request)
+    from span.db import health
+    try:
+        report = await asyncio.to_thread(health.index_health, ctx.brain)
+        report["latency_ms"] = await asyncio.to_thread(
+            health.brain_latency_ms, ctx.brain)
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    return report
+
+
 @router.post("/api/tts")
 async def text_to_speech(request: Request) -> Any:
     """Tekst → gesproken audio (WAV) via server-side Piper. De HUD haalt dit
