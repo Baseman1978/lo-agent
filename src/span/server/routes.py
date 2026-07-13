@@ -1265,9 +1265,13 @@ async def jarvis_daily(request: Request, force: bool = Query(False)) -> dict[str
 
 @router.get("/api/netinfo")
 async def netinfo(request: Request) -> dict[str, Any]:
-    """LAN-adres voor de QR-code (Span op je telefoon, zelfde netwerk)."""
+    """Adres voor de QR-code (Span op je telefoon). Voorkeur: de publieke
+    HTTPS-URL (SPAN_PUBLIC_URL) — alleen op https werkt de microfoon op
+    mobiel (secure-context-eis van de browser). LAN-IP blijft de fallback
+    voor puur-lokaal gebruik zonder reverse proxy."""
     _require_rest_auth(request)
     import socket
+    public_url = os.environ.get("SPAN_PUBLIC_URL", "").strip().rstrip("/")
     lan_ip = os.environ.get("SPAN_LAN_HOST", "").strip()
     if not lan_ip:
         try:
@@ -1279,8 +1283,11 @@ async def netinfo(request: Request) -> dict[str, Any]:
             pass
     # in Docker is het gedetecteerde adres het container-IP — niet bruikbaar
     in_container = lan_ip.startswith("172.") or lan_ip.startswith("10.0.")
+    hint = ""
+    if in_container and not public_url:
+        hint = "vul het LAN-IP van deze pc in (ipconfig)"
     return {"lan_ip": "" if in_container else lan_ip, "port": 8472,
-            "hint": "vul het LAN-IP van deze pc in (ipconfig)" if in_container else ""}
+            "public_url": public_url, "hint": hint}
 
 
 @router.get("/api/jarvis/briefing")
