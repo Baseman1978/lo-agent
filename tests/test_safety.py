@@ -415,3 +415,42 @@ def test_ensure_audit_key_hergebruikt_keyfile(monkeypatch, tmp_path):
     brain = MagicMock(); brain.run.return_value = [{"n": 0}]
     assert audit.ensure_audit_key(brain) == "keyfile"
     assert os.environ.get("SPAN_AUDIT_HMAC_KEY") == "bestaande-sleutel"
+
+
+# -- A5 nachtelijke ketencontrole -------------------------------------------
+
+def test_chain_check_ok_is_stil(monkeypatch):
+    from span.jarvis.daily import chain_check
+    from span.safety import audit
+    monkeypatch.setenv("SPAN_AUDIT_HMAC_KEY", "geheim-buiten-het-brein")
+    b, store = _fake_audit_brain()
+    audit.record_action(b, "mail_send", "naar jan")
+    inbox = MagicMock()
+    result = chain_check({"brain": b, "inbox": inbox, "telegram": None})
+    assert result["ok"] is True and result["count"] == 1
+    inbox.add.assert_not_called()   # succes = log-only, geen inbox-ruis
+
+
+def test_chain_check_breuk_meldt_inbox_en_telegram(monkeypatch):
+    from span.jarvis.daily import chain_check
+    from span.safety import audit
+    monkeypatch.setenv("SPAN_AUDIT_HMAC_KEY", "geheim-buiten-het-brein")
+    b, store = _fake_audit_brain()
+    audit.record_action(b, "mail_send", "naar jan")
+    store[0]["detail"] = "naar dief@evil.com"     # tampering
+    inbox = MagicMock()
+    tg = MagicMock()
+    tg.linked = True
+    result = chain_check({"brain": b, "inbox": inbox, "telegram": tg})
+    assert result["ok"] is False and result["broken_at"] == 1
+    assert inbox.add.call_args.kwargs["urgency"] == "high"
+    assert "seq 1" in inbox.add.call_args.kwargs["detail"]
+    tg.send.assert_called_once()   # urgent=True breekt door de stille uren
+
+
+def test_chaincheck_flag(monkeypatch):
+    from span.jarvis import daily
+    monkeypatch.setenv("SPAN_CHAINCHECK", "off")
+    assert daily.chaincheck_enabled() is False
+    monkeypatch.setenv("SPAN_CHAINCHECK", "on")
+    assert daily.chaincheck_enabled() is True
