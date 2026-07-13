@@ -78,3 +78,71 @@ class TestCallWithRetry:
         assert not tr.retry_enabled()
         monkeypatch.setenv("SPAN_TOOL_RETRY", "on")
         assert tr.retry_enabled()
+
+
+class TestDispatchRetry:
+    """Retry zit ÓM de handler, ONDER de guard: approval/inbox loopt nooit dubbel."""
+
+    def _box(self, monkeypatch):
+        import span.safety.guard as guard
+        from span.orchestrator.tools import ToolBox
+        # guard doorlaten: we testen hier het retry-pad, niet de veiligheidslaag
+        monkeypatch.setattr(guard, "assess_tool",
+                            lambda *a, **k: {"decision": "allow", "reason": "",
+                                             "tier": "low"})
+        box = ToolBox.__new__(ToolBox)  # omzeil __init__: alleen dispatch-attrs
+        box._used_tools = set()
+        box._disabled = set()
+        box._perms = {}
+        box._autonomy = {}
+        box._security = {}
+        box._inbox = None
+        return box
+
+    def test_read_tool_retryt_transient_en_telt_mee(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SPAN_TELEMETRY", "on")
+        monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+        monkeypatch.setenv("SPAN_TOOL_RETRY", "on")
+        monkeypatch.setattr(tr.time, "sleep", lambda *_a, **_k: None)
+        box = self._box(monkeypatch)
+        calls = {"n": 0}
+
+        def flaky_search(query, k=5):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise requests.ConnectionError("even weg")
+            return {"hits": []}
+
+        box._tool_brain_search = flaky_search  # instance-attr schaduwt de methode
+        out = box.dispatch("brain_search", {"query": "x"})
+        assert calls["n"] == 2 and "hits" in out
+        import span.telemetry as tel
+        assert tel.aggregate()["segments"]["tool_retry"]["count"] == 1
+
+    def test_write_tool_wordt_nooit_blind_herhaald(self, monkeypatch):
+        monkeypatch.setenv("SPAN_TOOL_RETRY", "on")
+        box = self._box(monkeypatch)
+        calls = {"n": 0}
+
+        def failing_send(**kwargs):
+            calls["n"] += 1
+            raise requests.ConnectionError("even weg")
+
+        box._tool_o365_mail_send = failing_send
+        out = box.dispatch("o365_mail_send",
+                           {"to": "x@y.nl", "subject": "s", "body": "b"})
+        assert calls["n"] == 1        # muterend: één poging, klaar
+        assert "error" in out         # en de fout is eerlijk terug naar het model
+
+    def test_flag_uit_is_oud_gedrag(self, monkeypatch):
+        monkeypatch.setenv("SPAN_TOOL_RETRY", "off")
+        box = self._box(monkeypatch)
+        calls = {"n": 0}
+
+        def flaky_search(query, k=5):
+            calls["n"] += 1
+            raise requests.ConnectionError("even weg")
+
+        box._tool_brain_search = flaky_search
+        out = box.dispatch("brain_search", {"query": "x"})
+        assert calls["n"] == 1 and "error" in out
