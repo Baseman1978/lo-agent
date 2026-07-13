@@ -146,3 +146,67 @@ class TestDispatchRetry:
         box._tool_brain_search = flaky_search
         out = box.dispatch("brain_search", {"query": "x"})
         assert calls["n"] == 1 and "error" in out
+
+
+def _agent_double(monkeypatch):
+    """Minimale SpanAgent-double voor turn(): zelfde recept als test_telemetry."""
+    from span.orchestrator.agent import SpanAgent
+
+    agent = SpanAgent.__new__(SpanAgent)  # omzeil __init__
+    tb = MagicMock()
+    tb.specs_for.return_value = []
+    tb.touched = []
+    agent._toolbox = tb
+    agent._messages = []
+    agent._recorders = []
+
+    frag = MagicMock()
+    frag.embed.return_value = [0.0]
+    frag.search.return_value = []
+    frag.search_formal.return_value = []
+    agent._fragments = frag
+
+    settings = MagicMock()
+    settings.model_main = "test-model"
+    agent._settings = settings
+    agent._security = {}
+    # achtergrond-threads stubben: we testen alléén het uitkomst-signaal
+    agent._record_turn = lambda *a, **k: None
+    agent._persist_messages = lambda *a, **k: None
+    agent._verify_active_quest = lambda *a, **k: None
+    agent._write_trace = lambda *a, **k: None
+    return agent
+
+
+class TestEerlijkeUitkomst:
+    def test_geslaagde_beurt_zet_signaal_true(self, monkeypatch):
+        monkeypatch.setenv("SPAN_TELEMETRY", "off")
+        agent = _agent_double(monkeypatch)
+        msg = MagicMock(); msg.content = "prima"; msg.tool_calls = None
+        llm = MagicMock(); llm.chat.return_value = msg
+        agent._llm = llm
+        out = agent.turn("hoi")
+        assert "prima" in out
+        assert agent.last_turn_ok is True
+
+    def test_modelfout_zet_signaal_false(self, monkeypatch):
+        monkeypatch.setenv("SPAN_TELEMETRY", "off")
+        agent = _agent_double(monkeypatch)
+        llm = MagicMock(); llm.chat.side_effect = RuntimeError("provider plat")
+        agent._llm = llm
+        out = agent.turn("hoi")
+        assert "modelaanroep mislukte" in out
+        assert agent.last_turn_ok is False
+
+    def test_toollimiet_zet_signaal_false(self, monkeypatch):
+        monkeypatch.setenv("SPAN_TELEMETRY", "off")
+        agent = _agent_double(monkeypatch)
+        tc = MagicMock()
+        tc.id = "1"; tc.function.name = "brain_search"; tc.function.arguments = "{}"
+        msg = MagicMock(); msg.content = ""; msg.tool_calls = [tc]
+        llm = MagicMock(); llm.chat.return_value = msg  # blijft tools aanroepen
+        agent._llm = llm
+        agent._toolbox.dispatch.return_value = "{}"
+        out = agent.turn("hoi", max_steps=2)
+        assert "tool-limiet" in out
+        assert agent.last_turn_ok is False
