@@ -15,7 +15,7 @@ from typing import Any
 
 import requests
 
-from span.integrations.http import request_with_retry
+from span.integrations.http import guarded_get, request_with_retry
 
 _GRAPH = "https://graph.facebook.com/v21.0"
 _MAX_MEDIA_BYTES = 20_000_000  # zelfde grens als de Telegram-voice-download (M11)
@@ -61,3 +61,21 @@ class WhatsAppBridge:
                       flush=True)
                 ok = False
         return ok
+
+    def download_media(self, media_id: str) -> bytes:
+        """media-id -> download-URL -> bytes (bounded). Beide hops via guarded_get:
+        de media-URL komt uit een API-antwoord en is dus untrusted (egress-check
+        vóór de request de deur uit gaat). Te groot of geen URL -> lege bytes."""
+        meta = guarded_get(f"{_GRAPH}/{media_id}", headers=self._headers(), timeout=30)
+        meta.raise_for_status()
+        url = str((meta.json() or {}).get("url") or "")
+        if not url:
+            return b""
+        r = guarded_get(url, headers=self._headers(), timeout=60, stream=True)
+        r.raise_for_status()
+        # bounded download (M11): geen onbegrensde body in het geheugen
+        data = r.raw.read(_MAX_MEDIA_BYTES + 1, decode_content=True) or b""
+        r.close()
+        if len(data) > _MAX_MEDIA_BYTES:
+            return b""  # te groot -> overslaan i.p.v. geheugen opblazen
+        return data

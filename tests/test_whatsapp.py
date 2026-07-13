@@ -75,3 +75,54 @@ def test_send_text_fout_geeft_false(monkeypatch):
     monkeypatch.setattr(wa.requests, "post",
                         lambda *a, **k: _Resp(ok=False, status_code=400))
     assert not _bridge().send_text("31612345678", "hallo")
+
+
+class _RawStream:
+    def __init__(self, data):
+        self._data = data
+
+    def read(self, n, decode_content=True):
+        return self._data[:n]
+
+
+class _StreamResp:
+    def __init__(self, data):
+        self.raw = _RawStream(data)
+        self.ok = True
+
+    def raise_for_status(self):
+        pass
+
+    def close(self):
+        pass
+
+
+def test_download_media_via_guard(monkeypatch):
+    import span.integrations.whatsapp as wa
+    seen_urls = []
+
+    def fake_guarded_get(url, **kwargs):
+        seen_urls.append(url)
+        if url == "https://graph.facebook.com/v21.0/media-1":
+            return _Resp({"url": "https://lookaside.fbsbx.com/whatsapp/x"})
+        return _StreamResp(b"OggS-audio-bytes")
+
+    monkeypatch.setattr(wa, "guarded_get", fake_guarded_get)
+    b = _bridge()
+    assert b.download_media("media-1") == b"OggS-audio-bytes"
+    # beide hops lopen door de egress-guard (media-URL = untrusted API-antwoord)
+    assert seen_urls == ["https://graph.facebook.com/v21.0/media-1",
+                         "https://lookaside.fbsbx.com/whatsapp/x"]
+
+
+def test_download_media_te_groot_is_leeg(monkeypatch):
+    import span.integrations.whatsapp as wa
+
+    def fake_guarded_get(url, **kwargs):
+        if url.endswith("/media-1"):
+            return _Resp({"url": "https://lookaside.fbsbx.com/whatsapp/x"})
+        return _StreamResp(b"X" * 100)
+
+    monkeypatch.setattr(wa, "guarded_get", fake_guarded_get)
+    monkeypatch.setattr(wa, "_MAX_MEDIA_BYTES", 50)
+    assert _bridge().download_media("media-1") == b""  # te groot -> overslaan
