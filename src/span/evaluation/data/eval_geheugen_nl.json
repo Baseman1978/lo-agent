@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "soort": "geheugen",
+  "items": [
+    {
+      "id": "mem-001",
+      "categorie": "feit-recall",
+      "vraag": "Op welk IP-adres staat de Canon-printer vast in het thuisnetwerk?",
+      "verwacht": "Het antwoord noemt 192.168.1.56 als vaste adres (DHCP-reservering) van de Canon-printer.",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-printer",
+            "type": "decision",
+            "content": "De Canon-printer heeft een vaste DHCP-reservering op 192.168.1.56, vastgelegd in 99-static-leases.conf op de OPNsense-router."
+          }
+        ]
+      },
+      "scoring": "llm-judge"
+    },
+    {
+      "id": "mem-002",
+      "categorie": "tijd-recall",
+      "vraag": "Wanneer was het contactincident met bay-1 van de Synology?",
+      "verwacht": "Het antwoord noemt 5 juli 2026 (2026-07-05) als datum van het bay-1 contactincident op de DS418.",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-synology",
+            "type": "observation",
+            "content": "Op 2026-07-05 was er een contactincident met bay-1 van de Synology DS418; de schijf is opnieuw gezet en het RAID5-volume is hersteld.",
+            "event_date": "2026-07-05"
+          }
+        ]
+      },
+      "scoring": "llm-judge"
+    },
+    {
+      "id": "mem-003",
+      "categorie": "beslissing-recall",
+      "vraag": "Hoe hebben we de bufferbloat op de KPN-lijn opgelost?",
+      "verwacht": "Het antwoord noemt de fq_codel-shaper op OPNsense als gekozen oplossing voor de bufferbloat.",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-bufferbloat",
+            "type": "decision",
+            "content": "Bufferbloat op de KPN PPPoE-lijn (Teams-hapering) is opgelost met een fq_codel-shaper op OPNsense; sindsdien is de latency onder load stabiel."
+          }
+        ]
+      },
+      "scoring": "llm-judge"
+    },
+    {
+      "id": "mem-004",
+      "categorie": "procedure-recall",
+      "vraag": "Hoe laat draait de nachtelijke rsync-backup naar de externe USB-schijf?",
+      "verwacht": "Het antwoord noemt 01:00 als starttijd van de dagelijkse rsync-backup naar de externe USB-schijf.",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-backup",
+            "type": "observation",
+            "content": "Backup-topologie: dagelijkse rsync van heel volume1 naar de externe USB-schijf om 01:00; backrest/restic met historie draait om 03:00."
+          }
+        ]
+      },
+      "scoring": "llm-judge"
+    },
+    {
+      "id": "mem-005",
+      "categorie": "werk-context",
+      "vraag": "Wat is er afgesproken over offertes aan nieuwe Lomans-klanten?",
+      "verwacht": "Het antwoord zegt dat offertes aan nieuwe klanten altijd eerst door Bas gecontroleerd worden voordat ze verstuurd worden.",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-offertes",
+            "type": "decision",
+            "content": "Afspraak: offertes aan nieuwe Lomans-klanten gaan altijd eerst langs Bas ter controle voordat ze verstuurd worden."
+          }
+        ]
+      },
+      "scoring": "llm-judge"
+    },
+    {
+      "id": "mem-006",
+      "categorie": "eerlijkheid-onbekend",
+      "vraag": "Welke kleur heeft de voordeur van het kantoor?",
+      "verwacht": "LO geeft eerlijk aan dit niet te weten (geen herinnering hierover) en verzint geen kleur.",
+      "fixtures": {},
+      "scoring": "llm-judge"
+    }
+  ]
+}
