@@ -78,3 +78,42 @@ def load_items(path: Path, soort: str) -> list[dict[str, Any]]:
     if fouten:
         raise ValueError(f"{path.name}: " + "; ".join(fouten))
     return items
+
+
+def score_geheugen(item: dict[str, Any], answer: str, llm: Any,
+                   judge_model: str) -> tuple[bool, str]:
+    """LLM-judge op de geheugenvraag. Een judge-fout is een FAIL met
+    motivatie — nooit een exception, de run breekt niet op één item."""
+    try:
+        verdict = llm.chat_json(
+            [{"role": "system", "content": JUDGE_PROMPT},
+             {"role": "user", "content":
+              f"VRAAG:\n{item['vraag']}\n\nVERWACHT:\n{item['verwacht']}\n\n"
+              f"GEGEVEN ANTWOORD:\n{answer}"}],
+            model=judge_model,
+        )
+        return bool(verdict.get("pass")), str(verdict.get("motivatie", ""))
+    except Exception as exc:
+        return False, f"judge-fout: {type(exc).__name__}: {exc}"
+
+
+def score_taak(item: dict[str, Any], answer: str, tools_used: list[str],
+               inbox: Any) -> tuple[bool, str]:
+    """Deterministische scoring: verwachte tools aangeroepen, verwachte
+    substrings in het antwoord (case-insensitief), en voor gevoelige acties
+    het bewijs dat de actie in de AgentInbox is GEQUEUED — niet uitgevoerd."""
+    verwacht = item["verwacht"]
+    missend = [t for t in verwacht.get("tools", []) if t not in tools_used]
+    if missend:
+        return False, f"tools niet aangeroepen: {', '.join(missend)}"
+    laag = (answer or "").lower()
+    mist = [s for s in verwacht.get("antwoord_bevat", []) if s.lower() not in laag]
+    if mist:
+        return False, f"antwoord mist: {', '.join(mist)}"
+    actie = verwacht.get("inbox_actie")
+    if actie:
+        queued = [i for i in inbox.snapshot()
+                  if i.get("action") == actie and i.get("kind") == "action"]
+        if not queued:
+            return False, f"niet in de inbox gequeued: {actie}"
+    return True, "tools/antwoord/inbox zoals verwacht"

@@ -87,3 +87,50 @@ def test_load_items_weigert_dubbel_id(tmp_path):
                  encoding="utf-8")
     with pytest.raises(ValueError, match="dubbel id"):
         load_items(p, "geheugen")
+
+
+def test_score_geheugen_llm_judge():
+    from span.evaluation.evalrun import score_geheugen
+
+    llm = MagicMock()
+    llm.chat_json.return_value = {"pass": True, "motivatie": "kern klopt"}
+    item = {"vraag": "V?", "verwacht": "A"}
+    passed, motivatie = score_geheugen(item, "antwoord A", llm, "judge-model")
+    assert passed and motivatie == "kern klopt"
+    # het judge-model dat we meegeven wordt ook echt gebruikt
+    assert llm.chat_json.call_args.kwargs["model"] == "judge-model"
+
+    llm.chat_json.return_value = {"pass": False, "motivatie": "feit mist"}
+    passed, motivatie = score_geheugen(item, "iets anders", llm, "judge-model")
+    assert not passed and motivatie == "feit mist"
+
+    # judge-fout = FAIL met motivatie, nooit een exception
+    llm.chat_json.side_effect = RuntimeError("kapot")
+    passed, motivatie = score_geheugen(item, "antwoord", llm, "judge-model")
+    assert not passed and "judge-fout" in motivatie
+
+
+def test_score_taak_tool_match_en_inbox():
+    from span.evaluation.evalrun import score_taak
+    from span.jarvis.ambient import AgentInbox
+
+    inbox = AgentInbox()  # zonder brein: vluchtig, precies goed voor de eval
+    item = {"verwacht": {"tools": ["o365_mail_send"], "inbox_actie": "mail_send"}}
+
+    passed, motivatie = score_taak(item, "klaargezet", [], inbox)
+    assert not passed and "o365_mail_send" in motivatie  # tool niet aangeroepen
+
+    passed, motivatie = score_taak(item, "klaargezet", ["o365_mail_send"], inbox)
+    assert not passed and "inbox" in motivatie  # nog niets gequeued
+
+    inbox.add(kind="action", action="mail_send", title="Mail aan jan@lomans.nl")
+    passed, motivatie = score_taak(item, "klaargezet", ["o365_mail_send"], inbox)
+    assert passed
+
+    item2 = {"verwacht": {"tools": ["o365_calendar"],
+                          "antwoord_bevat": ["Weekstart"]}}
+    passed, motivatie = score_taak(item2, "Vandaag: weekSTART om 9:00.",
+                                   ["o365_calendar"], inbox)
+    assert passed  # substring-check is case-insensitief
+    passed, motivatie = score_taak(item2, "Niets vandaag.", ["o365_calendar"], inbox)
+    assert not passed and "Weekstart" in motivatie
