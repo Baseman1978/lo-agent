@@ -562,6 +562,7 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
     HALF_HOUR = timedelta(minutes=30)
     orphan_last = now_local() - HALF_HOUR
     ff_last = now_local() - HALF_HOUR
+    wd_last = now_local() - HALF_HOUR
 
     while True:
         try:
@@ -620,6 +621,19 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
                         log(f"orphan-reflectie: {done} sessies geëvalueerd")
                 except Exception as exc:
                     log(f"orphan-reflectie: mislukt — {exc}")
+
+            # A3 cron-toets: liepen de dagtaken van gisteren echt? (elk half uur;
+            # de eerste tick na een herstart toetst meteen — juist dán is een
+            # gat waarschijnlijk)
+            if now - wd_last >= HALF_HOUR:
+                wd_last = now
+                from span.jarvis.watchdog import watchdog_tick
+                try:
+                    n = await asyncio.to_thread(watchdog_tick, state)
+                    if n:
+                        log(f"watchdog: {n} gemiste geplande taken gemeld")
+                except Exception as exc:
+                    log(f"watchdog: mislukt — {exc}")
 
             # Fireflies-meetings binnenhalen (idempotent, elke ~30 min)
             if state.get("fireflies") is not None and now - ff_last >= HALF_HOUR:
