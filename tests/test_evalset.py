@@ -134,3 +134,84 @@ def test_score_taak_tool_match_en_inbox():
     assert passed  # substring-check is case-insensitief
     passed, motivatie = score_taak(item2, "Niets vandaag.", ["o365_calendar"], inbox)
     assert not passed and "Weekstart" in motivatie
+
+
+def _mock_settings():
+    settings = MagicMock()
+    settings.model_main = "test-model"
+    settings.model_light = "test-light"
+    settings.decay_mode = "off"
+    return settings
+
+
+def test_run_item_geheugen_schrijft_eval_telemetrie(tmp_path, monkeypatch):
+    """Volledige item-run: echte SpanAgent + FixtureBrain, mock-LLM (geen
+    netwerk), en een seg="eval"-record in de telemetrie-log."""
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+    import span.telemetry as tel
+    from span.evaluation.evalrun import run_item
+
+    llm = MagicMock()
+    llm.embed_one.return_value = [0.1] * 8
+    llm.embed.return_value = [[0.1] * 8]
+    antwoord = MagicMock()
+    antwoord.content = "De printer staat vast op 192.168.1.56."
+    antwoord.tool_calls = None
+    llm.chat.return_value = antwoord
+    llm.chat_json.return_value = {"pass": True, "motivatie": "ip genoemd"}
+
+    item = {"id": "mem-test", "categorie": "feit-recall",
+            "vraag": "Op welk IP staat de printer?",
+            "verwacht": "Noemt 192.168.1.56.",
+            "fixtures": {"fragments": [{"id": "mf-eval-p", "type": "decision",
+                                        "content": "Printer vast op 192.168.1.56."}]},
+            "scoring": "llm-judge"}
+    result = run_item(item, "geheugen", _mock_settings(), llm)
+    assert result.passed
+    assert result.id == "mem-test" and result.soort == "geheugen"
+    assert result.ms > 0
+    assert tel.aggregate()["segments"]["eval"]["count"] == 1
+
+
+def test_run_item_taak_vangt_tools_en_inbox(tmp_path, monkeypatch):
+    """Taak-scenario: het model roept o365_mail_send aan; de guard queue't in
+    de AgentInbox (autonomy=ask) en tool-match scoort op tool + queue-bewijs."""
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+    from span.evaluation.evalrun import run_item
+
+    llm = MagicMock()
+    llm.embed_one.return_value = [0.1] * 8
+    llm.embed.return_value = [[0.1] * 8]
+    tool_call = MagicMock()
+    tool_call.id = "1"
+    tool_call.function.name = "o365_mail_send"
+    tool_call.function.arguments = json.dumps(
+        {"to": ["jan@lomans.nl"], "subject": "Weekstart", "body": "10:00"})
+    eerste = MagicMock(); eerste.content = ""; eerste.tool_calls = [tool_call]
+    tweede = MagicMock(); tweede.content = "Ik heb de mail klaargezet ter goedkeuring."
+    tweede.tool_calls = None
+    llm.chat.side_effect = [eerste, tweede]
+
+    item = {"id": "taak-test", "categorie": "mail-guard",
+            "opdracht": "Stuur een mail naar jan@lomans.nl over de weekstart.",
+            "verwacht": {"tools": ["o365_mail_send"], "inbox_actie": "mail_send"},
+            "fixtures": {},
+            "scoring": "tool-match"}
+    result = run_item(item, "taak", _mock_settings(), llm)
+    assert result.passed, result.motivatie
+    assert "o365_mail_send" in result.tools
+
+
+def test_run_item_agent_fout_wordt_fail_geen_crash(tmp_path, monkeypatch):
+    monkeypatch.setenv("SPAN_TELEMETRY", "off")
+    from span.evaluation.evalrun import run_item
+
+    llm = MagicMock()
+    llm.embed_one.side_effect = RuntimeError("embed kapot")
+    llm.chat_json.return_value = {"pass": False, "motivatie": "fout"}
+    item = {"id": "mem-kapot", "categorie": "feit-recall", "vraag": "V?",
+            "verwacht": "A", "fixtures": {}, "scoring": "llm-judge"}
+    result = run_item(item, "geheugen", _mock_settings(), llm)
+    assert not result.passed  # item faalt, de run crasht niet

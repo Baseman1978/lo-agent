@@ -15,10 +15,14 @@ Judge-model instelbaar via env SPAN_EVAL_JUDGE_MODEL (default: model_light).
 from __future__ import annotations
 
 import json
+import os
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from span import AGENT_NAME
+from span import AGENT_NAME, telemetry
+from span.evaluation.fixture_brain import FakeAsana, FakeO365, FixtureBrain
 
 DATA_DIR = Path(__file__).parent / "data"
 GEHEUGEN_PATH = DATA_DIR / "eval_geheugen_nl.json"
@@ -117,3 +121,64 @@ def score_taak(item: dict[str, Any], answer: str, tools_used: list[str],
         if not queued:
             return False, f"niet in de inbox gequeued: {actie}"
     return True, "tools/antwoord/inbox zoals verwacht"
+
+
+@dataclass
+class ItemResult:
+    id: str
+    soort: str            # "geheugen" | "taak"
+    categorie: str
+    passed: bool
+    ms: float
+    motivatie: str = ""
+    tools: list[str] = field(default_factory=list)
+
+
+def run_item(item: dict[str, Any], soort: str, settings: Any,
+             llm: Any) -> ItemResult:
+    """Eén eval-item door een verse SpanAgent op de FixtureBrain. Elke fout
+    wordt een FAIL-resultaat; de run zelf breekt nooit op één item."""
+    from span.jarvis.ambient import AgentInbox
+    from span.orchestrator.agent import SpanAgent
+
+    fx = item.get("fixtures") or {}
+    brain = FixtureBrain()
+    brain.arm(fx.get("fragments") or [])
+    inbox = AgentInbox()  # vluchtig (geen brein): queue-bewijs per item
+    tools_used: list[str] = []
+    t0 = time.perf_counter()
+    try:
+        agent = SpanAgent(
+            settings, brain, llm,
+            o365=FakeO365(fx), asana=FakeAsana(fx), inbox=inbox,
+            tool_retrieval=False,  # volle toollijst; geen tool-embeddings nodig
+        )
+        # achtergrond-daemons stubben: geen extra LLM-calls of DB-writes per item
+        agent._record_turn = lambda *a, **k: None
+        agent._persist_messages = lambda *a, **k: None
+        agent._verify_active_quest = lambda *a, **k: None
+        agent._write_trace = lambda *a, **k: None
+
+        def on_tool(name: str, phase: str) -> None:
+            if phase == "start":
+                tools_used.append(name)
+
+        agent.begin(f"eval-{item['id']}")
+        answer = agent.turn(item.get("vraag") or item.get("opdracht") or "",
+                            on_tool=on_tool)
+    except Exception as exc:
+        answer = f"(agent-fout: {type(exc).__name__}: {exc})"
+    ms = (time.perf_counter() - t0) * 1000.0
+
+    if soort == "geheugen":
+        judge_model = (os.environ.get("SPAN_EVAL_JUDGE_MODEL", "").strip()
+                       or settings.model_light)
+        passed, motivatie = score_geheugen(item, answer, llm, judge_model)
+    else:
+        passed, motivatie = score_taak(item, answer, tools_used, inbox)
+    telemetry.record("eval", ms, {"id": item["id"], "soort": soort,
+                                  "passed": passed,
+                                  "categorie": item["categorie"]})
+    return ItemResult(id=item["id"], soort=soort, categorie=item["categorie"],
+                      passed=passed, ms=round(ms, 1), motivatie=motivatie,
+                      tools=tools_used)
