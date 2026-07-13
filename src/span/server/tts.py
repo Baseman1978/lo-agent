@@ -114,6 +114,19 @@ def available() -> bool:
     return os.path.exists(VOICE_PATH)
 
 
+def streaming_enabled() -> bool:
+    """A2-feature-flag: ElevenLabs-WS-streaming. Default UIT — de spec zegt:
+    poort pas open nadat A1 bewijst dat TTS-latency de bottleneck is."""
+    return os.environ.get("SPAN_TTS_STREAMING", "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def stream_available() -> bool:
+    """Streaming-pad actief: flag aan én ElevenLabs is de actieve engine
+    (engine() garandeert dan dat de API-key aanwezig is)."""
+    return streaming_enabled() and engine() == "elevenlabs"
+
+
 # naam -> voice_id, gevuld bij de eerste /voices-call (HUD toont namen)
 _eleven_voices: dict[str, str] = {}
 
@@ -185,7 +198,7 @@ def _wav(pcm: bytes, sample_rate: int, channels: int = 1) -> bytes:
     return buf.getvalue()
 
 
-def _synth_elevenlabs(text: str, speaker) -> bytes:
+def _synth_elevenlabs(text: str, speaker, model_id: str | None = None) -> bytes:
     import httpx
     vid = ELEVEN_VOICE
     if speaker:
@@ -200,7 +213,7 @@ def _synth_elevenlabs(text: str, speaker) -> bytes:
             f"{_ELEVEN_BASE}/text-to-speech/{vid}",
             params={"output_format": "pcm_22050"},
             headers={"xi-api-key": ELEVEN_KEY},
-            json={"text": text, "model_id": ELEVEN_MODEL})
+            json={"text": text, "model_id": model_id or ELEVEN_MODEL})
         resp.raise_for_status()
     return _wav(resp.content, 22050)
 

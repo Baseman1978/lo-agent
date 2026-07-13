@@ -1025,7 +1025,10 @@ async def text_to_speech(request: Request) -> Any:
             volume=_num("volume", 0.1, 2.0),
         )
         from span import telemetry
-        telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0, {"mode": "full"})
+        _meta: dict[str, Any] = {"mode": "full", "engine": tts.engine()}
+        if _meta["engine"] == "elevenlabs":
+            _meta["model"] = tts.ELEVEN_MODEL
+        telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0, _meta)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"TTS mislukt: {exc}")
     from fastapi.responses import Response
@@ -1035,22 +1038,71 @@ async def text_to_speech(request: Request) -> Any:
 
 @router.post("/api/tts_stream")
 async def tts_stream(request: Request) -> Any:
-    """Streamt audio (ruwe PCM16 @ 24kHz) door van de XTTS-GPU-service terwijl die
-    genereert — eerste klank ~0,2s. Alleen bij de XTTS-backend."""
+    """Streamt audio (ruwe PCM16) terwijl de engine genereert — eerste klank
+    snel. Twee bronnen: ElevenLabs-WS (A2, achter SPAN_TTS_STREAMING) of de
+    lokale XTTS-GPU-service. Zelfde response-contract (PCM16 + X-Sample-Rate)
+    zodat de HUD (voice.js/ttsPlayStream) ongewijzigd werkt."""
     _require_rest_auth(request)
     from span.server import tts as ttsmod
-    if not ttsmod.XTTS_URL:
+    use_eleven = ttsmod.stream_available()
+    if not use_eleven and not ttsmod.XTTS_URL:
         raise HTTPException(status_code=501, detail="Streaming niet beschikbaar.")
     body = await request.json()
     text = (body.get("text") or "").strip()
     if not text:
         raise HTTPException(status_code=422, detail="Lege tekst.")
-    payload: dict[str, Any] = {"text": text[:1200], "language": "nl"}
+    text = text[:1200]
     spk = body.get("speaker")
-    if spk:
-        payload["speaker"] = str(spk)[:80]
-    import httpx
+    speaker = str(spk)[:80] if spk else None
     from fastapi.responses import StreamingResponse
+
+    if use_eleven:
+        from span.server import tts_stream_eleven as tse
+
+        async def gen_eleven():
+            _t0 = time.perf_counter()
+            _first = True
+            try:
+                async for chunk in tse.stream_pcm(text, speaker=speaker):
+                    if _first and chunk:
+                        from span import telemetry
+                        telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0,
+                                         {"mode": "stream", "engine": "elevenlabs",
+                                          "model": ttsmod.ELEVEN_MODEL})
+                        _first = False
+                    if chunk:
+                        yield chunk
+                if _first:
+                    # schone-maar-lege stream (nul chunks, geen exception): de
+                    # HUD valt terug op batch, maar de degradatie moet ook hier
+                    # zichtbaar zijn in de telemetrie (spec).
+                    from span import telemetry
+                    telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0,
+                                     {"mode": "stream", "engine": "elevenlabs",
+                                      "outcome": "empty"})
+            except Exception as exc:
+                # fail-soft: lege/afgebroken stream -> de HUD valt zelf terug
+                # op het batch-pad (voice.js: "lege stream" -> ttsPlayBatch).
+                # Maar degradatie moet zíchtbaar zijn (spec: outcome/foutklasse
+                # in A1-telemetrie + eerlijk over wat niet lukte) — dus loggen
+                # én registreren; telemetry.record is zelf al best-effort.
+                print(f"[tts] elevenlabs stream-fout: {type(exc).__name__}: {exc}",
+                      flush=True)
+                from span import telemetry
+                telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0,
+                                 {"mode": "stream", "engine": "elevenlabs",
+                                  "outcome": "error",
+                                  "error_class": type(exc).__name__})
+                return
+
+        return StreamingResponse(gen_eleven(), media_type="application/octet-stream",
+                                 headers={"X-Sample-Rate": str(tse.SAMPLE_RATE),
+                                          "Cache-Control": "no-store"})
+
+    payload: dict[str, Any] = {"text": text, "language": "nl"}
+    if speaker:
+        payload["speaker"] = speaker
+    import httpx
 
     async def gen():
         async with httpx.AsyncClient(timeout=120.0) as client:
@@ -1064,13 +1116,14 @@ async def tts_stream(request: Request) -> Any:
                     if _first and chunk:
                         from span import telemetry
                         telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0,
-                                         {"mode": "stream"})
+                                         {"mode": "stream", "engine": "xtts"})
                         _first = False
                     if chunk:
                         yield chunk
 
     return StreamingResponse(gen(), media_type="application/octet-stream",
-                             headers={"X-Sample-Rate": "24000", "Cache-Control": "no-store"})
+                             headers={"X-Sample-Rate": "24000",
+                                      "Cache-Control": "no-store"})
 
 
 @router.get("/api/tts/status")
@@ -1080,13 +1133,51 @@ async def tts_status(request: Request) -> dict[str, Any]:
     info = {"available": tts.available()}
     if info["available"]:
         info.update(tts.voice_info())
-        # streamen kan alleen via XTTS; alleen relevant als die ook actief is
-        info["streaming"] = bool(tts.XTTS_URL) and tts.engine() == "xtts"
+        # streamen: ElevenLabs-WS (achter de flag) óf XTTS. Moet true worden,
+        # anders kiest de HUD nooit het stream-pad (settings.js zet hieruit
+        # SPAN._ttsStreaming; voice.js kiest daarop ttsPlayStream).
+        info["streaming"] = tts.stream_available() or (
+            bool(tts.XTTS_URL) and tts.engine() == "xtts")
         # keuzemenu: welke bronnen zijn er + wat is de beheerder-keuze
         info["engines"] = tts.engines_available()
         info["engine_override"] = tts._ENGINE_OVERRIDE
         info["is_owner"] = _is_owner(request)   # engine-keuze is server-breed
     return info
+
+
+_AB_MODELS = ("eleven_flash_v2_5", "eleven_multilingual_v2")
+
+
+@router.post("/api/tts_ab")
+async def tts_ab(request: Request) -> dict[str, Any]:
+    """Owner-only A/B-luistertest (A2): dezelfde zin door Flash v2.5 én
+    Multilingual v2, batch-gesynthetiseerd, met tts_ms per model. Bas kiest op
+    oor; het latencyverschil komt óók in de A1-telemetrie (mode=ab, meta.model)
+    terecht. Fail-soft per model: één model kapot -> het andere komt gewoon."""
+    _require_owner(request)
+    import base64 as _b64
+    from span.server import tts
+    if tts.engine() != "elevenlabs":
+        raise HTTPException(status_code=501, detail="ElevenLabs niet actief.")
+    body = await request.json()
+    text = (body.get("text") or "").strip()[:300]
+    if not text:
+        raise HTTPException(status_code=422, detail="Lege tekst.")
+    from span import telemetry
+    results: list[dict[str, Any]] = []
+    for model_id in _AB_MODELS:
+        _t0 = time.perf_counter()
+        try:
+            audio = await asyncio.to_thread(
+                tts._synth_elevenlabs, text, None, model_id)
+        except Exception as exc:
+            results.append({"model": model_id, "error": str(exc)[:200]})
+            continue
+        ms = (time.perf_counter() - _t0) * 1000.0
+        telemetry.record("tts", ms, {"mode": "ab", "model": model_id})
+        results.append({"model": model_id, "tts_ms": round(ms, 1),
+                        "audio_b64": _b64.b64encode(audio).decode("ascii")})
+    return {"text": text, "results": results}
 
 
 @router.get("/api/skills")

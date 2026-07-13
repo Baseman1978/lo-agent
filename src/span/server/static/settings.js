@@ -673,6 +673,10 @@
     fetch("/api/tts/status", { headers: SPAN.authHeaders() }).then((r) => r.json()).then((s) => {
       if (!s.available) { wrap.style.display = "none"; return; }
       SPAN._ttsStreaming = !!s.streaming;   // XTTS streamt -> lage latency
+      // A2 — A/B-knop alleen voor de beheerder én als ElevenLabs actief is
+      const abRow = $("tts-ab-row");
+      if (abRow) abRow.style.display =
+        (s.is_owner === false || s.engine !== "elevenlabs") ? "none" : "";
       // spraakbron-keuzemenu: server-breed, dus alleen voor de beheerder
       const engRow = $("tts-engine-row"), engSel = $("tts-engine");
       if (engRow && engSel) {
@@ -750,6 +754,40 @@
       ["span_tts_speaker", "span_tts_length", "span_tts_noise", "span_tts_noisew", "span_tts_volume"]
         .forEach((k) => localStorage.removeItem(k));
       ttsInit();
+    };
+    // A2 — A/B-luistertest: dezelfde zin door Flash v2.5 en Multilingual v2.
+    // Audio komt als base64-WAV terug met tts_ms per model; na elkaar afspelen
+    // zodat Bas op oor kan kiezen. Fouten alleen tonen, nooit door-crashen.
+    const ab = $("tts-ab");
+    if (ab) ab.onclick = async () => {
+      const note = $("tts-ab-note");
+      ab.disabled = true;
+      if (note) note.textContent = "genereren…";
+      try {
+        const res = await fetch("/api/tts_ab", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...SPAN.authHeaders() },
+          body: JSON.stringify({
+            text: "Goedemiddag Bas. Je hebt vandaag drie afspraken; " +
+                  "de eerste begint om half tien.",
+          }),
+        });
+        if (!res.ok) throw new Error("ab " + res.status);
+        const d = await res.json();
+        const lines = [];
+        for (const r of d.results || []) {
+          if (r.error) { lines.push(r.model + ": fout"); continue; }
+          lines.push(r.model.replace("eleven_", "") + ": " + Math.round(r.tts_ms) + " ms");
+          if (note) note.textContent = "speelt: " + r.model;
+          const audio = new Audio("data:audio/wav;base64," + r.audio_b64);
+          await audio.play().catch(() => {});
+          await new Promise((ok) => { audio.onended = ok; audio.onerror = ok; });
+        }
+        if (note) note.textContent = lines.join(" · ");
+      } catch (e) {
+        if (note) note.textContent = "A/B-test mislukt";
+      }
+      ab.disabled = false;
     };
   }
   ttsInit();
