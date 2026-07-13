@@ -16,6 +16,14 @@ import requests
 from span import AGENT_NAME
 
 
+def _voice_reply_enabled() -> bool:
+    """A5-flag SPAN_TG_VOICE_REPLY: voice-antwoord op een voice-note.
+    Default aan (het pad is best-effort met tekst-fallback); kill-switch
+    in dezelfde stijl als SPAN_TELEMETRY."""
+    val = os.environ.get("SPAN_TG_VOICE_REPLY", "on").strip().lower()
+    return val not in {"off", "0", "false", "no", ""}
+
+
 class TelegramBridge:
     def __init__(self, token: str, state: dict[str, Any]):
         self._base = f"https://api.telegram.org/bot{token}"
@@ -198,7 +206,7 @@ class TelegramBridge:
             self._agent.begin(self._session_id)
         return self._agent
 
-    def _handle_text(self, chat_id: str, text: str) -> None:
+    def _handle_text(self, chat_id: str, text: str, as_voice: bool = False) -> None:
         expected = os.environ.get("SPAN_AUTH_TOKEN", "").strip()
 
         if not self._chat_id:
@@ -245,6 +253,10 @@ class TelegramBridge:
 
         agent = self._ensure_agent()
         answer = agent.turn(text)
+        # reply-in-kind: een ingesproken vraag krijgt een ingesproken antwoord;
+        # elke fout in het voice-pad valt geruisloos terug op tekst
+        if as_voice and _voice_reply_enabled() and self.send_voice(answer):
+            return
         self.send(answer)
 
     def _start_o365_login(self) -> None:
@@ -318,6 +330,24 @@ class TelegramBridge:
             return ""   # te groot -> overslaan i.p.v. geheugen opblazen
         return stt.transcribe(audio)
 
+    def _incoming_text(self, msg: dict[str, Any], chat_id: str) -> tuple[str, bool]:
+        """Tekst uit een update halen; voice-notes gaan door server-Whisper.
+        Lege transcriptie -> nette melding i.p.v. de oude stille drop.
+        Geeft (tekst, was_voice) terug."""
+        if msg.get("voice") and chat_id:
+            try:
+                text = self._transcribe_voice(msg["voice"])
+            except Exception as exc:
+                print(f"[telegram] voice-fout: {exc}", flush=True)
+                text = ""
+            if not text:
+                self.send("Ik kon je spraakbericht niet omzetten naar tekst "
+                          "(opname te kort, te groot, of server-STT niet "
+                          "beschikbaar). Typ je vraag, of probeer het opnieuw.",
+                          chat_id)
+            return text, True
+        return (msg.get("text") or "").strip(), False
+
     # -- hoofd-loop ------------------------------------------------------------
 
     async def run(self) -> None:
@@ -353,19 +383,15 @@ class TelegramBridge:
                         continue
                     msg = upd.get("message") or {}
                     chat_id = str((msg.get("chat") or {}).get("id", ""))
-                    # voice-note -> server-Whisper -> als tekst behandelen (F2.3)
-                    if msg.get("voice") and chat_id:
-                        try:
-                            text = await asyncio.to_thread(self._transcribe_voice, msg["voice"])
-                        except Exception as exc:
-                            print(f"[telegram] voice-fout: {exc}", flush=True)
-                            text = ""
-                    else:
-                        text = (msg.get("text") or "").strip()
+                    # voice-note -> server-Whisper; A5: melding bij mislukking
+                    # en de was_voice-vlag stuurt reply-in-kind
+                    text, was_voice = await asyncio.to_thread(
+                        self._incoming_text, msg, chat_id)
                     if not text or not chat_id:
                         continue
                     try:
-                        await asyncio.to_thread(self._handle_text, chat_id, text)
+                        await asyncio.to_thread(self._handle_text, chat_id, text,
+                                                was_voice)
                     except Exception as exc:
                         print(f"[telegram] bericht-fout: {type(exc).__name__}: {exc}",
                               flush=True)

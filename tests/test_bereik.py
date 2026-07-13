@@ -124,3 +124,51 @@ class TestTelegramVoice:
         monkeypatch.setattr(tts, "available", lambda: True)
         bridge = self._bridge()
         assert bridge.send_voice("x" * 1000) is False  # lang antwoord leest beter als tekst
+
+    def test_voice_note_krijgt_voice_antwoord(self, monkeypatch):
+        monkeypatch.setenv("SPAN_TG_VOICE_REPLY", "on")
+        bridge = self._bridge()
+        agent = MagicMock()
+        agent.turn.return_value = "antwoord"
+        bridge._agent = agent                     # _ensure_agent geeft deze terug
+        bridge.send = MagicMock()
+        bridge.send_voice = MagicMock(return_value=True)
+        bridge._handle_text("123", "hoi", True)   # as_voice=True
+        bridge.send_voice.assert_called_once_with("antwoord")
+        bridge.send.assert_not_called()
+
+    def test_voice_antwoord_valt_terug_op_tekst(self, monkeypatch):
+        monkeypatch.setenv("SPAN_TG_VOICE_REPLY", "on")
+        bridge = self._bridge()
+        agent = MagicMock()
+        agent.turn.return_value = "antwoord"
+        bridge._agent = agent
+        bridge.send = MagicMock()
+        bridge.send_voice = MagicMock(return_value=False)  # encode/API kapot
+        bridge._handle_text("123", "hoi", True)
+        bridge.send.assert_called_once_with("antwoord")
+
+    def test_flag_off_geeft_altijd_tekst(self, monkeypatch):
+        monkeypatch.setenv("SPAN_TG_VOICE_REPLY", "off")
+        bridge = self._bridge()
+        agent = MagicMock()
+        agent.turn.return_value = "antwoord"
+        bridge._agent = agent
+        bridge.send = MagicMock()
+        bridge.send_voice = MagicMock()
+        bridge._handle_text("123", "hoi", True)
+        bridge.send_voice.assert_not_called()
+        bridge.send.assert_called_once_with("antwoord")
+
+    def test_mislukte_transcriptie_geeft_nette_melding(self, monkeypatch):
+        bridge = self._bridge()
+        bridge.send = MagicMock()
+        monkeypatch.setattr(bridge, "_transcribe_voice", lambda voice: "")
+        text, was_voice = bridge._incoming_text({"voice": {"file_id": "f1"}}, "123")
+        assert text == "" and was_voice is True
+        assert "spraakbericht" in bridge.send.call_args.args[0]
+
+    def test_gewone_tekst_blijft_gewoon_tekst(self):
+        bridge = self._bridge()
+        text, was_voice = bridge._incoming_text({"text": " hoi "}, "123")
+        assert text == "hoi" and was_voice is False
