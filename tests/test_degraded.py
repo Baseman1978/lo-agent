@@ -5,8 +5,6 @@ from __future__ import annotations
 
 import json
 
-import span.telemetry as tel
-
 
 def _agent_double(frag, llm):
     from unittest.mock import MagicMock
