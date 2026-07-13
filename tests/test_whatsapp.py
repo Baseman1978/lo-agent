@@ -6,9 +6,12 @@ mocks/fixtures vóór het Meta-testnummer er is".
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from collections import OrderedDict
 from unittest.mock import MagicMock
+
+import pytest
 
 
 def test_egress_staat_facebook_hosts_toe():
@@ -166,3 +169,44 @@ def test_onbekend_berichttype_genegeerd(monkeypatch, capsys):
     b.handle_message({"from": "31612345678", "id": "wamid.s", "type": "sticker"})
     agent.turn.assert_not_called()
     assert "sticker" in capsys.readouterr().out
+
+
+def _get_request(params):
+    req = MagicMock()
+    req.method = "GET"
+    req.query_params = params
+    return req
+
+
+def test_webhook_get_handshake(monkeypatch):
+    import span.server.whatsapp as wh
+    monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "verify-123")
+    resp = asyncio.run(wh.whatsapp_webhook(_get_request({
+        "hub.mode": "subscribe",
+        "hub.verify_token": "verify-123",
+        "hub.challenge": "424242",
+    })))
+    assert resp.body == b"424242"
+    assert resp.media_type == "text/plain"
+
+
+def test_webhook_get_fout_token_is_403(monkeypatch):
+    import span.server.whatsapp as wh
+    from fastapi import HTTPException
+    monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "verify-123")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(wh.whatsapp_webhook(_get_request({
+            "hub.mode": "subscribe",
+            "hub.verify_token": "fout",
+            "hub.challenge": "424242",
+        })))
+    assert exc.value.status_code == 403
+
+
+def test_webhook_get_niet_geconfigureerd_is_404(monkeypatch):
+    import span.server.whatsapp as wh
+    from fastapi import HTTPException
+    monkeypatch.delenv("WHATSAPP_VERIFY_TOKEN", raising=False)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(wh.whatsapp_webhook(_get_request({"hub.mode": "subscribe"})))
+    assert exc.value.status_code == 404  # fail-closed, zoals /api/webhooks/graph
