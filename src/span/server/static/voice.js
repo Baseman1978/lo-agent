@@ -552,8 +552,15 @@
   let intentionalStop = false, hotUntil = 0;
 
   if (!SR) {
-    $("mic").style.display = "none"; $("wake").style.display = "none";
-    return;
+    // iOS/Safari: geen (webkit)SpeechRecognition. Spraak blijft werken via
+    // het bestaande server-STT-pad (MediaRecorder -> /api/stt); alleen als
+    // óók opnemen onmogelijk is (geen MediaRecorder, of http zonder secure
+    // context -> geen mediaDevices) verdwijnen de knoppen echt.
+    if (!window.MediaRecorder || !navigator.mediaDevices) {
+      $("mic").style.display = "none"; $("wake").style.display = "none";
+      return;
+    }
+    localStorage.setItem("span_stt", "server");  // r689 pikt dit op
   }
 
   /* -- Fase 3: adaptieve beurt-aggregatie --------------------------------------
