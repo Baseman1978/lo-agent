@@ -76,6 +76,46 @@ class TelegramBridge:
                 ok = False
         return ok
 
+    def send_voice(self, text: str, chat_id: str = "") -> bool:
+        """A5: antwoord als Telegram-voice-note (OGG/Opus via PyAV).
+
+        Best-effort: bij élke fout (geen TTS, encode kapot, API-fout) False,
+        zodat de aanroeper terugvalt op een gewoon tekstbericht — een
+        voice-fout mag nooit een gesprek breken."""
+        target = chat_id or self._chat_id
+        if not target:
+            return False
+        if len(text) > 900:
+            return False   # lange antwoorden lezen beter als tekst
+        try:
+            from span.server import tts
+            if not tts.available():
+                return False
+            import time as _time
+            from span import telemetry
+            from span.integrations import audio as audiomod
+            _t0 = _time.perf_counter()
+            wav = tts.synthesize(text)
+            telemetry.record("tts", (_time.perf_counter() - _t0) * 1000.0,
+                             {"mode": "telegram"})
+            if not wav:
+                return False
+            ogg = audiomod.wav_to_ogg_opus(wav)
+            resp = requests.post(
+                f"{self._base}/sendVoice",
+                data={"chat_id": target},
+                files={"voice": ("antwoord.ogg", ogg, "audio/ogg")},
+                timeout=60,
+            )
+            if not resp.ok:
+                print(f"[telegram] sendVoice {resp.status_code}: {resp.text[:200]}",
+                      flush=True)
+                return False
+            return True
+        except Exception as exc:
+            print(f"[telegram] voice-antwoord mislukt: {exc}", flush=True)
+            return False
+
     def send_inbox_item(self, item: dict[str, Any]) -> None:
         """F2.3 — stuur een actie-item met inline goedkeur/afwijs-knoppen, zodat
         Bas vanaf zijn telefoon kan goedkeuren. callback_data draagt het item-id."""

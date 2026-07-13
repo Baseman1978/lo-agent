@@ -76,3 +76,51 @@ def test_wav_naar_ogg_opus():
     ogg = wav_to_ogg_opus(_wav(pcm, 22050))
     assert ogg[:4] == b"OggS"
     assert len(ogg) > 100
+
+
+class TestTelegramVoice:
+    """Telegram voice-uit: sendVoice met OGG/Opus, altijd met tekst-fallback."""
+
+    def _bridge(self):
+        from span.integrations.telegram import TelegramBridge
+        brain = MagicMock()
+        # __init__ leest telegram_chat_id ('cid') en last_tg_daily ('d')
+        brain.run.return_value = [{"cid": "123", "d": ""}]
+        return TelegramBridge("tok", {"brain": brain})
+
+    def test_send_voice_stuurt_ogg_multipart(self, monkeypatch):
+        import span.integrations.telegram as tgmod
+        import span.integrations.audio as audiomod
+        import span.server.tts as tts
+        monkeypatch.setenv("SPAN_TELEMETRY", "off")
+        monkeypatch.setattr(tts, "available", lambda: True)
+        monkeypatch.setattr(tts, "synthesize", lambda text, **kw: b"RIFF....WAVE")
+        monkeypatch.setattr(audiomod, "wav_to_ogg_opus",
+                            lambda wav, bitrate=32_000: b"OggSfake")
+        posted = {}
+
+        def fake_post(url, **kw):
+            posted["url"] = url
+            posted.update(kw)
+            resp = MagicMock()
+            resp.ok = True
+            return resp
+
+        monkeypatch.setattr(tgmod.requests, "post", fake_post)
+        bridge = self._bridge()
+        assert bridge.send_voice("hoi bas") is True
+        assert posted["url"].endswith("/sendVoice")
+        assert posted["data"] == {"chat_id": "123"}
+        assert posted["files"]["voice"][1] == b"OggSfake"
+
+    def test_send_voice_faalt_zacht_zonder_tts(self, monkeypatch):
+        import span.server.tts as tts
+        monkeypatch.setattr(tts, "available", lambda: False)
+        bridge = self._bridge()
+        assert bridge.send_voice("hoi") is False   # aanroeper valt terug op tekst
+
+    def test_send_voice_weigert_lange_teksten(self, monkeypatch):
+        import span.server.tts as tts
+        monkeypatch.setattr(tts, "available", lambda: True)
+        bridge = self._bridge()
+        assert bridge.send_voice("x" * 1000) is False  # lang antwoord leest beter als tekst
