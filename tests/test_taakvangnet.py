@@ -359,3 +359,64 @@ class TestTaskManagerVangnet:
         assert mgr.get(1)["status"] == "interrupted"
         import span.telemetry as tel
         assert tel.aggregate()["segments"]["task_interrupted"]["count"] == 1
+
+
+class TestTaskPush:
+    def _item(self, status="done", secs=300.0, owner=""):
+        b = datetime.now(timezone.utc)
+        a = b - timedelta(seconds=secs)
+        return {"id": 7, "title": "rapport maken", "goal": "rapport maken",
+                "status": status, "result": "hier is het rapport", "team": False,
+                "owner": owner, "created": a.isoformat(), "updated": b.isoformat()}
+
+    def _state(self, monkeypatch, sent):
+        import span.jarvis.daily as daily
+        monkeypatch.setattr(
+            daily, "send_respecting_quiet",
+            lambda tg, text, brain, urgent=False: sent.append((text, urgent)) or True)
+        tg = MagicMock(); tg.linked = True
+        return {"telegram": tg, "brain": MagicMock(), "inbox": MagicMock()}
+
+    def test_langlopende_done_taak_pusht(self, monkeypatch):
+        monkeypatch.setenv("SPAN_TASK_PUSH", "on")
+        from span.jarvis.task_push import make_task_push
+        sent = []
+        make_task_push(self._state(monkeypatch, sent))(self._item(secs=300.0))
+        assert sent and "Achtergrondtaak klaar" in sent[0][0]
+        assert sent[0][1] is False
+
+    def test_korte_done_taak_pusht_niet(self, monkeypatch):
+        monkeypatch.setenv("SPAN_TASK_PUSH", "on")
+        from span.jarvis.task_push import make_task_push
+        sent = []
+        make_task_push(self._state(monkeypatch, sent))(self._item(secs=10.0))
+        assert sent == []
+
+    def test_definitief_mislukt_pusht_altijd_en_urgent(self, monkeypatch):
+        monkeypatch.setenv("SPAN_TASK_PUSH", "on")
+        from span.jarvis.task_push import make_task_push
+        sent = []
+        state = self._state(monkeypatch, sent)
+        make_task_push(state)(self._item(status="error", secs=5.0))
+        assert sent and "Achtergrondtaak mislukt" in sent[0][0]
+        assert sent[0][1] is True
+        state["inbox"].add.assert_called_once()
+
+    def test_flag_uit_en_vreemde_owner_pushen_niet(self, monkeypatch):
+        from span.jarvis.task_push import make_task_push
+        sent = []
+        state = self._state(monkeypatch, sent)
+        monkeypatch.setenv("SPAN_TASK_PUSH", "off")
+        make_task_push(state)(self._item(status="error"))
+        monkeypatch.setenv("SPAN_TASK_PUSH", "on")
+        monkeypatch.setenv("SPAN_OWNER_OID", "oid-bas")
+        make_task_push(state)(self._item(status="error", owner="oid-iemand-anders"))
+        assert sent == []
+
+    def test_geannuleerd_pusht_niet(self, monkeypatch):
+        monkeypatch.setenv("SPAN_TASK_PUSH", "on")
+        from span.jarvis.task_push import make_task_push
+        sent = []
+        make_task_push(self._state(monkeypatch, sent))(
+            self._item(status="cancelled", secs=300.0))
+        assert sent == []
