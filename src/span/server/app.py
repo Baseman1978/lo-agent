@@ -44,6 +44,12 @@ from span.server.state import (
 )
 
 
+# A2: harde referenties op best-effort startup-tasks (prewarm) — asyncio houdt
+# alleen een zwakke referentie, dus zonder dit kan de GC de task voortijdig
+# opruimen (gedocumenteerde footgun).
+_STARTUP_TASKS: set = set()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = load_settings()
@@ -87,7 +93,9 @@ async def lifespan(app: FastAPI):
                   flush=True)
 
         try:
-            _aio.get_running_loop().create_task(_tts_warm())
+            _t = _aio.get_running_loop().create_task(_tts_warm())
+            _STARTUP_TASKS.add(_t)                 # harde ref (anti-GC)
+            _t.add_done_callback(_STARTUP_TASKS.discard)
         except RuntimeError:
             pass
     _state.update(

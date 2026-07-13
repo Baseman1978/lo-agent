@@ -263,3 +263,36 @@ def test_tts_ab_501_zonder_elevenlabs(monkeypatch):
     with pytest.raises(HTTPException) as ei:
         asyncio.run(routes.tts_ab(req))
     assert ei.value.status_code == 501
+
+
+def test_route_tts_stream_lege_stream_meldt_empty(monkeypatch, tmp_path):
+    """M2: nul chunks zonder exception -> outcome=empty in de telemetrie."""
+    import span.server.routes as routes
+    from unittest.mock import MagicMock
+
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+    monkeypatch.setattr(routes, "_require_rest_auth", lambda request: None)
+    monkeypatch.setenv("SPAN_TTS_STREAMING", "1")
+
+    async def leeg_stream(text, speaker=None, model_id=None):
+        return
+        yield  # maakt het een async generator
+
+    monkeypatch.setattr(tse, "stream_pcm", leeg_stream)
+    req = MagicMock()
+
+    async def _json():
+        return {"text": "Hallo."}
+
+    req.json = _json
+
+    async def run():
+        resp = await routes.tts_stream(req)
+        return [c async for c in resp.body_iterator]
+
+    body = asyncio.run(run())
+    assert body == []
+    rows = [json.loads(ln) for ln in
+            (tmp_path / "t.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert rows[0]["meta"]["outcome"] == "empty"

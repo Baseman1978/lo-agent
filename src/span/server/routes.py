@@ -1072,6 +1072,14 @@ async def tts_stream(request: Request) -> Any:
                         _first = False
                     if chunk:
                         yield chunk
+                if _first:
+                    # schone-maar-lege stream (nul chunks, geen exception): de
+                    # HUD valt terug op batch, maar de degradatie moet ook hier
+                    # zichtbaar zijn in de telemetrie (spec).
+                    from span import telemetry
+                    telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0,
+                                     {"mode": "stream", "engine": "elevenlabs",
+                                      "outcome": "empty"})
             except Exception as exc:
                 # fail-soft: lege/afgebroken stream -> de HUD valt zelf terug
                 # op het batch-pad (voice.js: "lege stream" -> ttsPlayBatch).
