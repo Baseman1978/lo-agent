@@ -292,3 +292,70 @@ class TestEerlijkeConsumenten:
         result = task_runner({"goal": "doe iets", "title": "t"},
                              lambda *a, **k: None, lambda: False, {})
         assert "modelaanroep mislukte" in result
+
+
+class TestTaskManagerVangnet:
+    def _wait(self, mgr, tid, timeout=5.0):
+        import time
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            it = mgr.get(tid)
+            if it and it["status"] not in ("queued", "running"):
+                return it
+            time.sleep(0.02)
+        raise AssertionError("taak werd niet afgerond binnen de timeout")
+
+    def test_on_done_krijgt_snapshot_en_task_telemetrie(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SPAN_TELEMETRY", "on")
+        monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+        from span.jarvis.tasks import TaskManager
+        seen = []
+        mgr = TaskManager(lambda task, sp, sc, ctx: "klaar!",
+                          on_done=lambda item: seen.append(item))
+        tid = mgr.submit("test-doel")
+        it = self._wait(mgr, tid)
+        assert it["status"] == "done"
+        assert seen and seen[0]["id"] == tid and seen[0]["status"] == "done"
+        import span.telemetry as tel
+        assert tel.aggregate()["segments"]["task"]["count"] == 1
+
+    def test_kapotte_callback_breekt_worker_niet(self, monkeypatch):
+        monkeypatch.setenv("SPAN_TELEMETRY", "off")
+        from span.jarvis.tasks import TaskManager
+
+        def boom(item):
+            raise RuntimeError("callback kapot")
+
+        mgr = TaskManager(lambda task, sp, sc, ctx: "klaar!", on_done=boom)
+        tid = mgr.submit("test-doel")
+        it = self._wait(mgr, tid)
+        assert it["status"] == "done"
+
+    def test_error_status_bereikt_callback(self, monkeypatch):
+        monkeypatch.setenv("SPAN_TELEMETRY", "off")
+        from span.jarvis.tasks import TaskManager
+
+        def failing(task, sp, sc, ctx):
+            raise RuntimeError("beurt faalde")
+
+        seen = []
+        mgr = TaskManager(failing, on_done=lambda item: seen.append(item))
+        tid = mgr.submit("test-doel")
+        it = self._wait(mgr, tid)
+        assert it["status"] == "error" and "beurt faalde" in it["result"]
+        assert seen and seen[0]["status"] == "error"
+
+    def test_interrupted_bij_opstart_telt_mee(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SPAN_TELEMETRY", "on")
+        monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+        from span.jarvis.tasks import TaskManager
+        ts = datetime.now(timezone.utc).isoformat()
+        brain = MagicMock()
+        brain.run.return_value = [
+            {"id": 1, "goal": "doel", "title": "t", "status": "running",
+             "progress": "", "result": "", "owner": "", "team": False,
+             "created": ts, "updated": ts}]
+        mgr = TaskManager(lambda task, sp, sc, ctx: "klaar!", brain=brain)
+        assert mgr.get(1)["status"] == "interrupted"
+        import span.telemetry as tel
+        assert tel.aggregate()["segments"]["task_interrupted"]["count"] == 1

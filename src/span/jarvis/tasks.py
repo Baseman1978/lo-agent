@@ -22,6 +22,8 @@ from typing import Any, Callable
 ACTIVE = ("queued", "running", "cancelling")
 _DONE = ("done", "error", "cancelled", "interrupted")
 
+LONG_TASK_SECS = 120.0  # A3: 'langlopend' = meer dan enkele minuten (meetpunt + push)
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -29,11 +31,13 @@ def _now() -> str:
 
 class TaskManager:
     def __init__(self, runner: Callable[..., str], brain: Any = None,
-                 max_workers: int = 2, team_runner: Callable[..., str] | None = None) -> None:
+                 max_workers: int = 2, team_runner: Callable[..., str] | None = None,
+                 on_done: Callable[[dict[str, Any]], None] | None = None) -> None:
         # runner(task, set_progress, should_cancel, ctx) -> resultaat-string
         self._runner = runner
         self._team_runner = team_runner  # coördinator + parallelle sub-agents
         self._brain = brain
+        self._on_done = on_done  # A3: item-snapshot na afronding (best-effort)
         self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="lo-task")
         self._items: dict[int, dict[str, Any]] = {}
         self._cancels: dict[int, threading.Event] = {}
@@ -92,6 +96,13 @@ class TaskManager:
             self._cancels[tid] = threading.Event()
             if status == "interrupted":
                 self._persist(item)
+                # A3 meetpunt: taak overleefde de herstart niet.
+                try:
+                    from span import telemetry
+                    telemetry.record("task_interrupted", 0.0,
+                                     {"id": tid, "team": bool(item.get("team"))})
+                except Exception:
+                    pass
         # ruim eventueel oudere nodes op
         try:
             self._brain.run(
@@ -164,6 +175,35 @@ class TaskManager:
         except Exception as exc:  # nooit de worker laten crashen
             self._update(tid, persist=True, status="error",
                          result=f"{type(exc).__name__}: {exc}", progress="fout")
+        finally:
+            self._finish(tid)  # A3: altijd precies één keer afronden
+
+    def _finish(self, tid: int) -> None:
+        """A3 best-effort afronding: taak-telemetrie + on_done-callback.
+        Mag de worker-thread nooit breken."""
+        snap = self.get(tid)
+        if snap is None:
+            return
+        # Callback vóór de telemetrie-I/O: een waiter die op de eindstatus poll't
+        # ziet het on_done-resultaat dan niet vóór de (op sommige platforms trage)
+        # bestands-schrijf af is.
+        if self._on_done is not None:
+            try:
+                self._on_done(snap)
+            except Exception as exc:
+                print(f"[tasks] on_done-callback faalde voor taak {tid}: {exc}",
+                      flush=True)
+        try:
+            from span import telemetry
+            a = datetime.fromisoformat(snap.get("created") or _now())
+            b = datetime.fromisoformat(snap.get("updated") or _now())
+            dur_ms = max(0.0, (b - a).total_seconds() * 1000.0)
+            meta = {"outcome": snap["status"], "team": bool(snap.get("team"))}
+            telemetry.record("task", dur_ms, meta)
+            if dur_ms >= LONG_TASK_SECS * 1000.0:
+                telemetry.record("task_long", dur_ms, meta)
+        except Exception:
+            pass
 
     def cancel(self, tid: int) -> bool:
         ev = self._cancels.get(tid)
