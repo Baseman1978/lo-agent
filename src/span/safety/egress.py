@@ -21,6 +21,8 @@ _ALLOWED = {
     "api.fireflies.ai",
     "api.open-meteo.com", "geocoding-api.open-meteo.com",
     "api.telegram.org",
+    "graph.facebook.com",   # A6: WhatsApp Cloud API (messages/media)
+    "lookaside.fbsbx.com",  # A6: WhatsApp media-download-URLs
     "api.tavily.com",
 }
 

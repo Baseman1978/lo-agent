@@ -11,6 +11,8 @@ def clean_env(monkeypatch, tmp_path):
         "ORQ_API_KEY", "ORQ_BASE_URL", "NEO4J_PASSWORD", "SPAN_EMBED_DIMS",
         "WORK_NEO4J_URI", "BRAIN_DB", "ASANA_TOKEN", "FIREFLIES_API_KEY",
         "TELEGRAM_BOT_TOKEN", "MS_CLIENT_ID",
+        "WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_VERIFY_TOKEN",
+        "WHATSAPP_APP_SECRET", "WHATSAPP_ALLOWED_NUMBERS", "WHATSAPP_VOICE_REPLY",
     ]:
         monkeypatch.delenv(var, raising=False)
     # voorkom dat een echte .env meelift
@@ -95,3 +97,39 @@ def test_build_integrations_geeft_drietal(monkeypatch):
     o365, asana, fireflies = build_integrations(load_settings())
     assert o365 is not None  # publieke client-id
     assert asana is None and fireflies is None  # niet geconfigureerd
+
+
+def test_whatsapp_default_uit(monkeypatch):
+    monkeypatch.setenv("ORQ_API_KEY", "orq-test")
+    monkeypatch.setenv("NEO4J_PASSWORD", "secret")
+    j = load_settings().jarvis
+    assert not j.whatsapp_enabled
+    assert j.whatsapp_allowlist == frozenset()
+    assert not j.whatsapp_voice_reply
+
+
+def test_whatsapp_config_volledig(monkeypatch):
+    monkeypatch.setenv("ORQ_API_KEY", "orq-test")
+    monkeypatch.setenv("NEO4J_PASSWORD", "secret")
+    monkeypatch.setenv("WHATSAPP_TOKEN", "wa-token")
+    monkeypatch.setenv("WHATSAPP_PHONE_ID", "12345")
+    monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "verify")
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "app-secret")
+    monkeypatch.setenv("WHATSAPP_ALLOWED_NUMBERS", "+31 6 12345678, 31687654321")
+    monkeypatch.setenv("WHATSAPP_VOICE_REPLY", "1")
+    j = load_settings().jarvis
+    assert j.whatsapp_enabled
+    assert j.whatsapp_allowlist == frozenset({"31612345678", "31687654321"})
+    assert j.whatsapp_voice_reply
+
+
+def test_whatsapp_zonder_allowlist_blijft_uit(monkeypatch):
+    """Fail-closed: zonder toegestaan nummer gaat het kanaal niet aan."""
+    monkeypatch.setenv("ORQ_API_KEY", "orq-test")
+    monkeypatch.setenv("NEO4J_PASSWORD", "secret")
+    monkeypatch.setenv("WHATSAPP_TOKEN", "wa-token")
+    monkeypatch.setenv("WHATSAPP_PHONE_ID", "12345")
+    monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "verify")
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "app-secret")
+    j = load_settings().jarvis
+    assert not j.whatsapp_enabled

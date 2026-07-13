@@ -37,6 +37,7 @@ from span.memory.bootstrap import start_session
 from span.memory.fragments import FragmentStore
 from span.orchestrator.agent import SpanAgent, TurnCancelled
 from span.server import auth, routes
+from span.server import whatsapp as whatsapp_routes
 from span.server.state import (
     SESSION_COOKIE, STATIC_DIR, _auth_token, _check_token, _effective_settings,
     _state, _ws_context, read_session,
@@ -160,6 +161,12 @@ async def lifespan(app: FastAPI):
         from span.integrations.telegram import TelegramBridge
         _state["telegram"] = TelegramBridge(settings.jarvis.telegram_bot_token, _state)
         telegram_task = asyncio.create_task(_state["telegram"].run())
+    if settings.jarvis.whatsapp_enabled:
+        # A6: webhook-gedreven — geen achtergrondtaak, alleen de bridge in _state
+        from span.integrations.whatsapp import WhatsAppBridge
+        _state["whatsapp"] = WhatsAppBridge(_state)
+        print("[whatsapp] kanaal actief (allowlist: "
+              f"{len(settings.jarvis.whatsapp_allowlist)} nummer(s))", flush=True)
     yield
     tasks = [t for t in (scheduler, watcher, telegram_task) if t is not None]
     for t in tasks:
@@ -208,6 +215,7 @@ async def _security_headers(request, call_next):
 
 app.include_router(auth.router)
 app.include_router(routes.router)
+app.include_router(whatsapp_routes.router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 

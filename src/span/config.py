@@ -42,6 +42,14 @@ class JarvisConfig:
     asana_workspace: str = ""
     fireflies_api_key: str = ""
     telegram_bot_token: str = ""
+    # A6 — WhatsApp Cloud API (officieel, geen BSP). Alle vijf kernvelden gezet
+    # = kanaal aan; allowlist leeg = fail-closed uit.
+    whatsapp_token: str = ""
+    whatsapp_phone_id: str = ""
+    whatsapp_verify_token: str = ""
+    whatsapp_app_secret: str = ""
+    whatsapp_allowed_numbers: str = ""   # komma-gescheiden wa_id's
+    whatsapp_voice_reply: bool = False   # laag 2 uit: antwoord als voice-note terug
 
     @property
     def o365_enabled(self) -> bool:
@@ -64,6 +72,24 @@ class JarvisConfig:
     @property
     def telegram_enabled(self) -> bool:
         return bool(self.telegram_bot_token)
+
+    @property
+    def whatsapp_allowlist(self) -> frozenset[str]:
+        """Toegestane wa_id's, genormaliseerd: '+31 6 12345678' -> '31612345678'."""
+        out = set()
+        for n in self.whatsapp_allowed_numbers.split(","):
+            n = n.strip().lstrip("+").replace(" ", "")
+            if n:
+                out.add(n)
+        return frozenset(out)
+
+    @property
+    def whatsapp_enabled(self) -> bool:
+        """Alle kernvelden gezet: token+phone-id (versturen), verify-token+
+        app-secret (webhook) én minstens één toegestaan nummer (fail-closed)."""
+        return bool(self.whatsapp_token and self.whatsapp_phone_id
+                    and self.whatsapp_verify_token and self.whatsapp_app_secret
+                    and self.whatsapp_allowlist)
 
 
 @dataclass(frozen=True)
@@ -151,5 +177,12 @@ def load_settings(env_file: Path | None = None) -> Settings:
             asana_workspace=os.environ.get("ASANA_WORKSPACE", "").strip(),
             fireflies_api_key=os.environ.get("FIREFLIES_API_KEY", "").strip(),
             telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN", "").strip(),
+            whatsapp_token=os.environ.get("WHATSAPP_TOKEN", "").strip(),
+            whatsapp_phone_id=os.environ.get("WHATSAPP_PHONE_ID", "").strip(),
+            whatsapp_verify_token=os.environ.get("WHATSAPP_VERIFY_TOKEN", "").strip(),
+            whatsapp_app_secret=os.environ.get("WHATSAPP_APP_SECRET", "").strip(),
+            whatsapp_allowed_numbers=os.environ.get("WHATSAPP_ALLOWED_NUMBERS", "").strip(),
+            whatsapp_voice_reply=(os.environ.get("WHATSAPP_VOICE_REPLY", "").strip().lower()
+                                  in ("1", "true", "yes", "on")),
         ),
     )
