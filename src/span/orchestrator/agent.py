@@ -21,6 +21,7 @@ from span.llm.client import LLMClient
 from span.memory.bootstrap import BootstrapContext, load_bootstrap, render_bootstrap
 from span.memory.fragments import FragmentStore, MF_TYPES
 from span.orchestrator.tools import ToolBox
+from span import telemetry
 
 MAX_TOOL_ITERATIONS = 8
 
@@ -320,6 +321,9 @@ class SpanAgent:
             raise RuntimeError("Roep eerst begin() aan.")
         # de tool-laag meldt brain_search-hits via dezelfde callback
         self._toolbox._on_memory = on_memory
+        import time as _time
+        _turn_t0 = _time.perf_counter()
+        _llm_ms = 0.0
 
         # RAG-memo is efemeer: alleen voor déze beurt meegegeven, niet in de
         # historie bewaard — voorkomt token-groei en verouderde hints.
@@ -414,12 +418,14 @@ class SpanAgent:
                 self._messages.append({"role": "assistant", "content": answer_parts[-1]})
                 break
             try:
+                _c0 = _time.perf_counter()
                 message = self._llm.chat(
                     self._messages + ([memo_msg] if memo_msg else []),
                     model=self._settings.model_main,
                     tools=turn_tools,
                     on_text=on_text,
                 )
+                _llm_ms += (_time.perf_counter() - _c0) * 1000.0
             except TurnCancelled:
                 # mid-stream onderbroken: niets van deze iteratie is in de
                 # history beland -> sluit netjes af met een assistant-notitie.
@@ -471,7 +477,10 @@ class SpanAgent:
                 if on_tool:
                     try: on_tool(tc.function.name, "start")
                     except Exception: pass
+                _d0 = _time.perf_counter()
                 result = self._toolbox.dispatch(tc.function.name, arguments)
+                _dt = (_time.perf_counter() - _d0) * 1000.0
+                telemetry.record("tool", _dt, {"name": tc.function.name})
                 if on_tool:
                     try: on_tool(tc.function.name, "done")
                     except Exception: pass
@@ -539,6 +548,12 @@ class SpanAgent:
                 args=(tools_used, self.last_touched, answer), daemon=True
             )
             trace.start()
+        _total_ms = (_time.perf_counter() - _turn_t0) * 1000.0
+        telemetry.record("turn", _total_ms,
+                         {"outcome": "cancelled" if cancelled else "ok",
+                          "tools": len(tools_used)})
+        if _llm_ms:
+            telemetry.record("llm", _llm_ms, {"tools": len(tools_used)})
         return answer
 
     def _write_trace(self, tools_used: list[str], touched: list[str],

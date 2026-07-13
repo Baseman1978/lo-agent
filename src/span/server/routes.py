@@ -928,7 +928,11 @@ async def speech_to_text(request: Request) -> dict[str, Any]:
             or head[:3] == b"ID3" or head[:2] == b"\xff\xfb"):  # mp3
         raise HTTPException(status_code=415, detail="Onbekend audioformaat.")
     try:
+        _t0 = time.perf_counter()
         text = await asyncio.to_thread(stt.transcribe, audio)
+        from span import telemetry
+        telemetry.record("stt", (time.perf_counter() - _t0) * 1000.0,
+                         {"backend": stt.backend()})
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Transcriptie mislukt: {exc}")
     import logging
@@ -941,6 +945,22 @@ async def stt_status(request: Request) -> dict[str, Any]:
     _require_rest_auth(request)
     from span.server import stt
     return {"available": stt.available(), "model": stt.MODEL_NAME}
+
+
+@router.get("/api/telemetry")
+async def telemetry_aggregates(request: Request) -> dict[str, Any]:
+    """Owner-only: per-segment latency-aggregaten (stt/llm/tool/tts/turn).
+    De meetlat voor de bewijs-gepoorte fase B — welk segment domineert?"""
+    _require_owner(request)
+    from span import telemetry
+    window_s = 86400.0
+    q = request.query_params.get("window_s")
+    if q:
+        try:
+            window_s = max(60.0, min(2_592_000.0, float(q)))  # 1 min .. 30 dagen
+        except ValueError:
+            pass
+    return telemetry.aggregate(window_s=window_s)
 
 
 @router.post("/api/tts")
@@ -976,6 +996,7 @@ async def text_to_speech(request: Request) -> Any:
     if speaker is not None:
         speaker = str(speaker)[:80]
     try:
+        _t0 = time.perf_counter()
         audio = await asyncio.to_thread(
             tts.synthesize, text,
             speaker=speaker,
@@ -985,6 +1006,8 @@ async def text_to_speech(request: Request) -> Any:
             noise_w_scale=_num("noise_w_scale", 0.0, 1.5),
             volume=_num("volume", 0.1, 2.0),
         )
+        from span import telemetry
+        telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0, {"mode": "full"})
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"TTS mislukt: {exc}")
     from fastapi.responses import Response
@@ -1017,7 +1040,14 @@ async def tts_stream(request: Request) -> Any:
                                      json=payload) as r:
                 if r.status_code != 200:
                     return
+                _t0 = time.perf_counter()
+                _first = True
                 async for chunk in r.aiter_bytes():
+                    if _first and chunk:
+                        from span import telemetry
+                        telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0,
+                                         {"mode": "stream"})
+                        _first = False
                     if chunk:
                         yield chunk
 
