@@ -376,3 +376,71 @@ def test_voice_note_zonder_stt_wordt_eerlijk_gemeld(monkeypatch):
     agent.turn.assert_not_called()  # geen STT -> geen beurt, geen crash
     assert sent == [("31612345678", "Ik kan spraakmemo's nu niet verwerken — "
                                     "stuur het als tekst.")]
+
+
+def test_send_voice_upload_en_audio_bericht(monkeypatch, tmp_path):
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+    import span.integrations.whatsapp as wa
+    import span.server.tts as ttsmod
+    monkeypatch.setattr(ttsmod, "available", lambda: True)
+    monkeypatch.setattr(ttsmod, "engine", lambda: "piper")
+    monkeypatch.setattr(ttsmod, "synthesize", lambda text, **kw: b"RIFF-wav-bytes")
+    # transcode gemockt: `av` zit alleen in de [stt]-omgeving (Docker-image)
+    monkeypatch.setattr(wa, "_wav_to_ogg_opus", lambda wav: b"OggS-opus")
+
+    posts = []
+
+    def fake_post(url, **kwargs):
+        posts.append((url, kwargs))
+        return _Resp({"id": "media-42"} if url.endswith("/media")
+                     else {"messages": [{"id": "wamid.out"}]})
+
+    monkeypatch.setattr(wa.requests, "post", fake_post)
+    b = _bridge()
+    assert b.send_voice("31612345678", "drie afspraken vandaag")
+    (up_url, up_kw), (msg_url, msg_kw) = posts
+    assert up_url == "https://graph.facebook.com/v21.0/12345/media"
+    assert up_kw["files"]["file"] == ("voice.ogg", b"OggS-opus", "audio/ogg")
+    assert up_kw["data"]["messaging_product"] == "whatsapp"
+    assert msg_url.endswith("/12345/messages")
+    assert msg_kw["json"]["type"] == "audio"
+    assert msg_kw["json"]["audio"] == {"id": "media-42"}
+
+
+def test_voice_reply_alleen_achter_flag(monkeypatch):
+    import span.server.stt as stt
+    monkeypatch.setattr(stt, "available", lambda: True)
+    monkeypatch.setattr(stt, "backend", lambda: "cpu-local")
+    monkeypatch.setattr(stt, "transcribe", lambda audio, language="nl": "hoi")
+    for flag, verwacht in ((True, 1), (False, 0)):
+        b = _bridge(voice_reply=flag)
+        monkeypatch.setattr(b, "download_media", lambda mid: b"OggS")
+        monkeypatch.setattr(b, "send_text", lambda to, text: True)
+        voiced = []
+        monkeypatch.setattr(b, "send_voice", lambda to, text: (voiced.append(to), True)[1])
+        agent = MagicMock()
+        agent.turn.return_value = "antwoord"
+        monkeypatch.setattr(b, "_ensure_agent", lambda a=agent: a)
+        b.handle_message({"from": "31612345678", "id": f"wamid.f{flag}",
+                          "type": "audio", "audio": {"id": "m1"}})
+        assert len(voiced) == verwacht  # default UIT: alleen expliciet aan
+
+
+def test_wav_naar_ogg_opus_echte_transcode():
+    pytest.importorskip("av")  # alleen gegarandeerd in de [stt]-omgeving (Docker)
+    import io as _io
+    import math
+    import struct
+    import wave
+    from span.integrations.whatsapp import _wav_to_ogg_opus
+    buf = _io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(22050)
+        wf.writeframes(struct.pack(
+            "<" + "h" * 2205,
+            *(int(8000 * math.sin(i / 10.0)) for i in range(2205))))
+    ogg = _wav_to_ogg_opus(buf.getvalue())
+    assert ogg.startswith(b"OggS")

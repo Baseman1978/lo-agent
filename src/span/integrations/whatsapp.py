@@ -10,6 +10,7 @@ input — de guard/risk-governance draait ongewijzigd binnen elke agent.turn().
 
 from __future__ import annotations
 
+import io
 import time
 from collections import OrderedDict
 from typing import Any
@@ -178,3 +179,85 @@ class WhatsAppBridge:
         telemetry.record("stt", (time.perf_counter() - t0) * 1000.0,
                          {"backend": stt.backend(), "channel": "whatsapp"})
         return text
+
+    # -- laag 2 uit: voice-antwoord --------------------------------------------
+
+    def send_voice(self, to: str, text: str) -> bool:
+        """Antwoord als voice-note: TTS (WAV) -> OGG/Opus -> media-upload ->
+        audio-bericht. Best-effort extraatje bovenop het tekst-antwoord."""
+        from span.server import tts
+        if not tts.available():
+            return False
+        t0 = time.perf_counter()
+        wav = tts.synthesize(text)
+        from span import telemetry
+        telemetry.record("tts", (time.perf_counter() - t0) * 1000.0,
+                         {"engine": tts.engine(), "channel": "whatsapp"})
+        if not wav:
+            return False
+        ogg = _wav_to_ogg_opus(wav)
+        media_id = self._upload_media(ogg)
+        if not media_id:
+            return False
+        resp = request_with_retry(
+            lambda: requests.post(
+                f"{_GRAPH}/{self._phone_id}/messages",
+                headers=self._headers(),
+                json={"messaging_product": "whatsapp", "to": to,
+                      "type": "audio", "audio": {"id": media_id}},
+                timeout=30,
+            ),
+            idempotent=False,
+        )
+        if not resp.ok:
+            print(f"[whatsapp] send_voice {resp.status_code}: {resp.text[:200]}",
+                  flush=True)
+        return bool(resp.ok)
+
+    def _upload_media(self, ogg: bytes) -> str:
+        """Upload OGG/Opus-bytes; geeft de media-id terug (leeg bij falen)."""
+        resp = request_with_retry(
+            lambda: requests.post(
+                f"{_GRAPH}/{self._phone_id}/media",
+                headers=self._headers(),
+                files={"file": ("voice.ogg", ogg, "audio/ogg")},
+                data={"messaging_product": "whatsapp", "type": "audio/ogg"},
+                timeout=60,
+            ),
+            idempotent=False,
+        )
+        if not resp.ok:
+            print(f"[whatsapp] media-upload {resp.status_code}: {resp.text[:200]}",
+                  flush=True)
+            return ""
+        return str((resp.json() or {}).get("id") or "")
+
+
+def _wav_to_ogg_opus(wav: bytes) -> bytes:
+    """WAV (uit tts.synthesize, altijd 16-bit PCM) -> OGG/Opus, in-proces via
+    PyAV. Er zit geen ffmpeg-binary in de Docker-image, maar `av` (met libopus)
+    is gepind in constraints.txt en komt mee met de [stt]-extra. Lazy import:
+    in een kale dev-omgeving kan av ontbreken — tests mocken deze functie dan."""
+    import av
+
+    src = av.open(io.BytesIO(wav), format="wav")
+    buf = io.BytesIO()
+    out = av.open(buf, mode="w", format="ogg")
+    stream = out.add_stream("libopus", rate=48000)
+    resampler = av.AudioResampler(format="s16", layout="mono", rate=48000)
+    for frame in src.decode(audio=0):
+        for rf in resampler.resample(frame):
+            for pkt in stream.encode(rf):
+                out.mux(pkt)
+    try:
+        tail = resampler.resample(None)  # flush de resampler (PyAV >= 10)
+    except Exception:
+        tail = []
+    for rf in tail:
+        for pkt in stream.encode(rf):
+            out.mux(pkt)
+    for pkt in stream.encode(None):      # flush de encoder
+        out.mux(pkt)
+    out.close()
+    src.close()
+    return buf.getvalue()
