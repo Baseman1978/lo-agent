@@ -444,3 +444,10 @@ def test_wav_naar_ogg_opus_echte_transcode():
             *(int(8000 * math.sin(i / 10.0)) for i in range(2205))))
     ogg = _wav_to_ogg_opus(buf.getvalue())
     assert ogg.startswith(b"OggS")
+
+
+def test_webhook_route_gemount_in_app():
+    """De router hangt in de FastAPI-app (import voert de lifespan NIET uit)."""
+    from span.server.app import app
+    paths = {getattr(r, "path", "") for r in app.routes}
+    assert "/api/webhooks/whatsapp" in paths
