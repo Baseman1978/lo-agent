@@ -46,3 +46,40 @@ def test_brain_latency_ms_meet_een_probe():
     ms = health.brain_latency_ms(brain)
     assert isinstance(ms, float) and ms >= 0.0
     brain.run.assert_called_once_with("RETURN 1 AS ok")
+
+
+def test_brain_health_endpoint_owner_only(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    import span.server.routes as routes
+
+    brain = MagicMock()
+    brain.run.side_effect = [
+        [_rij(n) for n in health.EXPECTED_INDEXES],  # SHOW INDEXES
+        [{"ok": 1}],                                  # latency-probe RETURN 1
+    ]
+    monkeypatch.setattr(routes, "_require_owner", lambda request: None)
+    monkeypatch.setattr(routes, "_request_context",
+                        lambda request: SimpleNamespace(brain=brain))
+
+    out = asyncio.run(routes.brain_health(MagicMock()))
+    assert out["ok"] is True
+    assert out["latency_ms"] >= 0.0
+
+
+def test_brain_health_endpoint_faalt_zacht_bij_kapot_brein(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    import span.server.routes as routes
+
+    brain = MagicMock()
+    brain.run.side_effect = RuntimeError("neo4j down")
+    monkeypatch.setattr(routes, "_require_owner", lambda request: None)
+    monkeypatch.setattr(routes, "_request_context",
+                        lambda request: SimpleNamespace(brain=brain))
+
+    out = asyncio.run(routes.brain_health(MagicMock()))
+    assert out["ok"] is False
+    assert "RuntimeError" in out["error"]
