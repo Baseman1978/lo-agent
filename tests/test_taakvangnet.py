@@ -420,3 +420,74 @@ class TestTaskPush:
         make_task_push(self._state(monkeypatch, sent))(
             self._item(status="cancelled", secs=300.0))
         assert sent == []
+
+
+class TestCronWatchdog:
+    def _brain(self, last=None, reported=None):
+        """MagicMock-brein dat per key de juiste last/reported-rij teruggeeft."""
+        brain = MagicMock()
+
+        def run(query, **kw):
+            for key in ("evening", "consolidate", "weekreview"):
+                if f"last_{key}" in query:
+                    return [{"last": (last or {}).get(key, ""),
+                             "reported": (reported or {}).get(key, "")}]
+            return []  # MERGE-stempels e.d.
+
+        brain.run.side_effect = run
+        return brain
+
+    def test_expected_date_daily_en_weekreview(self):
+        from span.jarvis import watchdog
+        maandag = datetime(2026, 7, 13, 9, 0)  # ma -> gisteren zo 12-07, vr 10-07
+        assert watchdog.expected_date("evening", maandag) == "2026-07-12"
+        assert watchdog.expected_date("consolidate", maandag) == "2026-07-12"
+        assert watchdog.expected_date("weekreview", maandag) == "2026-07-10"
+
+    def test_gemiste_dagafsluiting_wordt_gezien(self):
+        from span.jarvis import watchdog
+        brain = self._brain(last={"evening": "2026-07-06",
+                                  "consolidate": "2026-07-08",
+                                  "weekreview": "2026-07-03"})
+        missed = watchdog.check_missed_runs(brain, datetime(2026, 7, 9, 10, 0))
+        assert [m["key"] for m in missed] == ["evening"]
+        assert missed[0]["expected"] == "2026-07-08"
+
+    def test_al_gemelde_misser_niet_dubbel(self):
+        from span.jarvis import watchdog
+        brain = self._brain(last={"evening": "2026-07-06",
+                                  "consolidate": "2026-07-08",
+                                  "weekreview": "2026-07-03"},
+                            reported={"evening": "2026-07-08"})
+        assert watchdog.check_missed_runs(brain, datetime(2026, 7, 9, 10, 0)) == []
+
+    def test_tick_meldt_via_inbox_en_telegram_en_stempelt(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SPAN_CRON_WATCHDOG", "on")
+        monkeypatch.setenv("SPAN_TELEMETRY", "on")
+        monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+        import span.jarvis.daily as daily
+        from span.jarvis import watchdog
+        sent = []
+        monkeypatch.setattr(
+            daily, "send_respecting_quiet",
+            lambda tg, text, brain, urgent=False: sent.append(text) or True)
+        monkeypatch.setattr(watchdog, "now_local",
+                            lambda: datetime(2026, 7, 9, 10, 0))
+        brain = self._brain(last={"evening": "2026-07-06",
+                                  "consolidate": "2026-07-08",
+                                  "weekreview": "2026-07-03"})
+        inbox = MagicMock()
+        tg = MagicMock(); tg.linked = True
+        n = watchdog.watchdog_tick({"brain": brain, "inbox": inbox, "telegram": tg})
+        assert n == 1
+        inbox.add.assert_called_once()
+        assert sent and "dagafsluiting" in sent[0]
+        import span.telemetry as tel
+        assert tel.aggregate()["segments"]["cron_missed"]["count"] == 1
+
+    def test_tick_flag_uit_is_noop(self, monkeypatch):
+        monkeypatch.setenv("SPAN_CRON_WATCHDOG", "off")
+        from span.jarvis import watchdog
+        brain = self._brain(last={})
+        assert watchdog.watchdog_tick({"brain": brain, "inbox": MagicMock()}) == 0
+        brain.run.assert_not_called()
