@@ -72,6 +72,19 @@ Sequentieel gebouwd, elk op een eigen branch. Geen parallel werk op gedeelde cor
 - Health-check op de Neo4j-brain + degraded-mode (agent blijft werken als de brain traag/onbereikbaar is).
 - **Meetpunt:** recall-kwaliteit + brain-latency (bepaalt of B4 nodig is).
 
+**A4 GEBOUWD + LIVE (PR #118, 2026-07-13).** 8 range-indexen + `entity_name`-constraint geverifieerd ONLINE op `span-brain`; nachtelijke brain-health-taak draait (`ok=True`); embed-guard in `turn()` en degraded-bootstrap in `begin()` achter `SPAN_DEGRADED_MODE`; quest-limiet actief.
+
+Baseline brain-latency (z390, 75 records na deploy):
+
+| op | n | p50 | p95 | max |
+|---|---|---|---|---|
+| run | 74 | 5,3 ms | 32,8 ms | 81,9 ms |
+| healthcheck | 1 | 4,5 ms | 4,5 ms | 4,5 ms |
+
+Het brein is snel (p50 ~5 ms); geen aanwijzing dat brain-latency de bottleneck is. `read`/`vector`-segmenten vullen zich zodra er RAG-verkeer is.
+
+**B4-poortconclusie (voorlopig):** brain-latency geeft géén reden voor B4. De tijd-blindheidsvraag ("verwachte node bestond, maar oude/verkeerde versie kwam boven") is nog niet beantwoord — dat vergt de recall-baseline, die op de **A7**-gouden set wacht (`eval_retrieval_set.json` staat nog niet op de server). **Openstaand:** (1) recall-baseline draaien zodra A7 de set levert; (2) degraded-drill (Neo4j gecontroleerd stoppen) op een rustig moment met Bas.
+
 ### A5 — bereik + duurzaamheid
 - Mobiele spraak-fixes (bekende iOS/Safari mic-quirks; QR-flow moet naar HTTPS wijzen).
 - Telegram-voice (spraakberichten in/uit via de bestaande Telegram-bridge, `sendVoice`).
