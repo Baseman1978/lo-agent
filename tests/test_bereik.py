@@ -65,3 +65,14 @@ def test_stt_weigert_onbekend_formaat_nog_steeds(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         asyncio.run(routes.speech_to_text(_stt_request(b"\x00" * 2000)))
     assert exc.value.status_code == 415
+
+
+def test_wav_naar_ogg_opus():
+    """WAV (PCM16, 22.05 kHz zoals Piper) -> OGG/Opus-bytes voor sendVoice."""
+    pytest.importorskip("av")  # PyAV zit in het image; lokaal evt. niet
+    from span.integrations.audio import wav_to_ogg_opus
+    from span.server.tts import _wav
+    pcm = b"\x00\x00" * 22050          # 1 seconde stilte, 16-bit mono
+    ogg = wav_to_ogg_opus(_wav(pcm, 22050))
+    assert ogg[:4] == b"OggS"
+    assert len(ogg) > 100
