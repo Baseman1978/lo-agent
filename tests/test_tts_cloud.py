@@ -17,6 +17,7 @@ def _reset(monkeypatch):
     monkeypatch.setattr(tts, "XTTS_URL", "")
     monkeypatch.setattr(tts, "_eleven_voices", {})
     monkeypatch.delenv("SPAN_TTS_ENABLED", raising=False)
+    monkeypatch.delenv("SPAN_TTS_STREAMING", raising=False)
 
 
 def test_engine_voorkeursvolgorde(monkeypatch):
@@ -106,3 +107,23 @@ def test_engines_available_vorm(monkeypatch):
     engines = {e["id"]: e["available"] for e in tts.engines_available()}
     assert engines["elevenlabs"] is True
     assert set(engines) == {"elevenlabs", "xtts", "piper"}
+
+
+# -- A2: feature-flag voor ElevenLabs-WS-streaming ---------------------------
+
+def test_streaming_flag_default_uit(monkeypatch):
+    # spec: poort pas open na A1-bewijs -> default UIT, ook mét cloud-key
+    monkeypatch.setattr(tts, "ELEVEN_KEY", "sk-x")
+    assert tts.streaming_enabled() is False
+    assert tts.stream_available() is False
+
+
+def test_stream_available_vereist_flag_en_elevenlabs(monkeypatch):
+    monkeypatch.setenv("SPAN_TTS_STREAMING", "1")
+    assert tts.stream_available() is False       # geen key -> engine != elevenlabs
+    monkeypatch.setattr(tts, "ELEVEN_KEY", "sk-x")
+    assert tts.stream_available() is True        # flag aan + elevenlabs actief
+    # beheerder kiest expliciet een lokale bron -> streaming-pad uit
+    monkeypatch.setattr(tts, "_piper_ok", lambda: True)
+    monkeypatch.setattr(tts, "_ENGINE_OVERRIDE", "piper")
+    assert tts.stream_available() is False
