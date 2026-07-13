@@ -141,9 +141,11 @@ async def lifespan(app: FastAPI):
     # jarvis/task_runners.py zodat dit bootstrap-bestand de orkestratie niet bevat.
     from span.jarvis.tasks import TaskManager
     from span.jarvis.task_runners import make_runners
+    from span.jarvis.task_push import make_task_push
     _task_runner, _team_runner = make_runners(_state)
     _state["tasks"] = TaskManager(_task_runner, brain=brain, max_workers=2,
-                                  team_runner=_team_runner)
+                                  team_runner=_team_runner,
+                                  on_done=make_task_push(_state))
 
     # Integration Broker: één interne laag voor externe apps (catalogus +
     # koppelen + acties), onder LO's governance (approval/audit/egress).

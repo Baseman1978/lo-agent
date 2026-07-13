@@ -446,6 +446,10 @@ class SpanAgent:
         # fout geeft specs_for de volledige lijst terug (geen regressie).
         turn_tools = self._toolbox.specs_for(user_message, embedding=embedding)
         cancelled = False
+        # A3 eerlijke uitkomst: klein structured signaal voor cron/taak-consumenten.
+        # Blijft True zolang de beurt niet op een intern foutpad eindigt; een
+        # barge-in/cancel telt bewust NIET als falen (dat was Bas zelf).
+        self.last_turn_ok = True
         for _ in range(steps_cap):
             # barge-in: de gebruiker begon te praten -> stop vóór de volgende
             # (dure) model- of tool-stap. Veilig punt: de history is hier sluitend
@@ -456,6 +460,7 @@ class SpanAgent:
             try:
                 budget.tick()
             except BudgetExceeded as exc:
+                self.last_turn_ok = False
                 answer_parts.append(f"(veiligheidslimiet: {exc} — beurt gestopt)")
                 self._messages.append({"role": "assistant", "content": answer_parts[-1]})
                 break
@@ -482,6 +487,7 @@ class SpanAgent:
                 import logging
                 logging.getLogger("uvicorn.error").exception(
                     "modelaanroep mislukte in de chat-loop: %s", exc)
+                self.last_turn_ok = False
                 msg = f"(de modelaanroep mislukte: {type(exc).__name__}: {exc})"
                 answer_parts.append(msg)
                 self._messages.append({"role": "assistant", "content": msg})
@@ -530,6 +536,7 @@ class SpanAgent:
                     {"role": "tool", "tool_call_id": tc.id, "content": result}
                 )
         else:
+            self.last_turn_ok = False
             answer_parts.append(
                 "(tool-limiet bereikt — beurt afgebroken; probeer de vraag kleiner te maken)"
             )

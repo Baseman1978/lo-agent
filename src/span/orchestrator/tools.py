@@ -312,7 +312,23 @@ class ToolBox:
             handler = getattr(self, f"_tool_{name}", None)
             if handler is None:
                 return json.dumps({"error": f"Onbekende tool: {name}"})
-            result = handler(**arguments)
+            # A3 taak-vangnet: alleen read-tools mogen bij een transiente fout
+            # (429/timeout/5xx/verbinding) opnieuw — muterende tools nooit blind
+            # herhalen. Bewust ONDER de guard/approval en alleen óm de handler,
+            # zodat een retry nooit een tweede approval/inbox-item veroorzaakt.
+            from span.orchestrator import toolretry
+            if self._perm_key_rw(name)[1] == "read" and toolretry.retry_enabled():
+                import time as _time
+                _r0 = _time.perf_counter()
+                result, _retries = toolretry.call_with_retry(
+                    lambda: handler(**arguments))
+                if _retries:
+                    from span import telemetry
+                    telemetry.record("tool_retry",
+                                     (_time.perf_counter() - _r0) * 1000.0,
+                                     {"name": name, "retries": _retries})
+            else:
+                result = handler(**arguments)
             # M4: tools die door-derden-bestuurbare inhoud teruggeven (mail,
             # transcripts) -> omkaderen als DATA, nooit als opdracht
             if name in _UNTRUSTED_OUTPUT_TOOLS:

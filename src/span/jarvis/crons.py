@@ -171,6 +171,13 @@ def _execute(state: dict[str, Any], prompt: str) -> str:
             "Voer dit nu uit en geef een beknopt resultaat."
         )
         agent.flush_recording(timeout=5)
+        from span.jarvis.task_runners import honest_outcomes_enabled
+        if honest_outcomes_enabled() and not getattr(agent, "last_turn_ok", True):
+            # A3 eerlijke uitkomst: de beurt faalde intern (modelcall/budget/
+            # tool-limiet). Zonder dit prefix zou run_due_crons "⏰ Uitgevoerd"
+            # melden over een mislukking — falen vermomt zich dan als succes.
+            # SPAN_HONEST_OUTCOMES=off = kill switch naar het oude gedrag.
+            return f"Uitvoering mislukt: {answer}"
         return answer
     except Exception as exc:
         return f"Uitvoering mislukt: {exc}"
