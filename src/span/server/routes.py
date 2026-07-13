@@ -1035,22 +1035,63 @@ async def text_to_speech(request: Request) -> Any:
 
 @router.post("/api/tts_stream")
 async def tts_stream(request: Request) -> Any:
-    """Streamt audio (ruwe PCM16 @ 24kHz) door van de XTTS-GPU-service terwijl die
-    genereert — eerste klank ~0,2s. Alleen bij de XTTS-backend."""
+    """Streamt audio (ruwe PCM16) terwijl de engine genereert — eerste klank
+    snel. Twee bronnen: ElevenLabs-WS (A2, achter SPAN_TTS_STREAMING) of de
+    lokale XTTS-GPU-service. Zelfde response-contract (PCM16 + X-Sample-Rate)
+    zodat de HUD (voice.js/ttsPlayStream) ongewijzigd werkt."""
     _require_rest_auth(request)
     from span.server import tts as ttsmod
-    if not ttsmod.XTTS_URL:
+    use_eleven = ttsmod.stream_available()
+    if not use_eleven and not ttsmod.XTTS_URL:
         raise HTTPException(status_code=501, detail="Streaming niet beschikbaar.")
     body = await request.json()
     text = (body.get("text") or "").strip()
     if not text:
         raise HTTPException(status_code=422, detail="Lege tekst.")
-    payload: dict[str, Any] = {"text": text[:1200], "language": "nl"}
+    text = text[:1200]
     spk = body.get("speaker")
-    if spk:
-        payload["speaker"] = str(spk)[:80]
-    import httpx
+    speaker = str(spk)[:80] if spk else None
     from fastapi.responses import StreamingResponse
+
+    if use_eleven:
+        from span.server import tts_stream_eleven as tse
+
+        async def gen_eleven():
+            _t0 = time.perf_counter()
+            _first = True
+            try:
+                async for chunk in tse.stream_pcm(text, speaker=speaker):
+                    if _first and chunk:
+                        from span import telemetry
+                        telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0,
+                                         {"mode": "stream", "engine": "elevenlabs",
+                                          "model": ttsmod.ELEVEN_MODEL})
+                        _first = False
+                    if chunk:
+                        yield chunk
+            except Exception as exc:
+                # fail-soft: lege/afgebroken stream -> de HUD valt zelf terug
+                # op het batch-pad (voice.js: "lege stream" -> ttsPlayBatch).
+                # Maar degradatie moet zíchtbaar zijn (spec: outcome/foutklasse
+                # in A1-telemetrie + eerlijk over wat niet lukte) — dus loggen
+                # én registreren; telemetry.record is zelf al best-effort.
+                print(f"[tts] elevenlabs stream-fout: {type(exc).__name__}: {exc}",
+                      flush=True)
+                from span import telemetry
+                telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0,
+                                 {"mode": "stream", "engine": "elevenlabs",
+                                  "outcome": "error",
+                                  "error_class": type(exc).__name__})
+                return
+
+        return StreamingResponse(gen_eleven(), media_type="application/octet-stream",
+                                 headers={"X-Sample-Rate": str(tse.SAMPLE_RATE),
+                                          "Cache-Control": "no-store"})
+
+    payload: dict[str, Any] = {"text": text, "language": "nl"}
+    if speaker:
+        payload["speaker"] = speaker
+    import httpx
 
     async def gen():
         async with httpx.AsyncClient(timeout=120.0) as client:
@@ -1064,13 +1105,14 @@ async def tts_stream(request: Request) -> Any:
                     if _first and chunk:
                         from span import telemetry
                         telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0,
-                                         {"mode": "stream"})
+                                         {"mode": "stream", "engine": "xtts"})
                         _first = False
                     if chunk:
                         yield chunk
 
     return StreamingResponse(gen(), media_type="application/octet-stream",
-                             headers={"X-Sample-Rate": "24000", "Cache-Control": "no-store"})
+                             headers={"X-Sample-Rate": "24000",
+                                      "Cache-Control": "no-store"})
 
 
 @router.get("/api/tts/status")

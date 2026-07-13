@@ -115,3 +115,56 @@ def test_prewarm_best_effort(monkeypatch):
 
     monkeypatch.setattr(tse, "_connect", bad)
     assert asyncio.run(tse.prewarm()) is False  # fout ingeslikt, niets breekt
+
+
+def test_route_tts_stream_elevenlabs(monkeypatch, tmp_path):
+    import span.server.routes as routes
+    from unittest.mock import MagicMock
+
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+    monkeypatch.setattr(routes, "_require_rest_auth", lambda request: None)
+    monkeypatch.setenv("SPAN_TTS_STREAMING", "1")   # flag aan + key (fixture)
+
+    async def fake_stream(text, speaker=None, model_id=None):
+        yield b"\x01\x02"
+        yield b"\x03\x04"
+
+    monkeypatch.setattr(tse, "stream_pcm", fake_stream)
+
+    req = MagicMock()
+
+    async def _json():
+        return {"text": "Hallo Bas."}
+
+    req.json = _json
+
+    async def run():
+        resp = await routes.tts_stream(req)
+        body = [c async for c in resp.body_iterator]
+        return resp, body
+
+    resp, body = asyncio.run(run())
+    assert resp.headers["x-sample-rate"] == "22050"   # contract voor de HUD
+    assert b"".join(body) == b"\x01\x02\x03\x04"
+    # telemetrie op de EERSTE chunk, met engine+model in de meta (A/B-analyse)
+    rows = [json.loads(ln) for ln in
+            (tmp_path / "t.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert rows[0]["seg"] == "tts"
+    assert rows[0]["meta"]["mode"] == "stream"
+    assert rows[0]["meta"]["engine"] == "elevenlabs"
+    assert rows[0]["meta"]["model"] == "eleven_multilingual_v2"
+
+
+def test_route_tts_stream_501_zonder_bron(monkeypatch):
+    import span.server.routes as routes
+    from fastapi import HTTPException
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(routes, "_require_rest_auth", lambda request: None)
+    # fixture: flag uit + XTTS_URL leeg -> geen enkele streamingbron
+    req = MagicMock()
+
+    with pytest.raises(HTTPException) as ei:
+        asyncio.run(routes.tts_stream(req))
+    assert ei.value.status_code == 501
