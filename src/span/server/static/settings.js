@@ -207,19 +207,35 @@
     } catch (e) { SPAN.sys("Voorsprong opslaan mislukt.", "warn"); }
   };
 
-  /* -- QR-code: Span op je telefoon ------------------------------------ */
-  $("set-qr-make").onclick = () => {
-    const ip = $("set-lan-ip").value.trim();
-    if (!ip) { $("qr-note").textContent = "Vul eerst het LAN-IP van deze pc in (ipconfig)."; return; }
-    localStorage.setItem("span_lan_ip", ip);
-    const url = `http://${ip}:8472/?token=${encodeURIComponent(localStorage.getItem("span_token") || "")}`;
+  /* -- QR-code: Span op je telefoon ------------------------------------
+     Voorkeur: de publieke HTTPS-URL (SPAN_PUBLIC_URL via /api/netinfo) —
+     alleen op https geeft de mobiele browser microfoon-toegang. LAN-http
+     blijft de fallback, mét waarschuwing dat de mic dan niet werkt. */
+  $("set-qr-make").onclick = async () => {
+    const token = encodeURIComponent(localStorage.getItem("span_token") || "");
+    let url = "", note = "";
+    try {
+      const nRes = await fetch("/api/netinfo", { headers: SPAN.authHeaders() });
+      if (nRes.ok) {
+        const n = await nRes.json();
+        if (n.public_url) url = `${n.public_url}/?token=${token}`;
+      }
+    } catch (e) { /* stil: LAN-fallback hieronder */ }
+    if (!url) {
+      const ip = $("set-lan-ip").value.trim();
+      if (!ip) { $("qr-note").textContent = "Vul eerst het LAN-IP van deze pc in (ipconfig)."; return; }
+      localStorage.setItem("span_lan_ip", ip);
+      url = `http://${ip}:8472/?token=${token}`;
+      note = " Let op: via http werkt de microfoon op je telefoon niet " +
+        "(browsers eisen https) — typen werkt wel.";
+    }
     const qr = qrcode(0, "M");
     qr.addData(url);
     qr.make();
     const box = $("qr-box");
     box.innerHTML = qr.createImgTag(5, 8);
     box.classList.remove("hidden");
-    $("qr-note").textContent = `Scan met je telefoon (zelfde wifi): ${url}`;
+    $("qr-note").textContent = `Scan met je telefoon: ${url}` + note;
   };
 
   /* -- panelen-indeling (volledig-weergave): links/rechts/uit ---------------- */

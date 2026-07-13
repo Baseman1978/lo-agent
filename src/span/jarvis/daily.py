@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -450,6 +451,39 @@ def reflect_orphan_sessions(state: dict[str, Any], max_sessions: int = 2) -> int
 EVENING_TIME = "17:15"
 CONSOLIDATE_TIME = "03:30"
 BRAINHEALTH_TIME = "03:45"  # ná de consolidatie van 03:30
+# A5: ná de nachtdump (cron 03:00), de consolidatie (03:30) én de brainhealth
+# (03:45) — twee zware nachttaken op exact hetzelfde tijdstip is onwenselijk
+CHAINCHECK_TIME = "03:50"
+
+
+def chaincheck_enabled() -> bool:
+    """A5-flag SPAN_CHAINCHECK: nachtelijke integriteitscontrole op de
+    audit-keten. Default aan; kill-switch in SPAN_TELEMETRY-stijl."""
+    val = os.environ.get("SPAN_CHAINCHECK", "on").strip().lower()
+    return val not in {"off", "0", "false", "no", ""}
+
+
+def chain_check(state: dict[str, Any]) -> dict[str, Any]:
+    """A5: herbereken de audit-hashketen (verify_chain leest ALLE Action-nodes
+    in één query — daarom 's nachts, via to_thread). Afwijking = inbox-item
+    (high) + urgente Telegram-push; succes = alleen een logregel elders."""
+    from span.safety.audit import verify_chain
+    result = verify_chain(state["brain"])
+    if not result.get("ok"):
+        detail = (f"Breuk bij seq {result.get('broken_at')}: "
+                  f"{result.get('reason', 'onbekend')} "
+                  f"({result.get('count', 0)} records gecontroleerd). "
+                  "Iemand of iets heeft de actie-historie gewijzigd — "
+                  "controleer scripts/reanchor_audit.py en de server-toegang.")
+        inbox = state.get("inbox")
+        if inbox is not None:
+            inbox.add(kind="notify", title="Audit-keten gebroken (integriteit)",
+                      detail=detail, urgency="high")
+        tg = state.get("telegram")
+        if tg is not None and tg.linked:
+            send_respecting_quiet(tg, "🛑 AUDIT-KETEN GEBROKEN\n\n" + detail,
+                                  state["brain"], urgent=True)
+    return result
 
 
 MAX_ATTEMPTS = 3  # daarna geven we de dagtaak op (met melding) i.p.v. te spammen
@@ -533,6 +567,12 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
                                    "options": c.get("options") or []},
                           urgency="high")
 
+    async def do_chaincheck() -> None:
+        # zwaar (leest alle Action-nodes) -> via to_thread; run_task regelt
+        # mark-after-success (c.last_chaincheck) en de attempt-cap
+        result = await asyncio.to_thread(chain_check, state)
+        log(f"chaincheck: ok={result.get('ok')} count={result.get('count')}")
+
     async def do_weekreview() -> None:
         review = await asyncio.to_thread(
             generate_weekreview, state["brain"], state["llm"],
@@ -600,6 +640,8 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
                 await run_task("consolidate", do_consolidate)
             if due(BRAINHEALTH_TIME, "brainhealth", now):
                 await run_task("brainhealth", do_brainhealth)
+            if chaincheck_enabled() and due(CHAINCHECK_TIME, "chaincheck", now):
+                await run_task("chaincheck", do_chaincheck)
             if now.weekday() == 4 and due("16:30", "weekreview", now):
                 await run_task("weekreview", do_weekreview)
 
