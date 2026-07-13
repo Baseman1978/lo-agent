@@ -449,6 +449,7 @@ def reflect_orphan_sessions(state: dict[str, Any], max_sessions: int = 2) -> int
 
 EVENING_TIME = "17:15"
 CONSOLIDATE_TIME = "03:30"
+BRAINHEALTH_TIME = "03:45"  # ná de consolidatie van 03:30
 
 
 MAX_ATTEMPTS = 3  # daarna geven we de dagtaak op (met melding) i.p.v. te spammen
@@ -550,6 +551,12 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
                                         "📊 WEEKREVIEW\n\n" + review,
                                         state["brain"])
 
+    async def do_brainhealth() -> None:
+        from span.db.health import check_brain_health
+        report = await asyncio.to_thread(
+            check_brain_health, state["brain"], state.get("inbox"))
+        log(f"brainhealth: ok={report['ok']} latency={report['latency_ms']}ms")
+
     # interval-administratie: 'elke ~30 min' mag nooit afhangen van het
     # toevallig raken van een specifieke minuut (een trage tick mist die)
     HALF_HOUR = timedelta(minutes=30)
@@ -590,6 +597,8 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
                 await run_task("evening", do_evening)
             if due(CONSOLIDATE_TIME, "consolidate", now):
                 await run_task("consolidate", do_consolidate)
+            if due(BRAINHEALTH_TIME, "brainhealth", now):
+                await run_task("brainhealth", do_brainhealth)
             if now.weekday() == 4 and due("16:30", "weekreview", now):
                 await run_task("weekreview", do_weekreview)
 

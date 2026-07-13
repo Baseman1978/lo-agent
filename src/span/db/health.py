@@ -51,3 +51,25 @@ def brain_latency_ms(brain: BrainDB) -> float:
     t0 = time.perf_counter()
     brain.run("RETURN 1 AS ok")
     return round((time.perf_counter() - t0) * 1000.0, 1)
+
+
+def check_brain_health(brain: BrainDB, inbox: Any = None) -> dict[str, Any]:
+    """Dagelijkse controle: index-gezondheid + latency. Meldt alleen bij een
+    écht probleem in de Agent Inbox (geen dagelijkse ruis); de latency gaat
+    altijd als brain-record (op=healthcheck) naar de telemetrie-meetlat."""
+    report = index_health(brain)
+    report["latency_ms"] = brain_latency_ms(brain)
+    from span import telemetry
+    telemetry.record("brain", report["latency_ms"], {"op": "healthcheck"})
+    if not report["ok"] and inbox is not None:
+        probleem = ", ".join(report["missing"] + report["not_online"]) or "onbekend"
+        inbox.add(kind="notify", title="Brein-index niet gezond",
+                  detail=(f"Ontbrekend of niet ONLINE: {probleem}. Controleer met "
+                          "SHOW INDEXES in Neo4j. Ontbreekt een index: een "
+                          "herstart van span draait init_schema opnieuw en maakt "
+                          "hem aan. Staat een index op FAILED: eerst DROP INDEX "
+                          "<naam> in de Neo4j-browser (de index bestáát dan nog, "
+                          "dus IF NOT EXISTS slaat hem over), daarna span "
+                          "herstarten."),
+                  urgency="high")
+    return report

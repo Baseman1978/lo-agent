@@ -83,3 +83,40 @@ def test_brain_health_endpoint_faalt_zacht_bij_kapot_brein(monkeypatch):
     out = asyncio.run(routes.brain_health(MagicMock()))
     assert out["ok"] is False
     assert "RuntimeError" in out["error"]
+
+
+def test_check_brain_health_meldt_inbox_bij_probleem(tmp_path, monkeypatch):
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+    brain = MagicMock()
+    brain.run.side_effect = [
+        [_rij("mf_embedding", state="FAILED", typ="VECTOR", pct=40.0)],  # SHOW INDEXES
+        [{"ok": 1}],                                                     # latency-probe
+    ]
+    inbox = MagicMock()
+
+    report = health.check_brain_health(brain, inbox)
+
+    assert report["ok"] is False
+    inbox.add.assert_called_once()
+    assert inbox.add.call_args.kwargs["urgency"] == "high"
+    assert inbox.add.call_args.kwargs["kind"] == "notify"
+
+
+def test_check_brain_health_stil_bij_gezond_brein(tmp_path, monkeypatch):
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+    brain = MagicMock()
+    brain.run.side_effect = [
+        [_rij(n) for n in health.EXPECTED_INDEXES],
+        [{"ok": 1}],
+    ]
+    inbox = MagicMock()
+
+    report = health.check_brain_health(brain, inbox)
+
+    assert report["ok"] is True
+    inbox.add.assert_not_called()  # geen dagelijkse ruis in de Agent Inbox
+    # het meetpunt schrijft wél een brain-record (op=healthcheck)
+    import span.telemetry as tel
+    assert tel.aggregate()["segments"]["brain"]["count"] >= 1
