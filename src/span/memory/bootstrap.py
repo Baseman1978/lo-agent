@@ -8,6 +8,7 @@ zichzelf aan voordat iemand erom vraagt.
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -50,6 +51,33 @@ def end_session(brain: BrainDB, session_id: str, summary: str) -> None:
         """,
         id=session_id,
         summary=summary,
+    )
+
+
+def degraded_enabled() -> bool:
+    """SPAN_DEGRADED_MODE (default aan): mag de agent met een minimale context
+    starten als het brein onbereikbaar is? 'off/0/false/no' = het oude gedrag
+    (hard falen bij sessiestart)."""
+    val = os.environ.get("SPAN_DEGRADED_MODE", "on").strip().lower()
+    return val not in {"off", "0", "false", "no", ""}
+
+
+def degraded_bootstrap() -> BootstrapContext:
+    """Minimale, eerlijke context voor brain-down: identiteit uit AGENT_NAME,
+    verder leeg. De origin-regel meldt de degraded-toestand expliciet in de
+    system prompt — geen stille fallback, geen verzonnen geheugen."""
+    from span import AGENT_NAME
+    return BootstrapContext(
+        identity={
+            "name": AGENT_NAME,
+            "owner": "Bas Spaan",
+            "philosophy": "Treat this graph as my brain, my memory, my intelligence.",
+            "origin": (f"{AGENT_NAME} draait tijdelijk in degraded-mode: het brein "
+                       "(Neo4j) is onbereikbaar. Geheugen, protocollen en quests "
+                       "ontbreken deze sessie — zeg dat eerlijk als het relevant is."),
+            "voice": None,
+        },
+        protocols=[], quests=[], decisions=[], anti_patterns=[], soul=[], skills=[],
     )
 
 

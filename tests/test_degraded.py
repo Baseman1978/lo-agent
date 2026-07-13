@@ -87,3 +87,59 @@ def test_turn_met_werkende_embed_doet_gewoon_rag(tmp_path, monkeypatch):
     assert "antwoord" in out
     frag.search.assert_called_once()   # geen regressie op het normale RAG-pad
     frag.search_formal.assert_called_once()
+
+
+def _begin_double(brain, monkeypatch):
+    from unittest.mock import MagicMock
+    import span.orchestrator.agent as agent_mod
+    from span.orchestrator.agent import SpanAgent
+
+    # ToolBox-constructie is hier niet onder test -> vervangen door een dubbel
+    monkeypatch.setattr(agent_mod, "ToolBox", MagicMock())
+    agent = SpanAgent.__new__(SpanAgent)
+    agent._brain = brain
+    agent._fragments = MagicMock()
+    settings = MagicMock()
+    settings.model_light = "test-light"
+    agent._settings = settings
+    agent.user_location = None
+    for attr in ("_work", "_o365", "_asana", "_inbox", "_autonomy", "_llm",
+                 "_disabled_tools", "_integration_perms", "_fireflies",
+                 "_telegram", "_security", "_mcp", "_shared", "_tasks",
+                 "_progress_cb", "_tool_retrieval", "_tool_retrieval_k"):
+        setattr(agent, attr, None)
+    return agent
+
+
+def test_begin_start_degraded_bij_brain_down(tmp_path, monkeypatch):
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+    monkeypatch.setenv("SPAN_DEGRADED_MODE", "on")
+
+    from unittest.mock import MagicMock
+
+    brain = MagicMock()
+    brain.run.side_effect = RuntimeError("neo4j down")
+    agent = _begin_double(brain, monkeypatch)
+
+    ctx = agent.begin("session-test", first_message=None)
+
+    assert ctx.protocols == [] and ctx.quests == []
+    assert ctx.identity["name"]  # naam komt uit AGENT_NAME (default 'LO')
+    system = agent._messages[0]["content"][0]["text"]
+    assert "degraded" in system  # eerlijke melding in de prompt, geen stille fallback
+
+
+def test_begin_flag_uit_geeft_oude_hard_fail(tmp_path, monkeypatch):
+    monkeypatch.setenv("SPAN_DEGRADED_MODE", "off")
+
+    from unittest.mock import MagicMock
+
+    import pytest
+
+    brain = MagicMock()
+    brain.run.side_effect = RuntimeError("neo4j down")
+    agent = _begin_double(brain, monkeypatch)
+
+    with pytest.raises(RuntimeError):
+        agent.begin("session-test", first_message=None)

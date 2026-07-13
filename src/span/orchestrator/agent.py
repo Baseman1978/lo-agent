@@ -18,7 +18,9 @@ from span.db.work import WorkDB
 from span.integrations.asana import AsanaClient
 from span.integrations.o365 import O365Client
 from span.llm.client import LLMClient
-from span.memory.bootstrap import BootstrapContext, load_bootstrap, render_bootstrap
+from span.memory.bootstrap import (BootstrapContext, degraded_bootstrap,
+                                   degraded_enabled, load_bootstrap,
+                                   render_bootstrap)
 from span.memory.fragments import FragmentStore, MF_TYPES
 from span.orchestrator.tools import ToolBox
 from span import telemetry
@@ -279,8 +281,26 @@ class SpanAgent:
             tool_retrieval=self._tool_retrieval,
             tool_retrieval_k=self._tool_retrieval_k,
         )
-        self._bootstrap = load_bootstrap(self._brain, self._fragments, first_message,
-                                         shared=self._shared)
+        # A4 degraded-mode: brain-down mag een sessiestart niet meer blokkeren
+        # (raakt ook crons/task_runners die begin() aanroepen). Eerlijk falen
+        # blijft mogelijk via SPAN_DEGRADED_MODE=off.
+        import time as _time
+        _b0 = _time.perf_counter()
+        try:
+            self._bootstrap = load_bootstrap(self._brain, self._fragments,
+                                             first_message, shared=self._shared)
+        except Exception as exc:
+            if not degraded_enabled():
+                raise
+            import logging
+            logging.getLogger("uvicorn.error").warning(
+                "[degraded] bootstrap onbereikbaar — sessie start met minimale "
+                "context (%s: %s)", type(exc).__name__, exc)
+            print(f"[degraded] bootstrap onbereikbaar — sessie start met minimale "
+                  f"context: {type(exc).__name__}: {exc}", flush=True)
+            telemetry.record("brain", (_time.perf_counter() - _b0) * 1000.0,
+                             {"op": "bootstrap", "outcome": "error"})
+            self._bootstrap = degraded_bootstrap()
         ident = self._bootstrap.identity
         template = BASE_PROMPT
         try:  # door Bas aangepaste systeemprompt (instellingen) gaat vóór
