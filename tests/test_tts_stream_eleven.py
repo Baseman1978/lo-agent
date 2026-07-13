@@ -168,3 +168,46 @@ def test_route_tts_stream_501_zonder_bron(monkeypatch):
     with pytest.raises(HTTPException) as ei:
         asyncio.run(routes.tts_stream(req))
     assert ei.value.status_code == 501
+
+
+def test_status_streaming_volgt_flag(monkeypatch):
+    import span.server.routes as routes
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(routes, "_require_rest_auth", lambda request: None)
+    monkeypatch.setattr(routes, "_is_owner", lambda request: True)
+    # voorkom echte /voices-call in voice_info() (elevenlabs-tak)
+    monkeypatch.setattr(tts, "_eleven_voices", {"Rachel": "voice123"})
+
+    req = MagicMock()
+    out = asyncio.run(routes.tts_status(req))
+    assert out["streaming"] is False              # flag uit -> geen stream-pad
+
+    monkeypatch.setenv("SPAN_TTS_STREAMING", "1")
+    out = asyncio.run(routes.tts_status(req))
+    assert out["streaming"] is True               # flag aan + elevenlabs actief
+
+
+def test_tts_batch_meta_bevat_engine_en_model(monkeypatch, tmp_path):
+    import span.server.routes as routes
+    from unittest.mock import MagicMock
+
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+    monkeypatch.setattr(routes, "_require_rest_auth", lambda request: None)
+    monkeypatch.setattr(tts, "available", lambda: True)
+    monkeypatch.setattr(tts, "synthesize", lambda text, **kw: b"RIFF....WAVE")
+
+    req = MagicMock()
+
+    async def _json():
+        return {"text": "hallo wereld"}
+
+    req.json = _json
+    asyncio.run(routes.text_to_speech(req))
+
+    rows = [json.loads(ln) for ln in
+            (tmp_path / "t.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert rows[0]["meta"]["mode"] == "full"
+    assert rows[0]["meta"]["engine"] == "elevenlabs"   # key gezet in fixture
+    assert rows[0]["meta"]["model"] == "eleven_multilingual_v2"

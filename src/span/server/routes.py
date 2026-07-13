@@ -1025,7 +1025,10 @@ async def text_to_speech(request: Request) -> Any:
             volume=_num("volume", 0.1, 2.0),
         )
         from span import telemetry
-        telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0, {"mode": "full"})
+        _meta: dict[str, Any] = {"mode": "full", "engine": tts.engine()}
+        if _meta["engine"] == "elevenlabs":
+            _meta["model"] = tts.ELEVEN_MODEL
+        telemetry.record("tts", (time.perf_counter() - _t0) * 1000.0, _meta)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"TTS mislukt: {exc}")
     from fastapi.responses import Response
@@ -1122,8 +1125,11 @@ async def tts_status(request: Request) -> dict[str, Any]:
     info = {"available": tts.available()}
     if info["available"]:
         info.update(tts.voice_info())
-        # streamen kan alleen via XTTS; alleen relevant als die ook actief is
-        info["streaming"] = bool(tts.XTTS_URL) and tts.engine() == "xtts"
+        # streamen: ElevenLabs-WS (achter de flag) óf XTTS. Moet true worden,
+        # anders kiest de HUD nooit het stream-pad (settings.js zet hieruit
+        # SPAN._ttsStreaming; voice.js kiest daarop ttsPlayStream).
+        info["streaming"] = tts.stream_available() or (
+            bool(tts.XTTS_URL) and tts.engine() == "xtts")
         # keuzemenu: welke bronnen zijn er + wat is de beheerder-keuze
         info["engines"] = tts.engines_available()
         info["engine_override"] = tts._ENGINE_OVERRIDE
