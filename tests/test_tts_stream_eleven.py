@@ -211,3 +211,55 @@ def test_tts_batch_meta_bevat_engine_en_model(monkeypatch, tmp_path):
     assert rows[0]["meta"]["mode"] == "full"
     assert rows[0]["meta"]["engine"] == "elevenlabs"   # key gezet in fixture
     assert rows[0]["meta"]["model"] == "eleven_multilingual_v2"
+
+
+def test_tts_ab_twee_modellen_met_ms(monkeypatch, tmp_path):
+    import span.server.routes as routes
+    from unittest.mock import MagicMock
+
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+    monkeypatch.setattr(routes, "_require_owner", lambda request: None)
+
+    seen_models = []
+
+    def fake_synth(text, speaker, model_id=None):
+        seen_models.append(model_id)
+        return b"RIFFWAVE" + (model_id or "").encode()
+
+    monkeypatch.setattr(tts, "_synth_elevenlabs", fake_synth)
+
+    req = MagicMock()
+
+    async def _json():
+        return {"text": "Goedemiddag Bas, dit is de luistertest."}
+
+    req.json = _json
+    out = asyncio.run(routes.tts_ab(req))
+
+    assert seen_models == ["eleven_flash_v2_5", "eleven_multilingual_v2"]
+    assert len(out["results"]) == 2
+    for r in out["results"]:
+        assert r["tts_ms"] >= 0.0
+        audio = base64.b64decode(r["audio_b64"])
+        assert audio.startswith(b"RIFFWAVE")      # afspeelbaar in de HUD
+    # telemetrie per model, mode=ab (spec: latencyverschil uit A1-telemetrie)
+    rows = [json.loads(ln) for ln in
+            (tmp_path / "t.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [r["meta"]["model"] for r in rows] == ["eleven_flash_v2_5",
+                                                  "eleven_multilingual_v2"]
+    assert all(r["meta"]["mode"] == "ab" for r in rows)
+
+
+def test_tts_ab_501_zonder_elevenlabs(monkeypatch):
+    import span.server.routes as routes
+    from fastapi import HTTPException
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(routes, "_require_owner", lambda request: None)
+    monkeypatch.setattr(tts, "ELEVEN_KEY", "")    # engine() != elevenlabs
+
+    req = MagicMock()
+    with pytest.raises(HTTPException) as ei:
+        asyncio.run(routes.tts_ab(req))
+    assert ei.value.status_code == 501

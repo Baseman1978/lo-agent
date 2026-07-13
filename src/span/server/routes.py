@@ -1137,6 +1137,41 @@ async def tts_status(request: Request) -> dict[str, Any]:
     return info
 
 
+_AB_MODELS = ("eleven_flash_v2_5", "eleven_multilingual_v2")
+
+
+@router.post("/api/tts_ab")
+async def tts_ab(request: Request) -> dict[str, Any]:
+    """Owner-only A/B-luistertest (A2): dezelfde zin door Flash v2.5 én
+    Multilingual v2, batch-gesynthetiseerd, met tts_ms per model. Bas kiest op
+    oor; het latencyverschil komt óók in de A1-telemetrie (mode=ab, meta.model)
+    terecht. Fail-soft per model: één model kapot -> het andere komt gewoon."""
+    _require_owner(request)
+    import base64 as _b64
+    from span.server import tts
+    if tts.engine() != "elevenlabs":
+        raise HTTPException(status_code=501, detail="ElevenLabs niet actief.")
+    body = await request.json()
+    text = (body.get("text") or "").strip()[:300]
+    if not text:
+        raise HTTPException(status_code=422, detail="Lege tekst.")
+    from span import telemetry
+    results: list[dict[str, Any]] = []
+    for model_id in _AB_MODELS:
+        _t0 = time.perf_counter()
+        try:
+            audio = await asyncio.to_thread(
+                tts._synth_elevenlabs, text, None, model_id)
+        except Exception as exc:
+            results.append({"model": model_id, "error": str(exc)[:200]})
+            continue
+        ms = (time.perf_counter() - _t0) * 1000.0
+        telemetry.record("tts", ms, {"mode": "ab", "model": model_id})
+        results.append({"model": model_id, "tts_ms": round(ms, 1),
+                        "audio_b64": _b64.b64encode(audio).decode("ascii")})
+    return {"text": text, "results": results}
+
+
 @router.get("/api/skills")
 async def skills_list(request: Request) -> Any:
     _require_rest_auth(request)
