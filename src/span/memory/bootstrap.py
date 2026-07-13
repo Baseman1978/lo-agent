@@ -34,6 +34,15 @@ class BootstrapContext:
     feedback: list[dict[str, Any]] = field(default_factory=list)
 
 
+# A4 quest-limiet: quests waren de enige onbegrensde promptcategorie die door
+# normaal agent-gedrag hard groeit (protocollen en feedback zijn ook ongecapt
+# maar gecureerd/zelf-dempend). De limiet zit op de LEESkant (quest_upsert
+# valideert status niet en de schrijfkant is vrij): recentst-bijgewerkte
+# quests eerst, en per quest een cap op de stappen.
+QUEST_LIMIT = 6
+QUEST_STEPS_LIMIT = 8
+
+
 def start_session(brain: BrainDB) -> str:
     session_id = f"session-{int(time.time() * 1000)}"
     brain.run(
@@ -168,12 +177,14 @@ def load_bootstrap(
     quests = brain.run(
         """
         MATCH (q:Quest) WHERE q.status IN ['open', 'active']
+        WITH q ORDER BY coalesce(q.updated, q.created) DESC LIMIT $quest_limit
         OPTIONAL MATCH (q)-[:HAS_STEP]->(st:QuestStep)
         WITH q, st ORDER BY st.order
         RETURN q.id AS id, q.title AS title, q.status AS status,
                collect({order: st.order, body: st.body, status: st.status}) AS steps
         ORDER BY q.id
-        """
+        """,
+        quest_limit=QUEST_LIMIT,
     )
 
     decisions = fragments.recent(k=8, mf_type="decision")
@@ -320,9 +331,12 @@ def render_bootstrap(ctx: BootstrapContext) -> str:
         lines.append("\n# Actieve quests")
         for q in ctx.quests:
             lines.append(f"- {q['id']} · {q['title']} ({q['status']})")
-            for st in q["steps"]:
-                if st.get("body"):
-                    lines.append(f"    - step-{st['order']}: {st['body']} [{st.get('status', 'open')}]")
+            steps = [st for st in q["steps"] if st.get("body")]
+            for st in steps[:QUEST_STEPS_LIMIT]:
+                lines.append(f"    - step-{st['order']}: {st['body']} [{st.get('status', 'open')}]")
+            if len(steps) > QUEST_STEPS_LIMIT:
+                lines.append(f"    - … (+{len(steps) - QUEST_STEPS_LIMIT} "
+                             "stappen verborgen — zie quest via brain_search)")
 
     if ctx.skills:
         lines.append("\n# Skills")
