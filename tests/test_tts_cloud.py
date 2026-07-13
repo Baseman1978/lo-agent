@@ -127,3 +127,36 @@ def test_stream_available_vereist_flag_en_elevenlabs(monkeypatch):
     monkeypatch.setattr(tts, "_piper_ok", lambda: True)
     monkeypatch.setattr(tts, "_ENGINE_OVERRIDE", "piper")
     assert tts.stream_available() is False
+
+
+def test_synth_elevenlabs_model_override(monkeypatch):
+    # A/B-test stuurt per call een ander model mee; default blijft ELEVEN_MODEL
+    monkeypatch.setattr(tts, "ELEVEN_KEY", "sk-x")
+    seen = {}
+
+    class FakeResp:
+        content = b"\x00\x01" * 4
+        def raise_for_status(self):
+            pass
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        def post(self, url, params=None, headers=None, json=None):
+            seen["url"], seen["params"], seen["json"] = url, params, json
+            return FakeResp()
+
+    import httpx
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    out = tts._synth_elevenlabs("Hoi", None, model_id="eleven_flash_v2_5")
+    assert seen["json"]["model_id"] == "eleven_flash_v2_5"
+    assert seen["params"]["output_format"] == "pcm_22050"
+    assert out[:4] == b"RIFF"                    # nog steeds WAV-verpakt
+
+    tts._synth_elevenlabs("Hoi", None)           # zonder override
+    assert seen["json"]["model_id"] == tts.ELEVEN_MODEL

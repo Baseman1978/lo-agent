@@ -198,7 +198,7 @@ def _wav(pcm: bytes, sample_rate: int, channels: int = 1) -> bytes:
     return buf.getvalue()
 
 
-def _synth_elevenlabs(text: str, speaker) -> bytes:
+def _synth_elevenlabs(text: str, speaker, model_id: str | None = None) -> bytes:
     import httpx
     vid = ELEVEN_VOICE
     if speaker:
@@ -213,7 +213,7 @@ def _synth_elevenlabs(text: str, speaker) -> bytes:
             f"{_ELEVEN_BASE}/text-to-speech/{vid}",
             params={"output_format": "pcm_22050"},
             headers={"xi-api-key": ELEVEN_KEY},
-            json={"text": text, "model_id": ELEVEN_MODEL})
+            json={"text": text, "model_id": model_id or ELEVEN_MODEL})
         resp.raise_for_status()
     return _wav(resp.content, 22050)
 
