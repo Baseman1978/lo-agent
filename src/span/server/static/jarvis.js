@@ -314,6 +314,7 @@ function handle(msg) {
   }
   else if (msg.type === "delta") {
     SPAN.working(null);  // er komt tekst -> indicator weg
+    if (ackTimer) { clearTimeout(ackTimer); ackTimer = 0; }
     if (!current) current = el("span", agentWho());
     current.dataset.raw = (current.dataset.raw || "") + msg.text;
     current.innerHTML = whoTag() + md(current.dataset.raw);
@@ -322,8 +323,15 @@ function handle(msg) {
   }
   else if (msg.type === "tool") {
     // live tonen welke tool draait -> duidelijk dat Span bezig is
-    if (msg.phase === "start") SPAN.working(SPAN.toolLabel(msg.name) + "…");
-    else SPAN.working((SPAN._agentName || "LO") + " werkt verder…");
+    if (msg.phase === "start") {
+      SPAN.working(SPAN.toolLabel(msg.name) + "…");
+      // A2 — draait de tool na 2,5 s nog, spreek dan een korte cue uit
+      if (ackTimer) clearTimeout(ackTimer);
+      ackTimer = setTimeout(() => { if (SPAN.microAck) SPAN.microAck(); }, 2500);
+    } else {
+      SPAN.working((SPAN._agentName || "LO") + " werkt verder…");
+      if (ackTimer) { clearTimeout(ackTimer); ackTimer = 0; }
+    }
   }
   else if (msg.type === "memory_read") {
     // live: Span raadpleegt geheugen tijdens de beurt -> leescascade in de scene
@@ -346,6 +354,8 @@ function handle(msg) {
     // bij een onderbroken beurt geen restant voorlezen; anders de stream afmaken
     if (!msg.cancelled && SPAN.speakOn && SPAN.speakFlush) SPAN.speakFlush();
     SPAN._muteStream = false;                               // klaar -> volgende antwoord mag weer
+    if (ackTimer) { clearTimeout(ackTimer); ackTimer = 0; }
+    SPAN._ackSpoken = false;   // volgende beurt mag weer één cue geven
     if (SPAN._pendingText) {                                // barge-in: opgevangen vervolg nu sturen
       const t = SPAN._pendingText; SPAN._pendingText = null;
       setTimeout(() => SPAN.send(t), 60);
@@ -380,6 +390,7 @@ function handle(msg) {
 }
 
 let turnStart = 0;
+let ackTimer = 0;   // A2 — micro-bevestiging bij lang lopende tool-calls
 SPAN.send = (textOverride) => {
   const text = (textOverride ?? input.value).trim();
   if (!text || SPAN.busy || !ws || ws.readyState !== 1) return;

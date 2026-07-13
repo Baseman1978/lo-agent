@@ -227,6 +227,22 @@
     if (t) ttsQ.push({ text: t });
     ttsPump();
   }
+  // A2 — micro-bevestiging: korte gesproken cue als een tool-call lang duurt,
+  // zodat hoorbaar is dat LO nog bezig is. Alleen bij server-TTS, alleen als
+  // voorlezen aanstaat, de spraak-pijplijn idle is en er geen barge-in loopt;
+  // hoogstens één cue per beurt (SPAN._ackSpoken; jarvis.js reset bij "done").
+  // Vaste korte frasen: het echo-filter (lastTTS) moet ze kunnen herkennen.
+  const ACK_PHRASES = ["Momentje.", "Ik ben ermee bezig.", "Even geduld."];
+  SPAN._ackSpoken = false;
+  SPAN.microAck = () => {
+    if (!SPAN.serverTTS || !SPAN.speakOn) return;
+    if (SPAN._muteStream || SPAN._ackSpoken) return;
+    if (!ttsIdleServer()) return;   // nooit door het echte antwoord heen praten
+    const phrase = ACK_PHRASES[Math.floor(Math.random() * ACK_PHRASES.length)];
+    SPAN._ackSpoken = true;
+    lastTTS += " " + phrase;        // echo-filter rekent de cue mee
+    ttsEnqueue(phrase, false);
+  };
   // stem-instellingen (HUD) die per call meegaan naar /api/tts
   function ttsParams() {
     const p = {}, g = (k) => localStorage.getItem(k);
