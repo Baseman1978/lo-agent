@@ -567,6 +567,12 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
                                    "options": c.get("options") or []},
                           urgency="high")
 
+    async def do_chaincheck() -> None:
+        # zwaar (leest alle Action-nodes) -> via to_thread; run_task regelt
+        # mark-after-success (c.last_chaincheck) en de attempt-cap
+        result = await asyncio.to_thread(chain_check, state)
+        log(f"chaincheck: ok={result.get('ok')} count={result.get('count')}")
+
     async def do_weekreview() -> None:
         review = await asyncio.to_thread(
             generate_weekreview, state["brain"], state["llm"],
@@ -634,6 +640,8 @@ async def daily_scheduler(state: dict[str, Any]) -> None:
                 await run_task("consolidate", do_consolidate)
             if due(BRAINHEALTH_TIME, "brainhealth", now):
                 await run_task("brainhealth", do_brainhealth)
+            if chaincheck_enabled() and due(CHAINCHECK_TIME, "chaincheck", now):
+                await run_task("chaincheck", do_chaincheck)
             if now.weekday() == 4 and due("16:30", "weekreview", now):
                 await run_task("weekreview", do_weekreview)
 
