@@ -7,6 +7,8 @@ mocks/fixtures vóór het Meta-testnummer er is".
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 from collections import OrderedDict
 from unittest.mock import MagicMock
@@ -210,3 +212,121 @@ def test_webhook_get_niet_geconfigureerd_is_404(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         asyncio.run(wh.whatsapp_webhook(_get_request({"hub.mode": "subscribe"})))
     assert exc.value.status_code == 404  # fail-closed, zoals /api/webhooks/graph
+
+
+def _post_request(body: bytes, secret="app-secret", sig=None):
+    req = MagicMock()
+    req.method = "POST"
+
+    async def _body():
+        return body
+
+    req.body = _body
+    if sig is None and secret is not None:
+        sig = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    req.headers = {"x-hub-signature-256": sig or ""}
+    return req
+
+
+def _wa_payload(msgs):
+    return json.dumps({"entry": [{"changes": [{"value": {
+        "messaging_product": "whatsapp", "messages": msgs,
+    }}]}]}).encode()
+
+
+def test_webhook_post_geldige_signature_verwerkt_async(monkeypatch):
+    import span.server.whatsapp as wh
+    from span.server import state as st
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "app-secret")
+    handled = []
+    bridge = MagicMock()
+    bridge.handle_message.side_effect = lambda m: handled.append(m)
+    st._state["whatsapp"] = bridge
+    try:
+        body = _wa_payload([{"from": "31612345678", "id": "wamid.1",
+                             "type": "text", "text": {"body": "hallo"}}])
+
+        async def _run():
+            out = await wh.whatsapp_webhook(_post_request(body))
+            # de route ackt direct; geef de achtergrondtaken de kans om binnen
+            # deze event-loop af te ronden
+            await asyncio.gather(*list(wh._bg_tasks))
+            return out
+
+        out = asyncio.run(_run())
+        assert out == {"received": 1}
+        assert handled and handled[0]["id"] == "wamid.1"
+    finally:
+        st._state.pop("whatsapp", None)
+
+
+def test_webhook_post_bridge_fout_stuurt_eerlijke_melding(monkeypatch):
+    """Spec §5: een exception in handle_message wordt niet stil gedropt — de
+    allowlisted afzender krijgt een eerlijke foutmelding via send_text."""
+    import span.server.whatsapp as wh
+    from span.server import state as st
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "app-secret")
+    bridge = MagicMock()
+    bridge._allowed = frozenset({"31612345678"})
+    bridge.handle_message.side_effect = RuntimeError("boem")
+    st._state["whatsapp"] = bridge
+    try:
+        body = _wa_payload([{"from": "31612345678", "id": "wamid.e1",
+                             "type": "text", "text": {"body": "hallo"}}])
+
+        async def _run():
+            out = await wh.whatsapp_webhook(_post_request(body))
+            await asyncio.gather(*list(wh._bg_tasks))
+            return out
+
+        assert asyncio.run(_run()) == {"received": 1}
+        bridge.send_text.assert_called_once()
+        to, text = bridge.send_text.call_args.args
+        assert to == "31612345678"
+        assert "mis" in text  # eerlijke melding, geen stille drop
+    finally:
+        st._state.pop("whatsapp", None)
+
+
+def test_webhook_post_foute_signature_is_401(monkeypatch):
+    import span.server.whatsapp as wh
+    from fastapi import HTTPException
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "app-secret")
+    body = _wa_payload([])
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(wh.whatsapp_webhook(
+            _post_request(body, sig="sha256=" + "0" * 64)))
+    assert exc.value.status_code == 401
+
+
+def test_webhook_post_zonder_secret_is_404(monkeypatch):
+    import span.server.whatsapp as wh
+    from fastapi import HTTPException
+    monkeypatch.delenv("WHATSAPP_APP_SECRET", raising=False)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(wh.whatsapp_webhook(_post_request(b"{}")))
+    assert exc.value.status_code == 404
+
+
+def test_webhook_post_zonder_bridge_geeft_200(monkeypatch):
+    """Geldige signature maar kanaal (nog) niet actief -> toch 200, anders
+    blijft Meta redelivery doen."""
+    import span.server.whatsapp as wh
+    from span.server import state as st
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "app-secret")
+    st._state.pop("whatsapp", None)
+    body = _wa_payload([{"from": "49170000000", "id": "wamid.z",
+                         "type": "text", "text": {"body": "x"}}])
+    out = asyncio.run(wh.whatsapp_webhook(_post_request(body)))
+    assert out == {"received": 1}
+
+
+def test_webhook_post_status_updates_zijn_ok(monkeypatch):
+    """Delivery/read-statussen bevatten geen messages -> received: 0, geen fout."""
+    import span.server.whatsapp as wh
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "app-secret")
+    body = json.dumps({"entry": [{"changes": [{"value": {
+        "statuses": [{"id": "wamid.1", "status": "delivered"}],
+    }}]}]}).encode()
+    out = asyncio.run(wh.whatsapp_webhook(_post_request(body)))
+    assert out == {"received": 0}

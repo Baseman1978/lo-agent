@@ -16,12 +16,15 @@ zoals de bestaande webhook-routes. Fail-closed: zonder env-config -> 404.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import os
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
+
+from span.server.state import _state
 
 router = APIRouter()
 
@@ -54,7 +57,55 @@ async def whatsapp_webhook(request: Request) -> Any:
     return await _handle_post(request)
 
 
+async def _run_message(bridge: Any, msg: dict[str, Any]) -> None:
+    """Eén bericht door de (sync/blocking) bridge, zonder de 200-ack te blokkeren.
+    Per-bericht try/except: één kapot bericht mag de rest nooit meeslepen.
+    Spec §5: geen stille drops — na een fout krijgt de allowlisted afzender een
+    eerlijke foutmelding; alleen server-side loggen is niet genoeg."""
+    try:
+        await asyncio.to_thread(bridge.handle_message, msg)
+    except Exception as exc:
+        print(f"[whatsapp] bericht-fout: {type(exc).__name__}: {exc}", flush=True)
+        sender = str(msg.get("from") or "")
+        if sender in getattr(bridge, "_allowed", frozenset()):
+            # best-effort: de foutmelding zelf mag nooit een nieuwe crash geven
+            try:
+                await asyncio.to_thread(
+                    bridge.send_text, sender,
+                    "Er ging iets mis bij het verwerken van je bericht — "
+                    "probeer het zo nog eens.")
+            except Exception as exc2:
+                print(f"[whatsapp] foutmelding versturen mislukt: {exc2}",
+                      flush=True)
+
+
 async def _handle_post(request: Request) -> dict[str, Any]:
-    """Task 7 vult dit in; tot dan is POST niet geconfigureerd."""
-    raise HTTPException(status_code=404,
-                        detail="WhatsApp-webhook niet geconfigureerd.")
+    secret = _app_secret()
+    if not secret:
+        raise HTTPException(status_code=404,
+                            detail="WhatsApp-webhook niet geconfigureerd.")
+    # signature MOET over de rauwe bytes — pas daarna JSON-parsen
+    raw = await request.body()
+    supplied = request.headers.get("x-hub-signature-256", "")
+    expected = "sha256=" + hmac.new(secret.encode("utf-8"), raw,
+                                    hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Ongeldige signature.")
+    try:
+        import json as _json
+        body = _json.loads(raw or b"{}")
+    except Exception:
+        body = {}
+    messages: list[dict[str, Any]] = []
+    for entry in (body.get("entry") or []):
+        for change in (entry.get("changes") or []):
+            messages.extend((change.get("value") or {}).get("messages") or [])
+    bridge = _state.get("whatsapp")
+    if bridge is not None:
+        for msg in messages:
+            task = asyncio.create_task(_run_message(bridge, msg))
+            _bg_tasks.add(task)
+            task.add_done_callback(_bg_tasks.discard)
+    # ALTIJD 200 op een geldige signature (ook genegeerde afzenders/typen),
+    # anders blijft Meta hetzelfde bericht opnieuw aanleveren
+    return {"received": len(messages)}
