@@ -10,6 +10,7 @@ beide closen over de gedeelde server-state (settings, llm, integraties, inbox).
 
 from __future__ import annotations
 
+import os
 from typing import Any, Callable
 
 # voortgangslabels per tool (mensvriendelijk in het Taken-paneel)
@@ -21,6 +22,15 @@ TASK_LABELS = {
     "o365_enrich_archive": "🧠 archief verrijken…",
     "o365_unanswered_sent": "📨 open antwoorden zoeken…",
 }
+
+
+def honest_outcomes_enabled() -> bool:
+    """Feature-flag SPAN_HONEST_OUTCOMES (default aan; off/0/false/no/'' = uit).
+    Uit = het oude gedrag: cron- en taak-consumenten negeren last_turn_ok.
+    Veiligheidsklep §5 (omkeerbaarheid): ook een vals-negatief in last_turn_ok
+    is dan met één env-var terug te draaien, zonder git-revert of redeploy."""
+    val = os.environ.get("SPAN_HONEST_OUTCOMES", "on").strip().lower()
+    return val not in {"off", "0", "false", "no", ""}
 
 
 def make_runners(state: dict[str, Any]) -> tuple[Callable[..., str], Callable[..., str]]:
@@ -70,6 +80,10 @@ def make_runners(state: dict[str, Any]) -> tuple[Callable[..., str], Callable[..
             agent.flush_recording()
         except Exception:
             pass
+        if honest_outcomes_enabled() and not getattr(agent, "last_turn_ok", True):
+            # A3 eerlijke uitkomst: exceptie -> TaskManager._run zet status
+            # "error" i.p.v. "done" met de foutzin als "resultaat"
+            raise RuntimeError(f"achtergrondtaak-beurt faalde: {result}")
         return result
 
     def team_runner(task, set_progress, should_cancel, ctx):
@@ -134,6 +148,9 @@ def make_runners(state: dict[str, Any]) -> tuple[Callable[..., str], Callable[..
                 agent.flush_recording()
             except Exception:
                 pass
+            if honest_outcomes_enabled() and not getattr(agent, "last_turn_ok", True):
+                # eerlijk deelresultaat: de synthese ziet dat dit deel faalde
+                ans = "[DEELTAAK MISLUKT] " + (ans or "")
             results[i] = {"role": st.get("role", ""), "result": ans}
             with lock:
                 done[0] += 1
@@ -143,6 +160,13 @@ def make_runners(state: dict[str, Any]) -> tuple[Callable[..., str], Callable[..
             list(ex.map(lambda p: run_sub(*p), list(enumerate(subtasks))))
         if should_cancel():
             return "(geannuleerd)"
+
+        # A3 eerlijke uitkomst: als álle deeltaken faalden valt er niets samen
+        # te vatten -> foutstatus i.p.v. een verzonnen synthese
+        done_results = [r for r in results if r is not None]
+        if done_results and all(str(r.get("result", "")).startswith("[DEELTAAK MISLUKT]")
+                                for r in done_results):
+            raise RuntimeError("teamtaak mislukt: alle deeltaken faalden")
 
         # 3) SYNTHESE
         set_progress("samenvoegen…", 88)

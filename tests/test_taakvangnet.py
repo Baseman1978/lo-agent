@@ -210,3 +210,85 @@ class TestEerlijkeUitkomst:
         out = agent.turn("hoi", max_steps=2)
         assert "tool-limiet" in out
         assert agent.last_turn_ok is False
+
+
+class _FakeFailedAgent:
+    """Agent-double waarvan de beurt intern faalde (last_turn_ok=False)."""
+    last_turn_ok = False
+
+    def __init__(self, *a, **k):
+        pass
+
+    def begin(self, *a, **k):
+        return "boot"
+
+    def turn(self, *a, **k):
+        return "(de modelaanroep mislukte: RuntimeError: provider plat)"
+
+    def flush_recording(self, *a, **k):
+        return None
+
+
+class TestEerlijkeConsumenten:
+    def test_cron_execute_meldt_falen_expliciet(self, monkeypatch):
+        import span.jarvis.crons as crons
+        import span.memory.bootstrap as bootstrap
+        import span.orchestrator.agent as agent_mod
+        monkeypatch.setattr(agent_mod, "SpanAgent", _FakeFailedAgent)
+        monkeypatch.setattr(bootstrap, "start_session", lambda brain: "sessie-1")
+        state = {"settings": MagicMock(), "brain": MagicMock(), "llm": MagicMock()}
+        out = crons._execute(state, "doe iets")
+        assert out.startswith("Uitvoering mislukt:")
+        assert "modelaanroep mislukte" in out
+
+    def test_task_runner_gooit_bij_gefaalde_beurt(self, monkeypatch):
+        import span.memory.bootstrap as bootstrap
+        import span.orchestrator.agent as agent_mod
+        monkeypatch.setattr(agent_mod, "SpanAgent", _FakeFailedAgent)
+        monkeypatch.setattr(bootstrap, "start_session", lambda brain: "sessie-1")
+        from span.jarvis.task_runners import make_runners
+        state = {"settings": MagicMock(), "brain": MagicMock(), "llm": MagicMock(),
+                 "inbox": MagicMock(), "autonomy": {}}
+        task_runner, _ = make_runners(state)
+        with pytest.raises(RuntimeError):
+            task_runner({"goal": "doe iets", "title": "t"},
+                        lambda *a, **k: None, lambda: False, {})
+
+    def test_team_runner_faalt_eerlijk_als_alle_deeltaken_falen(self, monkeypatch):
+        import span.memory.bootstrap as bootstrap
+        import span.orchestrator.agent as agent_mod
+        monkeypatch.setattr(agent_mod, "SpanAgent", _FakeFailedAgent)
+        monkeypatch.setattr(bootstrap, "start_session", lambda brain: "sessie-1")
+        from span.jarvis.task_runners import make_runners
+        plan = MagicMock()
+        plan.content = '{"subtasks": [{"role": "zoeker", "goal": "zoek iets"}]}'
+        llm = MagicMock(); llm.chat.return_value = plan
+        settings = MagicMock(); settings.model_main = "test-model"
+        state = {"settings": settings, "brain": MagicMock(), "llm": llm,
+                 "inbox": MagicMock(), "autonomy": {}}
+        _, team_runner = make_runners(state)
+        with pytest.raises(RuntimeError):
+            team_runner({"goal": "doe iets"},
+                        lambda *a, **k: None, lambda: False, {})
+
+    def test_flag_uit_geeft_oud_gedrag(self, monkeypatch):
+        monkeypatch.setenv("SPAN_HONEST_OUTCOMES", "off")
+        from span.jarvis.task_runners import honest_outcomes_enabled
+        assert not honest_outcomes_enabled()
+        monkeypatch.setenv("SPAN_HONEST_OUTCOMES", "on")
+        assert honest_outcomes_enabled()
+        monkeypatch.setenv("SPAN_HONEST_OUTCOMES", "off")
+        import span.jarvis.crons as crons
+        import span.memory.bootstrap as bootstrap
+        import span.orchestrator.agent as agent_mod
+        monkeypatch.setattr(agent_mod, "SpanAgent", _FakeFailedAgent)
+        monkeypatch.setattr(bootstrap, "start_session", lambda brain: "sessie-1")
+        state = {"settings": MagicMock(), "brain": MagicMock(), "llm": MagicMock(),
+                 "inbox": MagicMock(), "autonomy": {}}
+        out = crons._execute(state, "doe iets")
+        assert not out.startswith("Uitvoering mislukt:")
+        from span.jarvis.task_runners import make_runners
+        task_runner, _ = make_runners(state)
+        result = task_runner({"goal": "doe iets", "title": "t"},
+                             lambda *a, **k: None, lambda: False, {})
+        assert "modelaanroep mislukte" in result
