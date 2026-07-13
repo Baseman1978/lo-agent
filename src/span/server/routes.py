@@ -925,6 +925,7 @@ async def speech_to_text(request: Request) -> dict[str, Any]:
     if not (head.startswith(b"\x1aE\xdf\xa3")      # EBML (webm/mkv)
             or head == b"OggS"                       # ogg/opus
             or head == b"RIFF"                       # wav
+            or audio[4:8] == b"ftyp"                 # mp4/m4a (iOS Safari, AAC)
             or head[:3] == b"ID3" or head[:2] == b"\xff\xfb"):  # mp3
         raise HTTPException(status_code=415, detail="Onbekend audioformaat.")
     try:
