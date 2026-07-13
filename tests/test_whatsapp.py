@@ -447,10 +447,24 @@ def test_wav_naar_ogg_opus_echte_transcode():
 
 
 def test_webhook_route_gemount_in_app():
-    """De router hangt in de FastAPI-app (import voert de lifespan NIET uit)."""
-    from span.server.app import app
-    paths = {getattr(r, "path", "") for r in app.routes}
-    assert "/api/webhooks/whatsapp" in paths
+    """De router hangt in de FastAPI-app (import voert de lifespan NIET uit).
+
+    In een schoon proces gecheckt — precies zoals de server in productie start.
+    Een in-process check is gevoelig voor sys.modules-vervuiling door eerdere
+    tests (module-reloads elders in de suite); een subproces is de eerlijke,
+    orde-onafhankelijke invariant.
+    """
+    import subprocess
+    import sys
+
+    code = ("from span.server.app import app;"
+            "paths={getattr(r,'path','') for r in app.routes};"
+            "import sys;"
+            "sys.exit(0 if '/api/webhooks/whatsapp' in paths else 1)")
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True)
+    assert result.returncode == 0, (
+        f"whatsapp-route niet gemount.\nstdout: {result.stdout.decode()}\n"
+        f"stderr: {result.stderr.decode()}")
 
 
 def test_webhook_post_verwerkt_meerdere_berichten_serieel(monkeypatch):
