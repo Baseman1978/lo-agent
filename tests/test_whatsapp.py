@@ -330,3 +330,49 @@ def test_webhook_post_status_updates_zijn_ok(monkeypatch):
     }}]}]}).encode()
     out = asyncio.run(wh.whatsapp_webhook(_post_request(body)))
     assert out == {"received": 0}
+
+
+def test_voice_note_flow_met_stt_telemetrie(monkeypatch, tmp_path):
+    monkeypatch.setenv("SPAN_TELEMETRY", "on")
+    monkeypatch.setenv("SPAN_TELEMETRY_FILE", str(tmp_path / "t.jsonl"))
+
+    import span.server.stt as stt
+    monkeypatch.setattr(stt, "available", lambda: True)
+    monkeypatch.setattr(stt, "backend", lambda: "cpu-local")
+    monkeypatch.setattr(stt, "transcribe",
+                        lambda audio, language="nl": "wat staat er vandaag op de agenda")
+
+    b = _bridge()
+    monkeypatch.setattr(b, "download_media", lambda mid: b"OggS-opus-bytes")
+    sent = []
+    monkeypatch.setattr(b, "send_text", lambda to, text: (sent.append(text), True)[1])
+    agent = MagicMock()
+    agent.turn.return_value = "drie afspraken vandaag"
+    monkeypatch.setattr(b, "_ensure_agent", lambda: agent)
+
+    b.handle_message({"from": "31612345678", "id": "wamid.v1", "type": "audio",
+                      "audio": {"id": "media-9", "voice": True}})
+    agent.turn.assert_called_once_with("wat staat er vandaag op de agenda")
+    assert sent == ["drie afspraken vandaag"]
+
+    import span.telemetry as tel
+    seg = tel.aggregate()["segments"]
+    assert seg["stt"]["count"] == 1  # kanaal-meting: {"channel": "whatsapp"}
+
+
+def test_voice_note_zonder_stt_wordt_eerlijk_gemeld(monkeypatch):
+    """Spec §5: geen stille drops — zonder STT volgt geen agent-beurt, maar de
+    afzender krijgt wél een eerlijk tekstantwoord (geen genegeerde spraakmemo)."""
+    import span.server.stt as stt
+    monkeypatch.setattr(stt, "available", lambda: False)
+    b = _bridge()
+    agent = MagicMock()
+    monkeypatch.setattr(b, "_ensure_agent", lambda: agent)
+    sent = []
+    monkeypatch.setattr(b, "send_text",
+                        lambda to, text: (sent.append((to, text)), True)[1])
+    b.handle_message({"from": "31612345678", "id": "wamid.v2", "type": "audio",
+                      "audio": {"id": "media-10"}})
+    agent.turn.assert_not_called()  # geen STT -> geen beurt, geen crash
+    assert sent == [("31612345678", "Ik kan spraakmemo's nu niet verwerken — "
+                                    "stuur het als tekst.")]

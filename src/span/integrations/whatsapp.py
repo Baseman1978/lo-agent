@@ -158,6 +158,23 @@ class WhatsAppBridge:
                 print(f"[whatsapp] voice-antwoord mislukt: {exc}", flush=True)
 
     def _transcribe_voice(self, audio: dict[str, Any]) -> str:
-        """Krijgt in Task 8 de echte STT-implementatie; tot dan geen audio-pad."""
-        print("[whatsapp] genegeerd: spraakmemo's nog niet actief", flush=True)
-        return ""
+        """Inkomende voice-note (audio/ogg) -> bestaande STT. faster-whisper
+        decodeert ogg/opus rechtstreeks (PyAV), dus de bytes gaan er onbewerkt
+        in — zelfde pad als de Telegram-voice-flow."""
+        from span.server import stt
+        if not stt.available():
+            return ""
+        media_id = str(audio.get("id") or "")
+        if not media_id:
+            return ""
+        data = self.download_media(media_id)
+        if not data:
+            return ""
+        t0 = time.perf_counter()
+        text = stt.transcribe(data)
+        # telemetrie is best-effort (record slikt zelf alle fouten, A1);
+        # de WhatsApp-adapter meet zelf omdat hij stt DIRECT aanroept
+        from span import telemetry
+        telemetry.record("stt", (time.perf_counter() - t0) * 1000.0,
+                         {"backend": stt.backend(), "channel": "whatsapp"})
+        return text
