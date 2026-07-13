@@ -121,7 +121,9 @@ class WhatsAppBridge:
     def handle_message(self, msg: dict[str, Any]) -> None:
         """Eén inkomend bericht -> agent-loop -> antwoord. Sync/blocking; de
         webhook draait dit via asyncio.to_thread NA de directe 200-ack."""
-        sender = str(msg.get("from") or "")
+        # normaliseer zoals de allowlist (config): '+31 6…' -> '31…'. Meta stuurt
+        # wa_id normaal zonder '+', maar zo matcht het ook als dat ooit verandert.
+        sender = str(msg.get("from") or "").strip().lstrip("+").replace(" ", "")
         if sender not in self._allowed:
             # allowlist = vertrouwensgrens: negeren + loggen, nooit antwoorden
             print(f"[whatsapp] genegeerd: bericht van niet-toegestaan nummer "

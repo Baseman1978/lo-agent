@@ -451,3 +451,42 @@ def test_webhook_route_gemount_in_app():
     from span.server.app import app
     paths = {getattr(r, "path", "") for r in app.routes}
     assert "/api/webhooks/whatsapp" in paths
+
+
+def test_webhook_post_verwerkt_meerdere_berichten_serieel(monkeypatch):
+    """M1-regressie: meerdere berichten in één POST draaien strikt serieel door
+    de (niet-thread-safe) bridge — nooit gelijktijdig op hetzelfde agent-object."""
+    import span.server.whatsapp as wh
+    from span.server import state as st
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "app-secret")
+
+    active = {"n": 0}
+    order = []
+    bridge = MagicMock()
+
+    def handle(msg):
+        # als twee beurten overlappen is active["n"] > 1 -> assertie faalt
+        active["n"] += 1
+        assert active["n"] == 1, "agent-beurten overlappen (niet geserialiseerd)"
+        order.append(msg["id"])
+        active["n"] -= 1
+
+    bridge.handle_message.side_effect = handle
+    st._state["whatsapp"] = bridge
+    try:
+        body = _wa_payload([
+            {"from": "31612345678", "id": "wamid.a", "type": "text",
+             "text": {"body": "een"}},
+            {"from": "31612345678", "id": "wamid.b", "type": "text",
+             "text": {"body": "twee"}},
+        ])
+
+        async def _run():
+            out = await wh.whatsapp_webhook(_post_request(body))
+            await asyncio.gather(*list(wh._bg_tasks))
+            return out
+
+        assert asyncio.run(_run()) == {"received": 2}
+        assert order == ["wamid.a", "wamid.b"]  # in volgorde, serieel
+    finally:
+        st._state.pop("whatsapp", None)

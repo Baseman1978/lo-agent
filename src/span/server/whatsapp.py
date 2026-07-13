@@ -31,6 +31,22 @@ router = APIRouter()
 # referenties op lopende achtergrondtaken (anders kan de GC ze opruimen)
 _bg_tasks: set[asyncio.Task] = set()
 
+# A6 M1-fix: SpanAgent is NIET thread-safe (_messages/_ensure_agent/dedupe) en
+# Meta levert meerdere berichten per POST + overlappende POSTs. Alle agent-
+# beurten moeten daarom strikt serieel. Eén lock per event-loop: in productie
+# draait alles in één loop (volledige serialisatie), en per-loop voorkomt de
+# "bound to a different event loop"-fout bij losse asyncio.run()-tests.
+_turn_locks: dict[asyncio.AbstractEventLoop, asyncio.Lock] = {}
+
+
+def _get_turn_lock() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    lock = _turn_locks.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        _turn_locks[loop] = lock
+    return lock
+
 
 def _verify_token() -> str:
     return os.environ.get("WHATSAPP_VERIFY_TOKEN", "").strip()
@@ -79,6 +95,15 @@ async def _run_message(bridge: Any, msg: dict[str, Any]) -> None:
                       flush=True)
 
 
+async def _run_batch(bridge: Any, messages: list[dict[str, Any]]) -> None:
+    """Verwerk de berichten van één POST strikt serieel én onder de globale
+    per-loop lock, zodat agent-beurten binnen én over POSTs heen nooit
+    overlappen (M1: SpanAgent is niet thread-safe)."""
+    async with _get_turn_lock():
+        for msg in messages:
+            await _run_message(bridge, msg)
+
+
 async def _handle_post(request: Request) -> dict[str, Any]:
     secret = _app_secret()
     if not secret:
@@ -101,11 +126,11 @@ async def _handle_post(request: Request) -> dict[str, Any]:
         for change in (entry.get("changes") or []):
             messages.extend((change.get("value") or {}).get("messages") or [])
     bridge = _state.get("whatsapp")
-    if bridge is not None:
-        for msg in messages:
-            task = asyncio.create_task(_run_message(bridge, msg))
-            _bg_tasks.add(task)
-            task.add_done_callback(_bg_tasks.discard)
+    if bridge is not None and messages:
+        # één taak per POST die de berichten serieel afhandelt (M1)
+        task = asyncio.create_task(_run_batch(bridge, messages))
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
     # ALTIJD 200 op een geldige signature (ook genegeerde afzenders/typen),
     # anders blijft Meta hetzelfde bericht opnieuw aanleveren
     return {"received": len(messages)}
