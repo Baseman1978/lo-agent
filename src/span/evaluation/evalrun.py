@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -182,3 +182,58 @@ def run_item(item: dict[str, Any], soort: str, settings: Any,
     return ItemResult(id=item["id"], soort=soort, categorie=item["categorie"],
                       passed=passed, ms=round(ms, 1), motivatie=motivatie,
                       tools=tools_used)
+
+
+def run_eval(settings: Any = None, llm: Any = None, only: str | None = None,
+             limit: int | None = None) -> dict[str, Any]:
+    """Draai de volledige set (of een deel via only/limit) en geef het
+    machine-leesbare rapport terug. settings/llm zijn injecteerbaar voor tests;
+    default: echte load_settings() + LLMClient (de handmatige run)."""
+    if settings is None:
+        from span.config import load_settings
+        settings = load_settings()
+    if llm is None:
+        from span.llm.client import LLMClient
+        llm = LLMClient(settings)
+    batches: list[tuple[str, Path]] = []
+    if only in (None, "geheugen"):
+        batches.append(("geheugen", GEHEUGEN_PATH))
+    if only in (None, "taken"):
+        batches.append(("taak", TAKEN_PATH))
+    results: list[ItemResult] = []
+    for soort, path in batches:
+        items = load_items(path, soort)
+        if limit:
+            items = items[:limit]
+        for item in items:
+            results.append(run_item(item, soort, settings, llm))
+    per_soort: dict[str, dict[str, Any]] = {}
+    for r in results:
+        d = per_soort.setdefault(r.soort, {"n": 0, "pass": 0})
+        d["n"] += 1
+        d["pass"] += int(r.passed)
+    for d in per_soort.values():
+        d["score"] = round(d["pass"] / d["n"], 4) if d["n"] else 0.0
+    totaal = len(results)
+    geslaagd = sum(int(r.passed) for r in results)
+    return {
+        "totaal": totaal,
+        "geslaagd": geslaagd,
+        "score": round(geslaagd / totaal, 4) if totaal else 0.0,
+        "per_soort": per_soort,
+        "items": [asdict(r) for r in results],
+    }
+
+
+def render_report(rapport: dict[str, Any]) -> str:
+    """Leesbaar rapport: pass/fail per item + totalen per soort."""
+    regels = [f"=== A7 eval-set — {rapport['totaal']} items ==="]
+    for r in rapport["items"]:
+        status = "PASS" if r["passed"] else "FAIL"
+        extra = f" — {r['motivatie']}" if r.get("motivatie") else ""
+        regels.append(f"[{status}] {r['id']} ({r['categorie']}, {r['ms']} ms){extra}")
+    for soort, d in sorted(rapport["per_soort"].items()):
+        regels.append(f"  {soort}: {d['pass']}/{d['n']} = {d['score']:.0%}")
+    regels.append(f"  totaal: {rapport['geslaagd']}/{rapport['totaal']} "
+                  f"= {rapport['score']:.0%}")
+    return "\n".join(regels)

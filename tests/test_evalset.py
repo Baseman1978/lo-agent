@@ -215,3 +215,45 @@ def test_run_item_agent_fout_wordt_fail_geen_crash(tmp_path, monkeypatch):
             "verwacht": "A", "fixtures": {}, "scoring": "llm-judge"}
     result = run_item(item, "geheugen", _mock_settings(), llm)
     assert not result.passed  # item faalt, de run crasht niet
+
+
+def test_run_eval_totalen_en_rapport(monkeypatch):
+    import span.evaluation.evalrun as ev
+
+    resultaten = iter([
+        ev.ItemResult(id="mem-1", soort="geheugen", categorie="feit-recall",
+                      passed=True, ms=10.0),
+        ev.ItemResult(id="taak-1", soort="taak", categorie="mail-guard",
+                      passed=False, ms=20.0, motivatie="tool mist"),
+    ])
+    monkeypatch.setattr(ev, "load_items",
+                        lambda path, soort: [{"id": "x", "categorie": "c"}])
+    monkeypatch.setattr(ev, "run_item",
+                        lambda item, soort, settings, llm: next(resultaten))
+    rapport = ev.run_eval(settings=MagicMock(), llm=MagicMock())
+    assert rapport["totaal"] == 2 and rapport["geslaagd"] == 1
+    assert rapport["score"] == 0.5
+    assert rapport["per_soort"]["geheugen"] == {"n": 1, "pass": 1, "score": 1.0}
+    assert rapport["per_soort"]["taak"] == {"n": 1, "pass": 0, "score": 0.0}
+    tekst = ev.render_report(rapport)
+    assert "[PASS] mem-1" in tekst
+    assert "[FAIL] taak-1" in tekst and "tool mist" in tekst
+    assert "totaal: 1/2 = 50%" in tekst
+
+
+def test_main_exitcode_en_json(tmp_path, monkeypatch):
+    import span.evaluation.__main__ as m
+
+    rapport = {"totaal": 10, "geslaagd": 7, "score": 0.7,
+               "per_soort": {}, "items": []}
+    monkeypatch.setattr(m, "run_eval", lambda **kw: rapport)
+
+    # r145-klep: zonder SPAN_EVAL=on weigert de runner (default uit, exit 2)
+    monkeypatch.delenv("SPAN_EVAL", raising=False)
+    assert m.main(["--min-score", "0.6"]) == 2
+
+    monkeypatch.setenv("SPAN_EVAL", "on")
+    json_pad = tmp_path / "rapport.json"
+    assert m.main(["--min-score", "0.8", "--json", str(json_pad)]) == 1
+    assert json.loads(json_pad.read_text(encoding="utf-8"))["score"] == 0.7
+    assert m.main(["--min-score", "0.6"]) == 0
