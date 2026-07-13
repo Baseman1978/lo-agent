@@ -6,6 +6,9 @@ mocks/fixtures vóór het Meta-testnummer er is".
 """
 from __future__ import annotations
 
+import json
+from collections import OrderedDict
+
 
 def test_egress_staat_facebook_hosts_toe():
     """Media-URLs wijzen naar lookaside.fbsbx.com; API-calls naar graph.facebook.com.
@@ -13,3 +16,62 @@ def test_egress_staat_facebook_hosts_toe():
     from span.safety.egress import host_allowed
     assert host_allowed("graph.facebook.com")
     assert host_allowed("lookaside.fbsbx.com")
+
+
+def _bridge(allowed=("31612345678",), voice_reply=False):
+    """Bouw een WhatsAppBridge zonder Settings/Neo4j: attributen handmatig."""
+    from span.integrations.whatsapp import WhatsAppBridge
+    b = WhatsAppBridge.__new__(WhatsAppBridge)
+    b._state = {}
+    b._token = "wa-test-token"
+    b._phone_id = "12345"
+    b._allowed = frozenset(allowed)
+    b._voice_reply = voice_reply
+    b._agent = None
+    b._session_id = None
+    b._seen = OrderedDict()
+    return b
+
+
+class _Resp:
+    """Minimal requests.Response-double."""
+    def __init__(self, payload=None, ok=True, status_code=200):
+        self._payload = payload or {}
+        self.ok = ok
+        self.status_code = status_code
+        self.text = json.dumps(self._payload)
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if not self.ok:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+def test_send_text_chunkt_en_post(monkeypatch):
+    import span.integrations.whatsapp as wa
+    calls = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        calls.append((url, headers, json))
+        return _Resp()
+
+    monkeypatch.setattr(wa.requests, "post", fake_post)
+    b = _bridge()
+    assert b.send_text("31612345678", "x" * 4500)  # > 4000 tekens -> 2 chunks
+    assert len(calls) == 2
+    url, headers, payload = calls[0]
+    assert url == "https://graph.facebook.com/v21.0/12345/messages"
+    assert headers["Authorization"] == "Bearer wa-test-token"
+    assert payload["messaging_product"] == "whatsapp"
+    assert payload["to"] == "31612345678" and payload["type"] == "text"
+    assert payload["text"]["body"] == "x" * 4000
+    assert calls[1][2]["text"]["body"] == "x" * 500
+
+
+def test_send_text_fout_geeft_false(monkeypatch):
+    import span.integrations.whatsapp as wa
+    monkeypatch.setattr(wa.requests, "post",
+                        lambda *a, **k: _Resp(ok=False, status_code=400))
+    assert not _bridge().send_text("31612345678", "hallo")
