@@ -37,3 +37,38 @@ def test_init_schema_maakt_range_indexen_aan():
     for _name, cypher in schema.RANGE_INDEXES:
         assert cypher in executed
     assert any("range-indexen" in regel for regel in log)
+
+
+def test_init_schema_zet_entity_constraint_na_dedup(monkeypatch):
+    dedup_calls: list = []
+
+    def nep_dedup(brain):
+        dedup_calls.append(brain)
+        return 0
+
+    # init_schema importeert dedup_entities lazy -> patchen op de bronmodule werkt
+    monkeypatch.setattr("span.jarvis.daily.dedup_entities", nep_dedup)
+    brain = MagicMock()
+    brain.run.return_value = []  # SHOW CONSTRAINTS: entity_name bestaat nog niet
+
+    log = schema.init_schema(brain, _settings())
+
+    executed = [c.args[0] for c in brain.run.call_args_list]
+    assert schema.ENTITY_NAME_CONSTRAINT in executed
+    assert len(dedup_calls) == 1  # dedup draait VOOR de constraint
+    assert any("entity_name" in regel for regel in log)
+
+
+def test_entity_constraint_faalt_zacht(monkeypatch):
+    def kapotte_dedup(brain):
+        raise RuntimeError("dubbele Entity-namen")
+
+    monkeypatch.setattr("span.jarvis.daily.dedup_entities", kapotte_dedup)
+    brain = MagicMock()
+    brain.run.return_value = []
+
+    log = schema.init_schema(brain, _settings())  # geen exception = fail-soft werkt
+
+    executed = [c.args[0] for c in brain.run.call_args_list]
+    assert schema.ENTITY_NAME_CONSTRAINT not in executed
+    assert any("overgeslagen" in regel for regel in log)

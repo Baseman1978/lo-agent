@@ -99,6 +99,15 @@ RANGE_INDEXES: list[tuple[str, str]] = [
      "CREATE INDEX inboxitem_item_id IF NOT EXISTS FOR (n:InboxItem) ON (n.item_id)"),
 ]
 
+# A4 — Entity.name uniek: _link_entities MERGE't op naam zonder index (label-scan
+# per recorder-write + dubbele-node-race bij parallelle recorder-threads).
+# Bewust NIET in CONSTRAINTS: bestaande duplicaten laten de creatie falen en de
+# constraints-loop faalt hard -> deze krijgt een eigen fail-soft stap.
+ENTITY_NAME_CONSTRAINT = (
+    "CREATE CONSTRAINT entity_name IF NOT EXISTS "
+    "FOR (n:Entity) REQUIRE n.name IS UNIQUE"
+)
+
 # Positieve stem-richting: de toon staat elders vooral in negatieven (wat LO
 # NIET doet). Dit veld geeft één positieve default die Bas later in één regel
 # kan bijstellen zonder dat een schema-run hem overschrijft (zie migratie in
@@ -210,6 +219,25 @@ def init_schema(brain: BrainDB, settings: Settings) -> list[str]:
     for _name, cypher in RANGE_INDEXES:
         brain.run(cypher)
     log.append(f"{len(RANGE_INDEXES)} range-indexen (A4 geheugen-onderhoud)")
+
+    # A4: Entity.name uniek — eerst bestaande duplicaten samenvoegen (anders
+    # faalt de constraint-creatie op het live brein), dan de constraint.
+    # Fail-soft: het brein blijft bruikbaar zonder deze constraint.
+    try:
+        have = brain.run(
+            "SHOW CONSTRAINTS YIELD name WHERE name = 'entity_name' RETURN name")
+        if not have:
+            from span.jarvis.daily import dedup_entities
+            merged = dedup_entities(brain)
+            brain.run(ENTITY_NAME_CONSTRAINT)
+            log.append(f"entity_name-constraint gezet "
+                       f"({merged} duplicaten samengevoegd)")
+        else:
+            log.append("entity_name-constraint al aanwezig")
+    except Exception as exc:
+        print(f"[schema] entity_name-constraint niet gezet: "
+              f"{type(exc).__name__}: {exc}", flush=True)
+        log.append("entity_name-constraint overgeslagen (zie serverlog)")
 
     # embedding-drift: een ander model of andere dims maakt bestaande vectors
     # stil onbruikbaar — dan liever hard falen met een duidelijke melding
