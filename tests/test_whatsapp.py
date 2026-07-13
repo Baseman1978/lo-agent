@@ -457,10 +457,15 @@ def test_webhook_route_gemount_in_app():
     import subprocess
     import sys
 
-    code = ("from span.server.app import app;"
-            "paths={getattr(r,'path','') for r in app.routes};"
-            "import sys;"
-            "sys.exit(0 if '/api/webhooks/whatsapp' in paths else 1)")
+    code = (
+        "import sys;"
+        "from span.server import whatsapp as wh;"
+        "rp=[getattr(r,'path','') for r in wh.router.routes];"
+        "from span.server.app import app;"
+        "paths=[getattr(r,'path','') for r in app.routes];"
+        "sys.stderr.write('ROUTER='+repr(rp)+chr(10));"
+        "sys.stderr.write('APP='+repr([p for p in paths if 'webhook' in p or 'api' in p][:8])+chr(10));"
+        "sys.exit(0 if '/api/webhooks/whatsapp' in paths else 1)")
     result = subprocess.run([sys.executable, "-c", code], capture_output=True)
     assert result.returncode == 0, (
         f"whatsapp-route niet gemount.\nstdout: {result.stdout.decode()}\n"
