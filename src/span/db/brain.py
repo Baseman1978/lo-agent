@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import os
+import time
 from typing import Any
 
 from neo4j import GraphDatabase, Driver, READ_ACCESS
 
+from span import telemetry
 from span.config import Settings
+
+
+def _tel_enabled() -> bool:
+    """SPAN_BRAIN_TELEMETRY (default aan): klep op het A4-meetpunt brain-latency.
+    Apart van SPAN_TELEMETRY omdat brain-records volumineus zijn (elke query
+    is één JSONL-regel); 'off/0/false/no' zet alleen dít segment uit."""
+    val = os.environ.get("SPAN_BRAIN_TELEMETRY", "on").strip().lower()
+    return val not in {"off", "0", "false", "no", ""}
 
 
 class BrainDB:
@@ -27,19 +38,43 @@ class BrainDB:
     def verify(self) -> None:
         self._driver.verify_connectivity()
 
-    def run(self, query: str, **params: Any) -> list[dict[str, Any]]:
+    def _run_raw(self, query: str, **params: Any) -> list[dict[str, Any]]:
         with self._driver.session(database=self.database) as session:
             result = session.run(query, **params)
             return [record.data() for record in result]
 
-    def run_read(self, query: str, **params: Any) -> list[dict[str, Any]]:
-        """Strikt lezen: de database zelf weigert schrijfacties (READ_ACCESS),
-        onafhankelijk van wat een regex-check ervan vindt."""
+    def _read_raw(self, query: str, **params: Any) -> list[dict[str, Any]]:
         with self._driver.session(
             database=self.database, default_access_mode=READ_ACCESS
         ) as session:
             result = session.run(query, **params)
             return [record.data() for record in result]
+
+    def _timed(self, op: str, fn: Any, query: str,
+               **params: Any) -> list[dict[str, Any]]:
+        """A4-meetpunt: brain-latency per operatie naar de telemetrie-JSONL.
+        telemetry.record is zelf al best-effort; dit pad kan een query dus
+        nooit breken — bij een query-fout meten we de duur mét outcome=error
+        en gooien we de fout gewoon door."""
+        if not _tel_enabled():
+            return fn(query, **params)
+        t0 = time.perf_counter()
+        try:
+            out = fn(query, **params)
+        except Exception:
+            telemetry.record("brain", (time.perf_counter() - t0) * 1000.0,
+                             {"op": op, "outcome": "error"})
+            raise
+        telemetry.record("brain", (time.perf_counter() - t0) * 1000.0, {"op": op})
+        return out
+
+    def run(self, query: str, **params: Any) -> list[dict[str, Any]]:
+        return self._timed("run", self._run_raw, query, **params)
+
+    def run_read(self, query: str, **params: Any) -> list[dict[str, Any]]:
+        """Strikt lezen: de database zelf weigert schrijfacties (READ_ACCESS),
+        onafhankelijk van wat een regex-check ervan vindt."""
+        return self._timed("read", self._read_raw, query, **params)
 
     def run_system(self, query: str, **params: Any) -> list[dict[str, Any]]:
         """Voor CREATE DATABASE e.d. — draait tegen de system database."""
@@ -76,7 +111,8 @@ class BrainDB:
     def vector_search(
         self, index: str, embedding: list[float], k: int = 5
     ) -> list[dict[str, Any]]:
-        return self.run(
+        return self._timed(
+            "vector", self._run_raw,
             """
             CALL db.index.vector.queryNodes($index, $k, $embedding)
             YIELD node, score
