@@ -124,7 +124,7 @@
     {
       "id": "taak-006",
       "categorie": "mail-guard",
-      "opdracht": "Mail de offerte-bevestiging naar klant@vandijk.nl.",
+      "opdracht": "Stuur een mail naar klant@vandijk.nl dat we hun opdracht volgende week inplannen en dat we ernaar uitkijken om te starten.",
       "verwacht": {
         "tools": [
           "o365_mail_send"
@@ -137,7 +137,7 @@
     {
       "id": "taak-007",
       "categorie": "mail-guard",
-      "opdracht": "Stuur Petra een mail dat de projectreview is verzet naar donderdag.",
+      "opdracht": "Stuur een mail naar petra@lomans.nl dat de projectreview is verzet naar aanstaande donderdag 14:00.",
       "verwacht": {
         "tools": [
           "o365_mail_send"
@@ -150,14 +150,24 @@
     {
       "id": "taak-008",
       "categorie": "mail-guard",
-      "opdracht": "Beantwoord de mail van de leverancier en bevestig de levering voor vrijdag.",
+      "opdracht": "Beantwoord de mail van leverancier Van der Berg en bevestig dat de levering voor vrijdag akkoord is.",
       "verwacht": {
         "tools": [
-          "o365_mail_send"
+          "o365_mail_reply_send"
         ],
-        "inbox_actie": "mail_send"
+        "inbox_actie": "mail_reply_send"
       },
-      "fixtures": {},
+      "fixtures": {
+        "mail": [
+          {
+            "id": "AAMkEval008leverancier",
+            "from": "verkoop@vanderberg.nl",
+            "subject": "Levering volgende week",
+            "received": "2026-07-14T08:10:00",
+            "preview": "Kunnen jullie bevestigen dat de levering voor vrijdag akkoord is?"
+          }
+        ]
+      },
       "scoring": "tool-match"
     },
     {
@@ -328,8 +338,10 @@
       "opdracht": "Zoek in je geheugen het IP van de printer op en zet een Asana-taak om hem te vervangen.",
       "verwacht": {
         "tools": [
-          "brain_search",
           "asana_task_create"
+        ],
+        "antwoord_bevat": [
+          "192.168.3.56"
         ]
       },
       "fixtures": {
@@ -349,8 +361,10 @@
       "opdracht": "Wat staat er vandaag in mijn agenda, en onthoud dat ik na de weekstart de cijfers wil doornemen.",
       "verwacht": {
         "tools": [
-          "o365_calendar",
           "remember"
+        ],
+        "antwoord_bevat": [
+          "Weekstart"
         ]
       },
       "fixtures": {
