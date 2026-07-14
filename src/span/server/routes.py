@@ -38,6 +38,7 @@ from span.jarvis.daily import (
     set_quiet_end,
     set_quiet_start,
 )
+from span.integrations.mcp_client import load_servers, save_servers
 from span.llm.client import LLMClient
 from span.memory.fragments import FragmentStore
 from span.server.state import (
@@ -1521,20 +1522,41 @@ async def graph_webhook(request: Request) -> Any:
 
 
 def _rebuild_mcp() -> None:
-    from span.integrations.mcp_client import MCPRegistry, load_servers
+    from span.integrations.mcp_client import MCPRegistry
     try:
         _state["mcp"] = MCPRegistry(load_servers(_state["brain"]), _state["brain"])
     except Exception as exc:
         print(f"[mcp] herbouw mislukt: {exc}", flush=True)
 
 
+def _mcp_ctx(request: Request) -> Any:
+    """Per-user context (eigen brain) voor MCP-beheer; None-fallback -> globaal."""
+    ctx = _request_context(request)
+    return ctx if getattr(ctx, "brain", None) is not None else None
+
+
+def _invalidate_ctx(oid: str) -> None:
+    """Gooi de gecachede UserContext (incl. MCP-registry) weg zodat een verse
+    login/token bij de volgende beurt wordt ingelezen. Single-user/owner:
+    herbouw de globale registry."""
+    reg = _state.get("contexts")
+    if reg is not None and oid:
+        try:
+            reg.invalidate(oid)
+        except Exception:
+            pass
+    else:
+        _rebuild_mcp()
+
+
 @router.get("/api/mcp")
 async def mcp_list(request: Request) -> dict[str, Any]:
     """Gekoppelde MCP-servers + status (zonder tokens te lekken)."""
     _require_rest_auth(request)
-    from span.integrations.mcp_client import load_servers
-    servers = await asyncio.to_thread(load_servers, _state["brain"])
-    reg = _state.get("mcp")
+    ctx = _mcp_ctx(request)
+    brain = ctx.brain if ctx is not None else _state["brain"]
+    servers = await asyncio.to_thread(load_servers, brain)
+    reg = ctx.mcp if ctx is not None else _state.get("mcp")
     connected = set()
     if reg is not None:
         connected = {n.split("__")[1] for n in reg.tool_names()}
@@ -1548,27 +1570,30 @@ async def mcp_list(request: Request) -> dict[str, Any]:
 @router.post("/api/mcp")
 async def mcp_add(request: Request) -> dict[str, Any]:
     """Voeg een MCP-server toe (naam + url). Inloggen gaat via /connect."""
-    _require_owner(request)
-    from span.integrations.mcp_client import load_servers, save_servers
+    _require_rest_auth(request)
     body = await request.json()
     name = (body.get("name") or "").strip()
     url = (body.get("url") or "").strip()
     if not name or not url.startswith("http"):
         raise HTTPException(status_code=422, detail="Naam en geldige https-URL vereist.")
-    servers = await asyncio.to_thread(load_servers, _state["brain"])
+    ctx = _mcp_ctx(request)
+    brain = ctx.brain if ctx is not None else _state["brain"]
+    servers = await asyncio.to_thread(load_servers, brain)
     servers = [s for s in servers if s["name"] != name] + [{"name": name, "url": url}]
-    await asyncio.to_thread(save_servers, _state["brain"], servers)
+    await asyncio.to_thread(save_servers, brain, servers)
     return {"added": name}
 
 
 @router.delete("/api/mcp/{name}")
 async def mcp_delete(request: Request, name: str) -> dict[str, Any]:
-    _require_owner(request)
-    from span.integrations.mcp_client import load_servers, save_servers
-    servers = [s for s in await asyncio.to_thread(load_servers, _state["brain"])
+    _require_rest_auth(request)
+    ctx = _mcp_ctx(request)
+    brain = ctx.brain if ctx is not None else _state["brain"]
+    servers = [s for s in await asyncio.to_thread(load_servers, brain)
                if s["name"] != name]
-    await asyncio.to_thread(save_servers, _state["brain"], servers)
-    await asyncio.to_thread(_rebuild_mcp)
+    await asyncio.to_thread(save_servers, brain, servers)
+    oid = getattr(ctx, "oid", "")
+    await asyncio.to_thread(_invalidate_ctx, oid)
     return {"deleted": name}
 
 

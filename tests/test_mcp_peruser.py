@@ -55,3 +55,105 @@ def test_agent_bouw_gebruikt_ctx_mcp(monkeypatch):
     ctx.mcp = "USER-REGISTRY"
     app_mod.build_agent(ctx)
     assert captured["mcp"] == "USER-REGISTRY"
+
+
+def _make_async(value):
+    """Bouw een async functie die `value` teruggeeft (voor request.json)."""
+    async def _inner(*_a, **_k):
+        return value
+    return _inner
+
+
+def test_mcp_add_schrijft_in_eigen_brain(monkeypatch):
+    import asyncio
+
+    import span.server.routes as r
+    saved = {}
+    monkeypatch.setattr(r, "_require_rest_auth", lambda req: None)
+    monkeypatch.setattr(r, "load_servers", lambda b: [])
+    monkeypatch.setattr(r, "save_servers",
+                        lambda b, s: saved.update(brain=b, servers=s))
+    ctx = MagicMock()
+    ctx.brain = "USER-BRAIN"
+    ctx.oid = "oid-1"
+    monkeypatch.setattr(r, "_mcp_ctx", lambda req: ctx)
+    req = MagicMock()
+    req.json = _make_async({"name": "fireflies",
+                            "url": "https://api.fireflies.ai/mcp"})
+    result = asyncio.run(r.mcp_add(req))
+    assert result == {"added": "fireflies"}
+    assert saved["brain"] == "USER-BRAIN"
+    assert saved["servers"][-1]["name"] == "fireflies"
+
+
+def test_mcp_add_is_self_service(monkeypatch):
+    """add mag niet meer op _require_owner gaten: owner-guard raises, maar add
+    slaagt toch (het gate't nu op _require_rest_auth)."""
+    import asyncio
+
+    import span.server.routes as r
+    saved = {}
+    monkeypatch.setattr(r, "_require_rest_auth", lambda req: None)
+
+    def _boom(_req):
+        raise AssertionError("mcp_add mag _require_owner niet aanroepen")
+
+    monkeypatch.setattr(r, "_require_owner", _boom)
+    monkeypatch.setattr(r, "load_servers", lambda b: [])
+    monkeypatch.setattr(r, "save_servers",
+                        lambda b, s: saved.update(brain=b, servers=s))
+    ctx = MagicMock()
+    ctx.brain = "USER-BRAIN"
+    ctx.oid = "oid-2"
+    monkeypatch.setattr(r, "_mcp_ctx", lambda req: ctx)
+    req = MagicMock()
+    req.json = _make_async({"name": "fireflies",
+                            "url": "https://api.fireflies.ai/mcp"})
+    result = asyncio.run(r.mcp_add(req))
+    assert result == {"added": "fireflies"}
+
+
+def test_mcp_delete_invalidateert_per_user(monkeypatch):
+    """delete gebruikt de eigen brain en invalideert de context via oid."""
+    import asyncio
+
+    import span.server.routes as r
+    saved = {}
+    invalidated = {}
+    monkeypatch.setattr(r, "_require_rest_auth", lambda req: None)
+    monkeypatch.setattr(r, "load_servers",
+                        lambda b: [{"name": "fireflies", "url": "https://x"},
+                                   {"name": "keep", "url": "https://y"}])
+    monkeypatch.setattr(r, "save_servers",
+                        lambda b, s: saved.update(brain=b, servers=s))
+    monkeypatch.setattr(r, "_invalidate_ctx",
+                        lambda oid: invalidated.update(oid=oid))
+    ctx = MagicMock()
+    ctx.brain = "USER-BRAIN"
+    ctx.oid = "oid-3"
+    monkeypatch.setattr(r, "_mcp_ctx", lambda req: ctx)
+    req = MagicMock()
+    result = asyncio.run(r.mcp_delete(req, "fireflies"))
+    assert result == {"deleted": "fireflies"}
+    assert saved["brain"] == "USER-BRAIN"
+    assert [s["name"] for s in saved["servers"]] == ["keep"]
+    assert invalidated["oid"] == "oid-3"
+
+
+def test_invalidate_ctx_gebruikt_contexts_registry(monkeypatch):
+    """_invalidate_ctx roept reg.invalidate(oid) op de ContextRegistry aan."""
+    import span.server.routes as r
+    reg = MagicMock()
+    monkeypatch.setitem(r._state, "contexts", reg)
+    r._invalidate_ctx("oid-9")
+    reg.invalidate.assert_called_once_with("oid-9")
+
+
+def test_invalidate_ctx_zonder_registry_valt_terug_op_rebuild(monkeypatch):
+    """Geen ContextRegistry (single-user) -> herbouw globale registry."""
+    import span.server.routes as r
+    called = {}
+    monkeypatch.setitem(r._state, "contexts", None)
+    monkeypatch.setattr(r, "_rebuild_mcp", lambda: called.update(hit=True))
+    r._invalidate_ctx("")
+    assert called.get("hit") is True
