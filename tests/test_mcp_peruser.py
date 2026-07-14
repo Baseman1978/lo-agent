@@ -36,3 +36,22 @@ def test_usercontext_mcp_failsafe_geeft_none(monkeypatch):
 
     ctx = UserContext(oid="oid-2", upn="c@d.nl", name="C", brain=MagicMock())
     assert ctx.mcp is None                   # fail-safe: geen crash
+
+
+def test_agent_bouw_gebruikt_ctx_mcp(monkeypatch):
+    import span.server.app as app_mod
+    from unittest.mock import MagicMock
+    captured = {}
+
+    class FakeAgent:
+        def __init__(self, *a, **k):
+            captured["mcp"] = k.get("mcp")
+
+    monkeypatch.setattr(app_mod, "SpanAgent", FakeAgent)
+    # gedeelde services die de helper uit _state trekt
+    for key in ("settings", "llm", "work", "inbox", "autonomy"):
+        monkeypatch.setitem(app_mod._state, key, MagicMock())
+    ctx = MagicMock()
+    ctx.mcp = "USER-REGISTRY"
+    app_mod.build_agent(ctx)
+    assert captured["mcp"] == "USER-REGISTRY"

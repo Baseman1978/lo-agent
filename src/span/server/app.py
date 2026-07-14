@@ -247,6 +247,30 @@ app.include_router(whatsapp_routes.router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+def build_agent(ctx, **kwargs) -> SpanAgent:
+    """Bouw een SpanAgent voor deze gebruiker.
+
+    Gedeelde services komen uit `_state`; de per-user brain/o365/mcp uit
+    `ctx`. De MCP-registry is die van de gebruiker (`ctx.mcp`) met fallback
+    op de globale registry `_state["mcp"]` voor de single-user/owner-startup.
+    """
+    return SpanAgent(
+        _effective_settings(), ctx.brain, _state["llm"], _state["work"],
+        o365=ctx.o365, asana=_state.get("asana"),
+        inbox=_state["inbox"], autonomy=_state["autonomy"],
+        disabled_tools=_state.get("disabled_tools"),
+        integration_perms=_state.get("integration_perms"),
+        fireflies=_state.get("fireflies"),
+        telegram=_state.get("telegram"),
+        mcp=getattr(ctx, "mcp", None) or _state.get("mcp"),
+        shared_brain=ctx.shared,
+        tasks=_state.get("tasks"),
+        tool_retrieval=_state.get("tool_retrieval", True),
+        tool_retrieval_k=_state.get("tool_retrieval_k", 24),
+        **kwargs,
+    )
+
+
 @app.websocket("/ws/chat")
 async def ws_chat(ws: WebSocket) -> None:
     await ws.accept()
@@ -274,20 +298,7 @@ async def ws_chat(ws: WebSocket) -> None:
     ctx = _ws_context(ws)
     brain: BrainDB = ctx.brain
 
-    agent = SpanAgent(
-        settings, brain, llm, _state["work"],
-        o365=ctx.o365, asana=_state.get("asana"),
-        inbox=_state["inbox"], autonomy=_state["autonomy"],
-        disabled_tools=_state.get("disabled_tools"),
-        integration_perms=_state.get("integration_perms"),
-        fireflies=_state.get("fireflies"),
-        telegram=_state.get("telegram"),
-        mcp=_state.get("mcp"),
-        shared_brain=ctx.shared,
-        tasks=_state.get("tasks"),
-        tool_retrieval=_state.get("tool_retrieval", True),
-        tool_retrieval_k=_state.get("tool_retrieval_k", 24),
-    )
+    agent = build_agent(ctx)
     session_id: str | None = None
     loop = asyncio.get_running_loop()
 

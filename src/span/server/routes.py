@@ -726,7 +726,8 @@ def _broker_dispatch(ctx: Any):
         disabled=_state.get("disabled_tools"), perms=_state.get("integration_perms"),
         fireflies=_state.get("fireflies"),
         telegram=_state.get("telegram"),
-        security=_state.get("security"), mcp=_state.get("mcp"),
+        security=_state.get("security"),
+        mcp=getattr(ctx, "mcp", None) or _state.get("mcp"),
         shared=getattr(ctx, "shared", None))
     return tb.dispatch
 
