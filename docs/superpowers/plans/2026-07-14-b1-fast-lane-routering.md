@@ -343,6 +343,28 @@ Historisch draaiboek (zoals uitgevoerd):
 
 ---
 
+## v2 — routering vóór de beurt (2026-07-14, na de v1-regressie)
+
+**Waarom:** v1 zakte op taken doordat iteratie-0 op Haiku de actie-tools
+(`o365_mail_send`/`o365_calendar`) niet aanriep. De escalatie borgde alleen de
+synthese, niet de tool-selectie.
+
+**Wijziging:** de modelkeuze valt nu vóór de beurt op basis van de
+retrieval-tool-subset (`turn_tools`), niet meer "altijd licht starten":
+- `fastlane.turn_model(settings, turn_tools)` — flag uit → hoofdmodel; flag aan →
+  licht **tenzij** `turn_tools` een actie/integratie-tool bevat
+  (`ACTION_TOOLS = O365_TOOLS | ASANA_TOOLS`), dan hoofdmodel.
+- `fastlane.is_action_tool(name)` — escalatie in `turn()` vuurt nu **alleen** als
+  een fast-lane-beurt tóch een actie-tool aanroept (vangnet als retrieval 'm miste);
+  lees-/geheugentools (`brain_search`) blijven op Haiku (die scoorden 100%).
+- `specs_for` valt bij twijfel terug op de vólledige toollijst → bevat dan alle
+  actie-tools → hoofdmodel. Dat is de veilige richting (fail-safe naar Sonnet).
+
+**Verwachting:** taken identiek aan de Sonnet-baseline (actie-beurten lopen exact
+gelijk), geheugen 100%, latency-winst op geheugen/gesprek-beurten. Te bevestigen
+met méérdere eval-runs (flag-off vs flag-on via `docker exec -e SPAN_FAST_LANE=…`,
+zónder de prod-`.env` aan te raken) vóór heractivering.
+
 ## Bekende, bewust-gelaten punten (v1)
 
 - **Pre-tool-tekst op het lichte model:** als het lichte model in iteratie 0 tekst streamt vóór de tool-call, komt die van Haiku. In de praktijk emitteren tool-beurten daar zelden tekst; de eind-synthese draait op Sonnet. Meten in Task 4; pas fijnslijpen als het merkbaar is.

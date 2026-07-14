@@ -27,20 +27,46 @@ class TestFlag:
             assert fl.enabled() is False, val
 
 
-class TestInitialModel:
+def _spec(name):
+    return {"type": "function", "function": {"name": name}}
+
+
+class TestIsActionTool:
+    def test_o365_en_asana_zijn_actie(self):
+        assert fl.is_action_tool("o365_mail_send")
+        assert fl.is_action_tool("o365_calendar")
+        assert fl.is_action_tool("asana_task_create")
+
+    def test_lees_en_geheugen_niet(self):
+        assert not fl.is_action_tool("brain_search")
+        assert not fl.is_action_tool("web_search")
+
+
+class TestTurnModel:
     def _settings(self):
         s = MagicMock()
         s.model_main = "sonnet"
         s.model_light = "haiku"
         return s
 
-    def test_flag_uit_kiest_main(self, monkeypatch):
+    def test_flag_uit_altijd_main(self, monkeypatch):
         monkeypatch.delenv("SPAN_FAST_LANE", raising=False)
-        assert fl.initial_model(self._settings()) == "sonnet"
+        assert fl.turn_model(self._settings(), [_spec("o365_calendar")]) == (
+            "sonnet", fl.LANE_MAIN)
 
-    def test_flag_aan_kiest_light(self, monkeypatch):
+    def test_flag_aan_geen_actie_tool_kiest_light(self, monkeypatch):
         monkeypatch.setenv("SPAN_FAST_LANE", "on")
-        assert fl.initial_model(self._settings()) == "haiku"
+        assert fl.turn_model(self._settings(), [_spec("brain_search")]) == (
+            "haiku", fl.LANE_FAST)
+
+    def test_flag_aan_lege_tools_kiest_light(self, monkeypatch):
+        monkeypatch.setenv("SPAN_FAST_LANE", "on")
+        assert fl.turn_model(self._settings(), []) == ("haiku", fl.LANE_FAST)
+
+    def test_flag_aan_actie_tool_kiest_main(self, monkeypatch):
+        monkeypatch.setenv("SPAN_FAST_LANE", "on")
+        tools = [_spec("brain_search"), _spec("o365_mail_send")]
+        assert fl.turn_model(self._settings(), tools) == ("sonnet", fl.LANE_MAIN)
 
 
 def _agent_double(monkeypatch):
@@ -102,22 +128,47 @@ class TestEscalatie:
     def test_flag_aan_puur_gesprek_blijft_licht(self, monkeypatch):
         monkeypatch.setenv("SPAN_TELEMETRY", "off")
         monkeypatch.setenv("SPAN_FAST_LANE", "on")
-        agent = _agent_double(monkeypatch)
+        agent = _agent_double(monkeypatch)  # specs_for -> [] (geen actie-tool)
         llm = MagicMock(); llm.chat.return_value = _msg("hoi terug")
         agent._llm = llm
         agent.turn("hoi")
         assert llm.chat.call_count == 1
         assert llm.chat.call_args_list[0].kwargs["model"] == "haiku"
 
-    def test_flag_aan_tool_escaleert_naar_main(self, monkeypatch):
+    def test_flag_aan_leestool_blijft_licht(self, monkeypatch):
+        # brain_search is geen actie-tool -> geen escalatie, blijft op Haiku
         monkeypatch.setenv("SPAN_TELEMETRY", "off")
         monkeypatch.setenv("SPAN_FAST_LANE", "on")
         agent = _agent_double(monkeypatch)
         llm = MagicMock()
-        # iteratie 0: tool-call (op licht); iteratie 1: synthese (moet main zijn)
-        llm.chat.side_effect = [_msg("", [_toolcall()]), _msg("klaar")]
+        llm.chat.side_effect = [_msg("", [_toolcall("brain_search")]),
+                                _msg("gevonden")]
         agent._llm = llm
-        out = agent.turn("zoek iets op")
+        out = agent.turn("wat weet je over de printer")
+        assert llm.chat.call_args_list[0].kwargs["model"] == "haiku"
+        assert llm.chat.call_args_list[1].kwargs["model"] == "haiku"
+        assert "gevonden" in out
+
+    def test_flag_aan_actietool_in_retrieval_start_op_main(self, monkeypatch):
+        monkeypatch.setenv("SPAN_TELEMETRY", "off")
+        monkeypatch.setenv("SPAN_FAST_LANE", "on")
+        agent = _agent_double(monkeypatch)
+        agent._toolbox.specs_for.return_value = [_spec("o365_calendar")]
+        llm = MagicMock(); llm.chat.return_value = _msg("in je agenda staat...")
+        agent._llm = llm
+        agent.turn("wat staat er morgen in mijn agenda")
+        assert llm.chat.call_args_list[0].kwargs["model"] == "sonnet"
+
+    def test_flag_aan_actietool_call_escaleert(self, monkeypatch):
+        # vangnet: retrieval miste de actie-tool, Haiku roept 'm tóch aan
+        monkeypatch.setenv("SPAN_TELEMETRY", "off")
+        monkeypatch.setenv("SPAN_FAST_LANE", "on")
+        agent = _agent_double(monkeypatch)  # specs_for -> [] -> start Haiku
+        llm = MagicMock()
+        llm.chat.side_effect = [_msg("", [_toolcall("o365_mail_send")]),
+                                _msg("verstuurd")]
+        agent._llm = llm
+        out = agent.turn("mail dit even")
         assert llm.chat.call_args_list[0].kwargs["model"] == "haiku"
         assert llm.chat.call_args_list[1].kwargs["model"] == "sonnet"
-        assert "klaar" in out
+        assert "verstuurd" in out

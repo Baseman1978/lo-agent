@@ -446,11 +446,11 @@ class SpanAgent:
         # dezelfde lijst aan elke iteratie aan. Bij retrieval-uit/kleine pool/
         # fout geeft specs_for de volledige lijst terug (geen regressie).
         turn_tools = self._toolbox.specs_for(user_message, embedding=embedding)
-        # B1 fast-lane: start licht (snel), escaleer naar het hoofdmodel zodra
-        # er een tool wordt aangeroepen (synthese verdient het sterke model).
-        chosen_model = fastlane.initial_model(self._settings)
-        _lane = (fastlane.LANE_FAST if chosen_model == self._settings.model_light
-                 else fastlane.LANE_MAIN)
+        # B1 fast-lane (v2): routeer vóór de beurt op de retrieval-tool-subset.
+        # Actie/integratie-beurten (o365_*/asana_*) blijven op het hoofdmodel;
+        # geheugen/gesprek gaat naar het lichte model. Escalatie hieronder is
+        # het vangnet als een fast-lane-beurt tóch een actie-tool aanroept.
+        chosen_model, _lane = fastlane.turn_model(self._settings, turn_tools)
         cancelled = False
         # A3 eerlijke uitkomst: klein structured signaal voor cron/taak-consumenten.
         # Blijft True zolang de beurt niet op een intern foutpad eindigt; een
@@ -501,9 +501,11 @@ class SpanAgent:
             if message.content:
                 answer_parts.append(message.content)
             tool_calls = getattr(message, "tool_calls", None)
-            if tool_calls and chosen_model != self._settings.model_main:
-                # deze beurt gebruikt tools -> vanaf de volgende iteratie
-                # (de synthese) het hoofdmodel gebruiken.
+            if (tool_calls and chosen_model != self._settings.model_main
+                    and any(fastlane.is_action_tool(tc.function.name)
+                            for tc in tool_calls)):
+                # fast-lane-beurt roept tóch een actie-tool aan (retrieval miste
+                # 'm) -> vanaf de synthese het hoofdmodel gebruiken.
                 chosen_model = self._settings.model_main
                 _lane = fastlane.LANE_ESCALATED
             if not tool_calls:
