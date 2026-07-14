@@ -12,6 +12,9 @@ viz-demos/
 # eval-set bevat echte brein-content (namen, projectinfo) — lokaal houden
 tests/eval_retrieval_set.json
 scripts/brain_dump.json
+# Metingen — geen bron (A1-telemetrie + A7-eval-rapporten in de repo-root data/);
+# root-verankerd zodat src/span/evaluation/data/ (de wél-getrackte eval-set) blijft
+/data/
 
 # Python
 .venv/
