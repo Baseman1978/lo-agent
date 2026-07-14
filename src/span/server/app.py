@@ -217,6 +217,10 @@ _CSP = ("default-src 'self'; "
         "script-src 'self' 'unsafe-inline'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; "
+        # media-src: zonder deze regel valt audio terug op default-src 'self',
+        # wat data:-audio blokkeert -> de A/B-luistertest (data:audio/wav) bleef
+        # stil. LO's gewone stem komt van /api/tts ('self') en werkte wel.
+        "media-src 'self' data: blob:; "
         "connect-src 'self' ws: wss:; "
         "base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 
