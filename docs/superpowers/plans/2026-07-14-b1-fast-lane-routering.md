@@ -317,10 +317,17 @@ git commit -m "docs(b1): SPAN_FAST_LANE flag in .env.example"
 
 ---
 
-### Task 4: Activering + meting op de z390 (bewijs-gepoort — uitgesteld tot Bas' akkoord)
+### Task 4: Activering + meting op de z390 — ✅ UITGEVOERD 2026-07-14 (akkoord Bas)
 
-Dit blok wijzigt geen code; het zet de flag live en meet de winst. Uitvoeren ná
-merge, samen met Bas (net als A2 Task 10). **Niet activeren zonder akkoord.**
+**Uitkomst:** fast-lane is live en actief op de z390 (`SPAN_FAST_LANE=on`).
+
+- **Deploy:** master (`54a976b`, PR #131) ge-synct naar `~/nova` (git-reset + custom compose hersteld), span-image herbouwd + gerecreëerd, `readyz` 200.
+- **Baseline (pre-flag, alles Sonnet):** `llm` p50 4.516ms / p95 12.924ms (n=113) — model dominant, bevestigt spec §B1.
+- **Kwaliteit (eval-set mét flag aan):** totaal **92,9% (65/70)** · geheugen **100% (50/50)** · taken **75% (15/20)** — géén regressie t.o.v. de nulmeting (89% / 96% / 70%); taken hielden stand boven 70%.
+- **Latency per lane (telemetrie sinds activering):** `fast` (Haiku, geen tool) p50 **1.708ms** (n=56) = ~2,6× sneller dan de Sonnet-baseline; `escalated` (tool → Sonnet) p50 4.591ms (n=41) = kwaliteit behouden.
+- **Rollback:** `~/nova/.env.bak-pre-fastlane-20260714` terugzetten + `docker compose up -d span` = puur Sonnet.
+
+Historisch draaiboek (zoals uitgevoerd):
 
 - [ ] **Step 1: Deploy master naar de z390** (recept in runbook / geheugen `project-nova-span-deploy`): tar → scp → wegwerp-`pnpm`/`pip`-install niet nodig (geen nieuwe dep) → `docker compose -p jarvis up -d --build span` (of het `nova-`-recept van deze host), `readyz` 200 verifiëren.
 
