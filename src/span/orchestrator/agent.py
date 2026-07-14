@@ -22,6 +22,7 @@ from span.memory.bootstrap import (BootstrapContext, degraded_bootstrap,
                                    degraded_enabled, load_bootstrap,
                                    render_bootstrap)
 from span.memory.fragments import FragmentStore, MF_TYPES
+from span.orchestrator import fastlane
 from span.orchestrator.tools import ToolBox
 from span import telemetry
 
@@ -445,6 +446,11 @@ class SpanAgent:
         # dezelfde lijst aan elke iteratie aan. Bij retrieval-uit/kleine pool/
         # fout geeft specs_for de volledige lijst terug (geen regressie).
         turn_tools = self._toolbox.specs_for(user_message, embedding=embedding)
+        # B1 fast-lane: start licht (snel), escaleer naar het hoofdmodel zodra
+        # er een tool wordt aangeroepen (synthese verdient het sterke model).
+        chosen_model = fastlane.initial_model(self._settings)
+        _lane = (fastlane.LANE_FAST if chosen_model == self._settings.model_light
+                 else fastlane.LANE_MAIN)
         cancelled = False
         # A3 eerlijke uitkomst: klein structured signaal voor cron/taak-consumenten.
         # Blijft True zolang de beurt niet op een intern foutpad eindigt; een
@@ -468,7 +474,7 @@ class SpanAgent:
                 _c0 = _time.perf_counter()
                 message = self._llm.chat(
                     self._messages + ([memo_msg] if memo_msg else []),
-                    model=self._settings.model_main,
+                    model=chosen_model,
                     tools=turn_tools,
                     on_text=on_text,
                 )
@@ -495,6 +501,11 @@ class SpanAgent:
             if message.content:
                 answer_parts.append(message.content)
             tool_calls = getattr(message, "tool_calls", None)
+            if tool_calls and chosen_model != self._settings.model_main:
+                # deze beurt gebruikt tools -> vanaf de volgende iteratie
+                # (de synthese) het hoofdmodel gebruiken.
+                chosen_model = self._settings.model_main
+                _lane = fastlane.LANE_ESCALATED
             if not tool_calls:
                 self._messages.append({"role": "assistant", "content": message.content or ""})
                 break
@@ -602,7 +613,8 @@ class SpanAgent:
                          {"outcome": "cancelled" if cancelled else "ok",
                           "tools": len(tools_used)})
         if _llm_ms:
-            telemetry.record("llm", _llm_ms, {"tools": len(tools_used)})
+            telemetry.record("llm", _llm_ms,
+                             {"tools": len(tools_used), "lane": _lane})
         return answer
 
     def _write_trace(self, tools_used: list[str], touched: list[str],
