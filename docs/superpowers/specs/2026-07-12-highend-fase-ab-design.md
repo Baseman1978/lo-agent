@@ -104,6 +104,18 @@ Het brein is snel (p50 ~5 ms); geen aanwijzing dat brain-latency de bottleneck i
 - Handmatig draaibaar script; uitkomsten in dezelfde telemetrie-log als A1.
 - Dit is de meetlat waarmee de gepoorte B-blokken (B2/B4) beslist en de gecommitte (B1/B3/B5) getuned worden; B6 automatiseert hem 's nachts.
 
+**A7 GEBOUWD + NULMETING (PR #123 framework, #125 data; run 2026-07-14 op z390, judge = model_light).** Baseline v1 over 70 items:
+
+| onderdeel | score |
+|---|---|
+| **totaal** | **62/70 = 89%** |
+| geheugen | 48/50 = 96% |
+| taken | 14/20 = 70% |
+
+Per categorie (geheugen): feit 15/15 · tijd 8/8 · procedure 7/7 · werk-context 6/6 · beslissing 7/8 · eerlijkheid-onbekend 5/6. Taken: agenda 4/4 · asana 3/3 · geheugen-schrijven 3/3 · geheugen-zoeken 2/3 · gecombineerd 1/3 · **mail-guard 1/4**. Latency/item p50 4,5 s · p95 13,9 s.
+
+**Bevindingen (input voor B-tuning, geen code-bug):** (1) mem-046 — LO *verzon* een medewerkersaantal i.p.v. "weet ik niet" → hallucinatie-signaal, precies wat de eval moet vangen; (2) mail-guard 1/4 — bij 3 van de 4 mail-opdrachten riep het model `o365_mail_send` niet aan (vraagt eerst om bevestiging / mist mail-context in de fixture); (3) gecombineerd 1/3 — bij twee-tool-opdrachten pakt het model vaak maar één tool. Dit zijn de zwakke plekken die B1/B3-tuning en promptwerk moeten oppakken; de nulmeting staat vast als vergelijkingspunt voor B6.
+
 ## Fase B — de structurele sprongen
 
 B1, B3 en B5 zijn door Bas **gecommit**; hun telemetrie-vraag stuurt volgorde en invulling. B2 en B4 houden een echte **poort-vraag**: "nee" = uitstellen.
