@@ -257,3 +257,10 @@ def test_main_exitcode_en_json(tmp_path, monkeypatch):
     assert m.main(["--min-score", "0.8", "--json", str(json_pad)]) == 1
     assert json.loads(json_pad.read_text(encoding="utf-8"))["score"] == 0.7
     assert m.main(["--min-score", "0.6"]) == 0
+
+
+def test_dataset_omvang_v1():
+    """A7-spec: 50 Nederlandse geheugenvragen + 20 taak-scenario's."""
+    from span.evaluation.evalrun import GEHEUGEN_PATH, TAKEN_PATH, load_items
+    assert len(load_items(GEHEUGEN_PATH, "geheugen")) == 50
+    assert len(load_items(TAKEN_PATH, "taak")) == 20
