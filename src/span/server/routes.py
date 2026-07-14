@@ -1619,10 +1619,12 @@ def _callback_uri(request: Request) -> str:
 async def mcp_connect(request: Request, name: str) -> dict[str, Any]:
     """Start de OAuth-login: discover + dynamische registratie + PKCE.
     Geeft de authorize-URL terug; Bas opent die en logt in."""
-    _require_owner(request)
+    _require_rest_auth(request)
     from span.integrations import mcp_oauth as ox
-    from span.integrations.mcp_client import load_servers
-    servers = await asyncio.to_thread(load_servers, _state["brain"])
+    ctx = _mcp_ctx(request)
+    oid = getattr(ctx, "oid", "") if ctx is not None else ""
+    brain = ctx.brain if ctx is not None else _state["brain"]
+    servers = await asyncio.to_thread(load_servers, brain)
     server = next((s for s in servers if s["name"] == name), None)
     if server is None:
         raise HTTPException(status_code=404, detail="MCP-server niet gevonden.")
@@ -1647,7 +1649,7 @@ async def mcp_connect(request: Request, name: str) -> dict[str, Any]:
             pend[state] = {
                 "name": name, "meta": meta, "client_id": reg["client_id"],
                 "verifier": verifier, "redirect_uri": redirect_uri,
-                "ts": time.time(),
+                "oid": oid, "ts": time.time(),
             }
         return {"authorize_url": url}
 
@@ -1675,7 +1677,6 @@ async def mcp_connect(request: Request, name: str) -> dict[str, Any]:
 async def mcp_oauth_callback(code: str = Query(""), state: str = Query("")) -> Any:
     """OAuth-redirect: wissel de code in voor tokens en sla ze op."""
     from span.integrations import mcp_oauth as ox
-    from span.integrations.mcp_client import load_servers, save_servers
     with _PENDING_LOCK:
         pending = (_state.get("mcp_pending") or {}).pop(state, None)
     if not pending or not code:
@@ -1686,25 +1687,30 @@ async def mcp_oauth_callback(code: str = Query(""), state: str = Query("")) -> A
     def finish() -> str:
         tok = ox.exchange_code(pending["meta"], pending["client_id"], code,
                                pending["verifier"], pending["redirect_uri"])
-        servers = load_servers(_state["brain"])
+        # de brain van de gebruiker die de login startte (oid uit pending);
+        # zonder oid/registry: single-user -> globale brain
+        oid = pending.get("oid", "")
+        reg = _state.get("contexts")
+        brain = (reg.get(oid).brain if (reg is not None and oid) else _state["brain"])
+        servers = load_servers(brain)
         for s in servers:
             if s["name"] == pending["name"]:
                 s["token"] = tok.get("access_token", "")
                 s["refresh"] = tok.get("refresh_token", "")
                 s["client_id"] = pending["client_id"]
                 s["token_endpoint"] = pending["meta"].get("token_endpoint", "")
-        save_servers(_state["brain"], servers)
-        _rebuild_mcp()
+        save_servers(brain, servers)
+        _invalidate_ctx(oid)  # verse registry bij de volgende beurt
         # auto-skill: maak een werkwijze-skill uit de tools van deze server, zodat
         # de integratie meteen 'actief' is bij het opstarten (best effort)
         try:
             from span.integrations.broker.autoskill import sync_mcp_skill
             from span.integrations.broker.connectors import get_connector
-            reg = _state.get("mcp")
+            reg_mcp = _state.get("mcp")
             conn = get_connector(pending["name"])
             dn = conn.name if conn is not None else pending["name"]
-            if reg is not None:
-                sync_mcp_skill(_state["brain"], pending["name"], dn, reg.tool_specs())
+            if reg_mcp is not None:
+                sync_mcp_skill(brain, pending["name"], dn, reg_mcp.tool_specs())
         except Exception:
             pass
         return pending["name"]
