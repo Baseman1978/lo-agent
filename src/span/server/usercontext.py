@@ -66,13 +66,14 @@ class UserContext:
     _mcp: Any = field(default=None, repr=False, compare=False)
 
     @property
-    def mcp(self):
+    def mcp(self) -> Any:
         """Per-user MCP-registry — lazy, gecachet, uit de EIGEN brain.
         Fail-safe: geeft None bij een fout (blokkeert de user-flow niet)."""
         if self._mcp is None:
             try:
                 self._mcp = MCPRegistry(load_servers(self.brain), self.brain)
-            except Exception:
+            except Exception as exc:
+                print(f"[mcp] registry-init mislukt: {exc}", flush=True)
                 self._mcp = None
         return self._mcp
 

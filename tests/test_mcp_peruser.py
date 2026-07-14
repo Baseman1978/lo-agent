@@ -26,3 +26,13 @@ def test_usercontext_mcp_lazy_uit_eigen_brain(monkeypatch):
     assert reg1 is reg2                      # gecachet
     assert built["brain"] is brain           # uit de EIGEN brain
     assert built["servers"][0]["name"] == "fireflies"
+
+
+def test_usercontext_mcp_failsafe_geeft_none(monkeypatch):
+    def boom(_b):
+        raise RuntimeError("brain onbereikbaar")
+
+    monkeypatch.setattr("span.server.usercontext.load_servers", boom)
+
+    ctx = UserContext(oid="oid-2", upn="c@d.nl", name="C", brain=MagicMock())
+    assert ctx.mcp is None                   # fail-safe: geen crash
