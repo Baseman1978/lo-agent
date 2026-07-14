@@ -7,55 +7,242 @@
       "categorie": "agenda",
       "opdracht": "Wat staat er vandaag in mijn agenda?",
       "verwacht": {
-        "tools": ["o365_calendar"],
-        "antwoord_bevat": ["Weekstart"]
+        "tools": [
+          "o365_calendar"
+        ],
+        "antwoord_bevat": [
+          "Weekstart"
+        ]
       },
       "fixtures": {
         "calendar": [
-          {"subject": "Weekstart Lomans", "start": "2026-07-13T09:00:00", "end": "2026-07-13T09:30:00", "location": "Kantoor"},
-          {"subject": "1-op-1 met Jan", "start": "2026-07-13T11:00:00", "end": "2026-07-13T11:30:00", "location": "Teams"}
+          {
+            "subject": "Weekstart Lomans",
+            "start": "2026-07-14T09:00:00",
+            "end": "2026-07-14T09:30:00",
+            "location": "Kantoor"
+          },
+          {
+            "subject": "1-op-1 met Jan",
+            "start": "2026-07-14T11:00:00",
+            "end": "2026-07-14T11:30:00",
+            "location": "Teams"
+          }
         ]
       },
       "scoring": "tool-match"
     },
     {
       "id": "taak-002",
+      "categorie": "agenda",
+      "opdracht": "Hoe laat begint mijn eerste afspraak vandaag?",
+      "verwacht": {
+        "tools": [
+          "o365_calendar"
+        ],
+        "antwoord_bevat": [
+          "9"
+        ]
+      },
+      "fixtures": {
+        "calendar": [
+          {
+            "subject": "Weekstart Lomans",
+            "start": "2026-07-14T09:00:00",
+            "end": "2026-07-14T09:30:00",
+            "location": "Kantoor"
+          }
+        ]
+      },
+      "scoring": "tool-match"
+    },
+    {
+      "id": "taak-003",
+      "categorie": "agenda",
+      "opdracht": "Heb ik vanmiddag nog een overleg met Van Dijk?",
+      "verwacht": {
+        "tools": [
+          "o365_calendar"
+        ],
+        "antwoord_bevat": [
+          "Van Dijk"
+        ]
+      },
+      "fixtures": {
+        "calendar": [
+          {
+            "subject": "Offertebespreking Van Dijk",
+            "start": "2026-07-14T15:00:00",
+            "end": "2026-07-14T16:00:00",
+            "location": "Teams"
+          }
+        ]
+      },
+      "scoring": "tool-match"
+    },
+    {
+      "id": "taak-004",
+      "categorie": "agenda",
+      "opdracht": "Wat is mijn laatste afspraak van vandaag?",
+      "verwacht": {
+        "tools": [
+          "o365_calendar"
+        ],
+        "antwoord_bevat": [
+          "Projectreview"
+        ]
+      },
+      "fixtures": {
+        "calendar": [
+          {
+            "subject": "Weekstart Lomans",
+            "start": "2026-07-14T09:00:00",
+            "end": "2026-07-14T09:30:00"
+          },
+          {
+            "subject": "Projectreview Noord",
+            "start": "2026-07-14T16:30:00",
+            "end": "2026-07-14T17:00:00"
+          }
+        ]
+      },
+      "scoring": "tool-match"
+    },
+    {
+      "id": "taak-005",
       "categorie": "mail-guard",
       "opdracht": "Stuur een mail naar jan@lomans.nl dat de weekstart van maandag verschuift naar 10:00.",
       "verwacht": {
-        "tools": ["o365_mail_send"],
+        "tools": [
+          "o365_mail_send"
+        ],
         "inbox_actie": "mail_send"
       },
       "fixtures": {},
       "scoring": "tool-match"
     },
     {
-      "id": "taak-003",
-      "categorie": "geheugen-schrijven",
-      "opdracht": "Onthoud dat de reservesleutel van de serverkast in de la van de receptie ligt.",
+      "id": "taak-006",
+      "categorie": "mail-guard",
+      "opdracht": "Mail de offerte-bevestiging naar klant@vandijk.nl.",
       "verwacht": {
-        "tools": ["remember"]
+        "tools": [
+          "o365_mail_send"
+        ],
+        "inbox_actie": "mail_send"
       },
       "fixtures": {},
       "scoring": "tool-match"
     },
     {
-      "id": "taak-004",
+      "id": "taak-007",
+      "categorie": "mail-guard",
+      "opdracht": "Stuur Petra een mail dat de projectreview is verzet naar donderdag.",
+      "verwacht": {
+        "tools": [
+          "o365_mail_send"
+        ],
+        "inbox_actie": "mail_send"
+      },
+      "fixtures": {},
+      "scoring": "tool-match"
+    },
+    {
+      "id": "taak-008",
+      "categorie": "mail-guard",
+      "opdracht": "Beantwoord de mail van de leverancier en bevestig de levering voor vrijdag.",
+      "verwacht": {
+        "tools": [
+          "o365_mail_send"
+        ],
+        "inbox_actie": "mail_send"
+      },
+      "fixtures": {},
+      "scoring": "tool-match"
+    },
+    {
+      "id": "taak-009",
       "categorie": "asana",
       "opdracht": "Zet een taak in Asana: 'Offerte Van Dijk nabellen' met deadline 2026-07-17.",
       "verwacht": {
-        "tools": ["asana_task_create"]
+        "tools": [
+          "asana_task_create"
+        ]
       },
       "fixtures": {},
       "scoring": "tool-match"
     },
     {
-      "id": "taak-005",
+      "id": "taak-010",
+      "categorie": "asana",
+      "opdracht": "Maak een Asana-taak aan om de nieuwe monteur in te werken.",
+      "verwacht": {
+        "tools": [
+          "asana_task_create"
+        ]
+      },
+      "fixtures": {},
+      "scoring": "tool-match"
+    },
+    {
+      "id": "taak-011",
+      "categorie": "asana",
+      "opdracht": "Voeg een Asana-taak toe: 'Materiaal bestellen project Noord'.",
+      "verwacht": {
+        "tools": [
+          "asana_task_create"
+        ]
+      },
+      "fixtures": {},
+      "scoring": "tool-match"
+    },
+    {
+      "id": "taak-012",
+      "categorie": "geheugen-schrijven",
+      "opdracht": "Onthoud dat de reservesleutel van de serverkast in de la van de receptie ligt.",
+      "verwacht": {
+        "tools": [
+          "remember"
+        ]
+      },
+      "fixtures": {},
+      "scoring": "tool-match"
+    },
+    {
+      "id": "taak-013",
+      "categorie": "geheugen-schrijven",
+      "opdracht": "Onthoud dat de wifi in de vergaderzaal traag is en nagekeken moet worden.",
+      "verwacht": {
+        "tools": [
+          "remember"
+        ]
+      },
+      "fixtures": {},
+      "scoring": "tool-match"
+    },
+    {
+      "id": "taak-014",
+      "categorie": "geheugen-schrijven",
+      "opdracht": "Noteer in je geheugen dat we voortaan de bestelbonnen op vrijdag verwerken.",
+      "verwacht": {
+        "tools": [
+          "remember"
+        ]
+      },
+      "fixtures": {},
+      "scoring": "tool-match"
+    },
+    {
+      "id": "taak-015",
       "categorie": "geheugen-zoeken",
       "opdracht": "Zoek in je geheugen wat we over de bufferbloat-fix hebben vastgelegd en vat het kort samen.",
       "verwacht": {
-        "tools": ["brain_search"],
-        "antwoord_bevat": ["fq_codel"]
+        "tools": [
+          "brain_search"
+        ],
+        "antwoord_bevat": [
+          "fq_codel"
+        ]
       },
       "fixtures": {
         "fragments": [
@@ -63,6 +250,115 @@
             "id": "mf-eval-bb2",
             "type": "decision",
             "content": "Bufferbloat op de KPN-lijn opgelost met een fq_codel-shaper op OPNsense; Teams-hapering daarmee verdwenen."
+          }
+        ]
+      },
+      "scoring": "tool-match"
+    },
+    {
+      "id": "taak-016",
+      "categorie": "geheugen-zoeken",
+      "opdracht": "Wat weet je nog over het IP-adres van de printer? Zoek het even op.",
+      "verwacht": {
+        "tools": [
+          "brain_search"
+        ],
+        "antwoord_bevat": [
+          "192.168.3.56"
+        ]
+      },
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-printer2",
+            "type": "decision",
+            "content": "De Canon-printer heeft een vaste DHCP-reservering op 192.168.3.56."
+          }
+        ]
+      },
+      "scoring": "tool-match"
+    },
+    {
+      "id": "taak-017",
+      "categorie": "geheugen-zoeken",
+      "opdracht": "Zoek op wat er is afgesproken over offertes aan nieuwe klanten.",
+      "verwacht": {
+        "tools": [
+          "brain_search"
+        ],
+        "antwoord_bevat": [
+          "Bas"
+        ]
+      },
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-off2",
+            "type": "decision",
+            "content": "Offertes aan nieuwe Lomans-klanten gaan altijd eerst langs Bas ter controle voordat ze verstuurd worden."
+          }
+        ]
+      },
+      "scoring": "tool-match"
+    },
+    {
+      "id": "taak-018",
+      "categorie": "gecombineerd",
+      "opdracht": "Kijk wat mijn eerste afspraak vandaag is en onthoud dat ik daarvoor de projectmap moet meenemen.",
+      "verwacht": {
+        "tools": [
+          "o365_calendar",
+          "remember"
+        ]
+      },
+      "fixtures": {
+        "calendar": [
+          {
+            "subject": "Weekstart Lomans",
+            "start": "2026-07-14T09:00:00",
+            "end": "2026-07-14T09:30:00"
+          }
+        ]
+      },
+      "scoring": "tool-match"
+    },
+    {
+      "id": "taak-019",
+      "categorie": "gecombineerd",
+      "opdracht": "Zoek in je geheugen het IP van de printer op en zet een Asana-taak om hem te vervangen.",
+      "verwacht": {
+        "tools": [
+          "brain_search",
+          "asana_task_create"
+        ]
+      },
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-printer3",
+            "type": "decision",
+            "content": "De Canon-printer staat op 192.168.3.56 (vaste DHCP-reservering)."
+          }
+        ]
+      },
+      "scoring": "tool-match"
+    },
+    {
+      "id": "taak-020",
+      "categorie": "gecombineerd",
+      "opdracht": "Wat staat er vandaag in mijn agenda, en onthoud dat ik na de weekstart de cijfers wil doornemen.",
+      "verwacht": {
+        "tools": [
+          "o365_calendar",
+          "remember"
+        ]
+      },
+      "fixtures": {
+        "calendar": [
+          {
+            "subject": "Weekstart Lomans",
+            "start": "2026-07-14T09:00:00",
+            "end": "2026-07-14T09:30:00"
           }
         ]
       },

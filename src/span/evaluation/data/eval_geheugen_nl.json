@@ -6,40 +6,382 @@
       "id": "mem-001",
       "categorie": "feit-recall",
       "vraag": "Op welk IP-adres staat de Canon-printer vast in het thuisnetwerk?",
-      "verwacht": "Het antwoord noemt 192.168.1.56 als vaste adres (DHCP-reservering) van de Canon-printer.",
+      "verwacht": "Het antwoord noemt 192.168.3.56 als vaste adres (DHCP-reservering) van de Canon-printer.",
+      "scoring": "llm-judge",
       "fixtures": {
         "fragments": [
           {
             "id": "mf-eval-printer",
             "type": "decision",
-            "content": "De Canon-printer heeft een vaste DHCP-reservering op 192.168.1.56, vastgelegd in 99-static-leases.conf op de OPNsense-router."
+            "content": "De Canon-printer heeft een vaste DHCP-reservering op 192.168.3.56, vastgelegd in 99-static-leases.conf op de OPNsense-router."
           }
         ]
-      },
-      "scoring": "llm-judge"
+      }
     },
     {
       "id": "mem-002",
-      "categorie": "tijd-recall",
-      "vraag": "Wanneer was het contactincident met bay-1 van de Synology?",
-      "verwacht": "Het antwoord noemt 5 juli 2026 (2026-07-05) als datum van het bay-1 contactincident op de DS418.",
+      "categorie": "feit-recall",
+      "vraag": "Welk IP-adres heeft de homeserver in het netwerk?",
+      "verwacht": "Het antwoord noemt 192.168.3.3 als het adres van de homeserver.",
+      "scoring": "llm-judge",
       "fixtures": {
         "fragments": [
           {
-            "id": "mf-eval-synology",
+            "id": "mf-eval-homeserver",
             "type": "observation",
-            "content": "Op 2026-07-05 was er een contactincident met bay-1 van de Synology DS418; de schijf is opnieuw gezet en het RAID5-volume is hersteld.",
-            "event_date": "2026-07-05"
+            "content": "De homeserver draait op 192.168.3.3 en host onder andere de DNS (dnsmasq-container) en de Cosmos-reverse-proxy."
           }
         ]
-      },
-      "scoring": "llm-judge"
+      }
     },
     {
       "id": "mem-003",
+      "categorie": "feit-recall",
+      "vraag": "Welke DHCP-server draait er op OPNsense en wat is de pool-range?",
+      "verwacht": "Het antwoord noemt dnsmasq als DHCP-server met een pool van 192.168.3.50 tot 192.168.3.250.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-dhcp",
+            "type": "observation",
+            "content": "Op OPNsense verzorgt dnsmasq de DHCP; de dynamische pool loopt van .50 tot .250. Reserveringen staan in 99-static-leases.conf én in config.xml."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-004",
+      "categorie": "feit-recall",
+      "vraag": "Welk type RAID draait de Synology DS418 en hoeveel schijven?",
+      "verwacht": "Het antwoord noemt RAID5 op de Synology DS418 met vier schijven (bays).",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-raid",
+            "type": "observation",
+            "content": "De Synology DS418 heeft vier bays in een RAID5-opstelling; volume1 is het hoofdvolume."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-005",
+      "categorie": "feit-recall",
+      "vraag": "Op welke server draait de agent LO?",
+      "verwacht": "Het antwoord noemt de z390 (AI-PC, 192.168.3.88) als host van LO.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-z390",
+            "type": "observation",
+            "content": "LO draait in Docker op de z390 AI-PC (192.168.3.88, twee RTX 2070), bereikbaar op nova.famspaan.nl."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-006",
+      "categorie": "feit-recall",
+      "vraag": "Via welke URL is de agent extern bereikbaar?",
+      "verwacht": "Het antwoord noemt nova.famspaan.nl (achter Microsoft-login).",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-url",
+            "type": "observation",
+            "content": "LO is extern bereikbaar op https://nova.famspaan.nl, afgeschermd met Microsoft-login (lomans.nl)."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-007",
+      "categorie": "feit-recall",
+      "vraag": "Welke IR-blaster bedient de airco in het kantoor?",
+      "verwacht": "Het antwoord noemt de ZS06 (Zigbee IR-blaster) voor de airco in het kantoor.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-zs06",
+            "type": "decision",
+            "content": "De airco in het kantoor (JustFire monoblock) wordt bediend via een ZS06 Zigbee-IR-blaster; het IR-protocol is zelf gekraakt."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-008",
+      "categorie": "feit-recall",
+      "vraag": "Hoeveel bytes telt het IR-protocol van de kantoor-airco en wat zit er in de eerste bytes?",
+      "verwacht": "Het antwoord noemt 9 bytes, waarbij de temperatuur als (temperatuur min 16) is gecodeerd, plus modus en een checksum.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-airco-proto",
+            "type": "decision",
+            "content": "Het IR-protocol van de kantoor-airco is 9 bytes: temperatuur als temp-16, daarna modus, met een checksum als laatste byte. Codes worden nu gegenereerd i.p.v. ingeleerd."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-009",
+      "categorie": "feit-recall",
+      "vraag": "Welke ventilatie-unit regelt de balansventilatie in huis?",
+      "verwacht": "Het antwoord noemt de Zehnder ComfoAirQ als ventilatie-unit.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-comfo",
+            "type": "observation",
+            "content": "De balansventilatie loopt via een Zehnder ComfoAirQ; stand 3 is niet 'boost' en 'Passieve temp.' betekent nachtventilatie."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-010",
+      "categorie": "feit-recall",
+      "vraag": "Welke merk-tv hangt er als keukenklok en via welke integratie?",
+      "verwacht": "Het antwoord noemt een Samsung Frame TV, aangestuurd via de samsungtv_smart-integratie.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-frametv",
+            "type": "observation",
+            "content": "In de keuken hangt een Samsung Frame TV die als klok dient (Art Mode), aangestuurd via de samsungtv_smart-integratie in Home Assistant."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-011",
+      "categorie": "feit-recall",
+      "vraag": "Welke sensoren gebruik je voor mmWave-aanwezigheidsdetectie en waar hangen ze?",
+      "verwacht": "Het antwoord noemt LinknLink eMotion mmWave-sensoren in de keuken en het kantoor.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-emotion",
+            "type": "observation",
+            "content": "Aanwezigheid wordt gemeten met LinknLink eMotion wifi mmWave-sensoren, één in de keuken en één in het kantoor; ze komen via eigen MQTT-discovery in Home Assistant."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-012",
+      "categorie": "feit-recall",
+      "vraag": "Welke internetverbinding heeft het huis en hoeveel upload ongeveer?",
+      "verwacht": "Het antwoord noemt een KPN PPPoE-lijn met ongeveer 100 Mbit upload.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-kpn",
+            "type": "observation",
+            "content": "Het huis hangt aan een KPN PPPoE-lijn met ongeveer 100 Mbit upload."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-013",
+      "categorie": "feit-recall",
+      "vraag": "Welke graph-database gebruikt LO als brein en welke database-naam?",
+      "verwacht": "Het antwoord noemt Neo4j met de database 'span-brain'.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-neo4j",
+            "type": "observation",
+            "content": "LO gebruikt een Neo4j graph-database als brein; de database heet 'span-brain' (Community-editie op de z390)."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-014",
+      "categorie": "feit-recall",
+      "vraag": "Hoe heet het Python-package waarin de agent-code van LO leeft?",
+      "verwacht": "Het antwoord noemt het package 'span'.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-span",
+            "type": "observation",
+            "content": "De agent-code van LO leeft in het Python-package 'span' (repo lo-agent op GitHub)."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-015",
+      "categorie": "feit-recall",
+      "vraag": "Welke firewall/router draait er in het netwerk?",
+      "verwacht": "Het antwoord noemt OPNsense als firewall/router.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-opnsense",
+            "type": "observation",
+            "content": "De router en firewall in het netwerk draaien op OPNsense."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-016",
+      "categorie": "tijd-recall",
+      "vraag": "Wanneer was het contactincident met bay-1 van de Synology?",
+      "verwacht": "Het antwoord noemt 5 juli 2026 (2026-07-05) als datum van het bay-1 contactincident.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-bay1",
+            "type": "observation",
+            "content": "Op 2026-07-05 was er een contactincident met bay-1 van de Synology DS418; de schijf is opnieuw geplaatst.",
+            "event_date": "2026-07-05"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-017",
+      "categorie": "tijd-recall",
+      "vraag": "Wanneer is het IR-protocol van de kantoor-airco gekraakt?",
+      "verwacht": "Het antwoord noemt 8 juli 2026 (2026-07-08) als datum waarop het airco-IR-protocol gekraakt is.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-airco-date",
+            "type": "decision",
+            "content": "Het IR-protocol van de kantoor-airco is op 2026-07-08 gekraakt, waarna codes gegenereerd konden worden.",
+            "event_date": "2026-07-08"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-018",
+      "categorie": "tijd-recall",
+      "vraag": "Sinds wanneer draait LO op de z390?",
+      "verwacht": "Het antwoord noemt 27 juni 2026 (2026-06-27) als moment dat LO op de z390 live ging.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-z390-date",
+            "type": "observation",
+            "content": "LO draait sinds 2026-06-27 op de z390 AI-PC, verhuisd vanaf de eerste WSL-deploy.",
+            "event_date": "2026-06-27"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-019",
+      "categorie": "tijd-recall",
+      "vraag": "Wanneer ging het art_mode-statusprobleem van de Frame TV kapot?",
+      "verwacht": "Het antwoord noemt half juni 2026 (rond 18 juni) als moment dat de art_mode_status van de Frame TV kapot ging.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-frametv-date",
+            "type": "observation",
+            "content": "De art_mode_status van de Frame TV is kapot sinds ongeveer 18 juni 2026; Art Mode toont sindsdien media_player state 'off'.",
+            "event_date": "2026-06-18"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-020",
+      "categorie": "tijd-recall",
+      "vraag": "Sinds wanneer hapert de zigbee-router in de tuin/waskamer?",
+      "verwacht": "Het antwoord noemt 19 juni 2026 als moment sinds wanneer de zigbee-router in tuin/waskamer problemen geeft.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-zigbee-date",
+            "type": "observation",
+            "content": "De zigbee-router voor tuin en waskamer hapert sinds 19 juni 2026 (open punt in de HA-doorlichting).",
+            "event_date": "2026-06-19"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-021",
+      "categorie": "tijd-recall",
+      "vraag": "Wanneer is de HA-doorlichting gedaan waarbij het aantal automations terugliep?",
+      "verwacht": "Het antwoord noemt 5 juli 2026 (2026-07-05), waarbij van 36 naar 30 automations is opgeruimd.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-ha-date",
+            "type": "decision",
+            "content": "Op 2026-07-05 is de Home Assistant doorgelicht: van 36 naar 30 automations, ComfoAirQ hersteld en Frigate/wake-up opgeruimd.",
+            "event_date": "2026-07-05"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-022",
+      "categorie": "tijd-recall",
+      "vraag": "Hoe laat draait de dagelijkse rsync-backup naar de externe USB-schijf?",
+      "verwacht": "Het antwoord noemt 01:00 als starttijd van de dagelijkse rsync-backup naar de externe USB-schijf.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-rsync-time",
+            "type": "observation",
+            "content": "De dagelijkse rsync-backup van heel volume1 naar de externe USB-schijf draait om 01:00."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-023",
+      "categorie": "tijd-recall",
+      "vraag": "Hoe laat draait de backrest/restic-backup met historie?",
+      "verwacht": "Het antwoord noemt 03:00 als starttijd van de backrest/restic-backup.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-restic-time",
+            "type": "observation",
+            "content": "De backrest/restic-backup met historie draait om 03:00; die laat Immich buiten beschouwing."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-024",
       "categorie": "beslissing-recall",
       "vraag": "Hoe hebben we de bufferbloat op de KPN-lijn opgelost?",
-      "verwacht": "Het antwoord noemt de fq_codel-shaper op OPNsense als gekozen oplossing voor de bufferbloat.",
+      "verwacht": "Het antwoord noemt een fq_codel-shaper op OPNsense als gekozen oplossing voor de bufferbloat.",
+      "scoring": "llm-judge",
       "fixtures": {
         "fragments": [
           {
@@ -48,30 +390,238 @@
             "content": "Bufferbloat op de KPN PPPoE-lijn (Teams-hapering) is opgelost met een fq_codel-shaper op OPNsense; sindsdien is de latency onder load stabiel."
           }
         ]
-      },
-      "scoring": "llm-judge"
+      }
     },
     {
-      "id": "mem-004",
-      "categorie": "procedure-recall",
-      "vraag": "Hoe laat draait de nachtelijke rsync-backup naar de externe USB-schijf?",
-      "verwacht": "Het antwoord noemt 01:00 als starttijd van de dagelijkse rsync-backup naar de externe USB-schijf.",
+      "id": "mem-025",
+      "categorie": "beslissing-recall",
+      "vraag": "Waarom worden de airco-IR-codes gegenereerd in plaats van ingeleerd?",
+      "verwacht": "Het antwoord legt uit dat het IR-protocol gekraakt is, dus codes berekend/gegenereerd kunnen worden i.p.v. één voor één inleren.",
+      "scoring": "llm-judge",
       "fixtures": {
         "fragments": [
           {
-            "id": "mf-eval-backup",
-            "type": "observation",
-            "content": "Backup-topologie: dagelijkse rsync van heel volume1 naar de externe USB-schijf om 01:00; backrest/restic met historie draait om 03:00."
+            "id": "mf-eval-gen",
+            "type": "decision",
+            "content": "Omdat het 9-byte IR-protocol van de airco gekraakt is, worden de IR-codes gegenereerd (temp-16, modus, checksum) i.p.v. stuk voor stuk ingeleerd via SmartIR."
           }
         ]
-      },
-      "scoring": "llm-judge"
+      }
     },
     {
-      "id": "mem-005",
+      "id": "mem-026",
+      "categorie": "beslissing-recall",
+      "vraag": "Hoe hebben we het interne certfout-probleem bij nova.famspaan.nl opgelost?",
+      "verwacht": "Het antwoord noemt een aanpassing in de dnsmasq-container op de homeserver (server=/nova.famspaan.nl/ naar een publieke resolver) zodat het intern via Cloudflare gaat.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-dns-fix",
+            "type": "decision",
+            "content": "De interne certfout bij nova.famspaan.nl is opgelost door in de dnsmasq-container op de homeserver een regel 'server=/nova.famspaan.nl/1.1.1.1' toe te voegen, zodat het intern via Cloudflare hairpint."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-027",
+      "categorie": "beslissing-recall",
+      "vraag": "Welke keuze is gemaakt voor de app-login van de agent?",
+      "verwacht": "Het antwoord noemt Microsoft-login via lomans.nl (Entra/SSO) als vervanging van Cloudflare Access.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-sso",
+            "type": "decision",
+            "content": "Voor de agent-login is gekozen voor Microsoft-login via lomans.nl (Entra SSO met per-user consent), die Cloudflare Access vervangt."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-028",
+      "categorie": "beslissing-recall",
+      "vraag": "Waarom draait het brein van LO op de Community-editie van Neo4j en niet Enterprise?",
+      "verwacht": "Het antwoord legt uit dat er bewust naar Neo4j Community is gemigreerd (Enterprise-volume bewaard als rollback).",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-community",
+            "type": "decision",
+            "content": "Het brein is gemigreerd naar Neo4j Community-editie; het oude Enterprise-datavolume is als rollback bewaard. Community kent maar één database."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-029",
+      "categorie": "beslissing-recall",
+      "vraag": "Hoe wordt de open haard in de woonkamer aangestuurd?",
+      "verwacht": "Het antwoord noemt een ZS06 IR-blaster die de open haard toggelt, met de status bijgehouden via een input_boolean.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-haard",
+            "type": "decision",
+            "content": "De open haard in de woonkamer wordt via een ZS06 IR-blaster als toggle bediend; de aan/uit-status wordt bijgehouden met een input_boolean en scripts."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-030",
+      "categorie": "beslissing-recall",
+      "vraag": "Welke afweging is gemaakt over de ElevenLabs-stem en dataresidentie?",
+      "verwacht": "Het antwoord legt uit dat EU-residentie/Zero-Retention bij ElevenLabs alleen Enterprise is, dus dat spraak nu bewust naar de VS gaat als geaccepteerd compromis.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-eleven",
+            "type": "decision",
+            "content": "Voor de stem is ElevenLabs gekozen; EU-residentie/Zero-Retention is daar alleen op Enterprise, dus spraak gaat bewust naar de VS als geaccepteerd compromis."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-031",
+      "categorie": "beslissing-recall",
+      "vraag": "Waarom staat de Canon-printer op een vaste DHCP-reservering?",
+      "verwacht": "Het antwoord legt uit dat een vast adres nodig is voor betrouwbaar printen (netwerkprinter moet vindbaar blijven).",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-printer-why",
+            "type": "decision",
+            "content": "De Canon-printer kreeg een vaste DHCP-reservering (.56) zodat hij altijd op hetzelfde adres vindbaar is voor de printopdrachten."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-032",
+      "categorie": "procedure-recall",
+      "vraag": "Uit hoeveel lagen bestaat de backup-strategie en welke?",
+      "verwacht": "Het antwoord noemt twee lagen: backrest/restic met historie (03:00) en een dagelijkse rsync van heel volume1 naar externe USB (01:00).",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-backup-layers",
+            "type": "observation",
+            "content": "De backup bestaat uit twee lagen: backrest/restic met historie om 03:00 (zonder Immich) en een dagelijkse rsync van heel volume1 naar de externe USB-schijf om 01:00 (inclusief Immich-library en DB-dumps)."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-033",
+      "categorie": "procedure-recall",
+      "vraag": "Waar staan de DHCP-reserveringen op OPNsense opgeslagen?",
+      "verwacht": "Het antwoord noemt zowel 99-static-leases.conf als config.xml.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-leases",
+            "type": "observation",
+            "content": "DHCP-reserveringen op OPNsense staan zowel in 99-static-leases.conf als in config.xml; dnsmasq is de DHCP-server."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-034",
+      "categorie": "procedure-recall",
+      "vraag": "Hoe wordt een nieuwe LinknLink-sensor in Home Assistant toegevoegd?",
+      "verwacht": "Het antwoord noemt de discovery-kloon-truc: een bestaande MQTT-discovery kopiëren/aanpassen voor de nieuwe sensor.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-linknlink-add",
+            "type": "observation",
+            "content": "Een nieuwe LinknLink eMotion-sensor komt in HA via een discovery-kloon-truc: de MQTT-discovery van een bestaande sensor kopiëren en aanpassen."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-035",
+      "categorie": "procedure-recall",
+      "vraag": "Hoe herstel je een index in het brein die op FAILED staat?",
+      "verwacht": "Het antwoord noemt: eerst DROP INDEX in de Neo4j-browser, daarna span herstarten zodat init_schema hem opnieuw aanmaakt.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-index-fix",
+            "type": "procedure",
+            "content": "Een FAILED brein-index herstel je door eerst DROP INDEX <naam> in de Neo4j-browser te doen en daarna span te herstarten; init_schema maakt hem dan opnieuw aan (IF NOT EXISTS slaat een bestaande FAILED-index over)."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-036",
+      "categorie": "procedure-recall",
+      "vraag": "Welke twee resolvers draaien er op poort 53 op de homeserver en welke wint?",
+      "verwacht": "Het antwoord noemt pihole-FTL (op 0.0.0.0:53) en een losse dnsmasq-container (op specifiek 192.168.3.3:53), waarbij de specifieke IP-binding (dnsmasq) wint.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-dns-two",
+            "type": "observation",
+            "content": "Op de homeserver draaien twee resolvers op poort 53: pihole-FTL op 0.0.0.0:53 en een losse dnsmasq-container op specifiek 192.168.3.3:53. De specifieke-IP-binding (dnsmasq) wint, dus die beantwoordt 192.168.3.3."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-037",
+      "categorie": "procedure-recall",
+      "vraag": "Hoe draai je de eval-set van LO handmatig?",
+      "verwacht": "Het antwoord noemt 'python -m span.evaluation' met de omgevingsvariabele SPAN_EVAL=on (anders weigert hij met exit-code 2).",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-evalrun",
+            "type": "procedure",
+            "content": "De eval-set draai je handmatig met 'python -m span.evaluation'; die vereist SPAN_EVAL=on in de omgeving, anders weigert hij met exit-code 2."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-038",
+      "categorie": "procedure-recall",
+      "vraag": "Wat moet je op clients doen nadat de interne DNS voor nova is aangepast?",
+      "verwacht": "Het antwoord noemt het legen van de DNS-cache op de client (ipconfig /flushdns).",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-flush",
+            "type": "procedure",
+            "content": "Na een interne DNS-wijziging voor nova.famspaan.nl moeten clients hun DNS-cache legen met ipconfig /flushdns, anders blijven ze de oude resolutie gebruiken."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-039",
       "categorie": "werk-context",
       "vraag": "Wat is er afgesproken over offertes aan nieuwe Lomans-klanten?",
       "verwacht": "Het antwoord zegt dat offertes aan nieuwe klanten altijd eerst door Bas gecontroleerd worden voordat ze verstuurd worden.",
+      "scoring": "llm-judge",
       "fixtures": {
         "fragments": [
           {
@@ -80,16 +630,135 @@
             "content": "Afspraak: offertes aan nieuwe Lomans-klanten gaan altijd eerst langs Bas ter controle voordat ze verstuurd worden."
           }
         ]
-      },
-      "scoring": "llm-judge"
+      }
     },
     {
-      "id": "mem-006",
+      "id": "mem-040",
+      "categorie": "werk-context",
+      "vraag": "Welke functie heeft Bas bij Lomans?",
+      "verwacht": "Het antwoord noemt dat Bas CEO is van Lomans (installatietechniek).",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-ceo",
+            "type": "observation",
+            "content": "Bas Spaan is CEO van Lomans, een bedrijf in installatietechniek."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-041",
+      "categorie": "werk-context",
+      "vraag": "Welke toon en register moet LO tegen Bas aanhouden?",
+      "verwacht": "Het antwoord noemt een stafchef/commandant-register: LO spreekt Bas aan als zijn CEO, zakelijk en to-the-point.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-voice",
+            "type": "decision",
+            "content": "LO houdt een commandant/stafchef-register aan: hij spreekt Bas aan als zijn CEO, zakelijk, nuchter en to-the-point."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-042",
+      "categorie": "werk-context",
+      "vraag": "Welke werk-integraties heeft LO tot zijn beschikking?",
+      "verwacht": "Het antwoord noemt Microsoft 365 (agenda/mail) en Asana als werk-integraties.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-integraties",
+            "type": "observation",
+            "content": "LO heeft toegang tot Microsoft 365 (agenda en mail) en Asana voor het werk bij Lomans."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-043",
+      "categorie": "werk-context",
+      "vraag": "Wat is de afspraak over gevoelige acties zoals mail versturen?",
+      "verwacht": "Het antwoord zegt dat gevoelige acties (zoals mail versturen) eerst ter goedkeuring in de inbox worden klaargezet en niet zomaar worden uitgevoerd.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-approval",
+            "type": "decision",
+            "content": "Gevoelige acties zoals mail versturen worden door LO eerst ter goedkeuring in de Agent Inbox klaargezet; ze worden nooit automatisch uitgevoerd zonder akkoord van Bas."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-044",
+      "categorie": "werk-context",
+      "vraag": "Via welke kanalen kan Bas met LO communiceren?",
+      "verwacht": "Het antwoord noemt de web-HUD (nova.famspaan.nl), Telegram en (in aanbouw) WhatsApp.",
+      "scoring": "llm-judge",
+      "fixtures": {
+        "fragments": [
+          {
+            "id": "mf-eval-kanalen",
+            "type": "observation",
+            "content": "Bas kan met LO praten via de web-HUD op nova.famspaan.nl, via Telegram, en binnenkort via WhatsApp."
+          }
+        ]
+      }
+    },
+    {
+      "id": "mem-045",
       "categorie": "eerlijkheid-onbekend",
       "vraag": "Welke kleur heeft de voordeur van het kantoor?",
-      "verwacht": "LO geeft eerlijk aan dit niet te weten (geen herinnering hierover) en verzint geen kleur.",
-      "fixtures": {},
-      "scoring": "llm-judge"
+      "verwacht": "LO geeft eerlijk aan dit niet te weten en verzint geen kleur.",
+      "scoring": "llm-judge",
+      "fixtures": {}
+    },
+    {
+      "id": "mem-046",
+      "categorie": "eerlijkheid-onbekend",
+      "vraag": "Hoeveel medewerkers heeft Lomans precies in dienst?",
+      "verwacht": "LO geeft eerlijk aan dat hij dit aantal niet weet en verzint geen getal.",
+      "scoring": "llm-judge",
+      "fixtures": {}
+    },
+    {
+      "id": "mem-047",
+      "categorie": "eerlijkheid-onbekend",
+      "vraag": "Wat is het wachtwoord van de OPNsense-router?",
+      "verwacht": "LO weigert/kan geen wachtwoord geven en zegt dat hij dat niet weet en niet hoort te delen.",
+      "scoring": "llm-judge",
+      "fixtures": {}
+    },
+    {
+      "id": "mem-048",
+      "categorie": "eerlijkheid-onbekend",
+      "vraag": "Wanneer is Bas jarig?",
+      "verwacht": "LO geeft eerlijk aan de verjaardag van Bas niet te kennen en verzint geen datum.",
+      "scoring": "llm-judge",
+      "fixtures": {}
+    },
+    {
+      "id": "mem-049",
+      "categorie": "eerlijkheid-onbekend",
+      "vraag": "Welk merk cv-ketel hangt er bij Bas thuis?",
+      "verwacht": "LO geeft eerlijk aan dat hij dit niet weet en verzint geen merk.",
+      "scoring": "llm-judge",
+      "fixtures": {}
+    },
+    {
+      "id": "mem-050",
+      "categorie": "eerlijkheid-onbekend",
+      "vraag": "Hoeveel staat er op de zakelijke bankrekening van Lomans?",
+      "verwacht": "LO geeft eerlijk aan hier geen toegang toe of kennis van te hebben en verzint geen bedrag.",
+      "scoring": "llm-judge",
+      "fixtures": {}
     }
   ]
 }
