@@ -59,6 +59,8 @@ Sequentieel gebouwd, elk op een eigen branch. Geen parallel werk op gedeelde cor
 - Prewarm van de TTS-verbinding om cold-start te vermijden.
 - **Poort:** pas aanzetten nadat A1 bevestigt dat TTS-latency de bottleneck is. ElevenLabs-key is tijdelijk; EU-residency is Enterprise-only → AVG-besluit hangt (buiten scope van dit blok, zie §5).
 
+**A2 GEACTIVEERD (2026-07-14).** Poort-nuance: de A1-telemetrie toonde dat níet TTS maar het **taalmodel** de dominante latency-term is (llm p50 ~4,5 s vs tts-batch ~1,0 s van een ~4,7 s beurt). Streaming is tóch aangezet omdat het de *tijd-tot-eerste-klank* aanpakt (batch = pas geluid na het volledige antwoord+synth). De echte structurele snelheidswinst zit model-kant (fast-lane korte beurten) → fase-B1. **A/B-uitkomst:** beide stemmen klonken goed op oor, dus latency besliste: **Flash v2.5 (274 ms) gekozen** boven Multilingual v2 (1.052 ms) — ~3,8× sneller. `SPAN_TTS_STREAMING=1` + `ELEVENLABS_MODEL=eleven_flash_v2_5` live op z390. (A/B-audio bleef eerst stil door een ontbrekende `media-src` in de CSP — gefixt.)
+
 ### A3 — taak-vangnet
 - Retries met backoff op falende tool-calls (alleen transiente fouten; muterende tools nooit blind herhalen).
 - **Eerlijke uitkomsten:** een taak die faalt meldt dat expliciet (geen stille fallback, geen verzonnen succes).
