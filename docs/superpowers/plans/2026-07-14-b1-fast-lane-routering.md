@@ -365,6 +365,17 @@ gelijk), geheugen 100%, latency-winst op geheugen/gesprek-beurten. Te bevestigen
 met méérdere eval-runs (flag-off vs flag-on via `docker exec -e SPAN_FAST_LANE=…`,
 zónder de prod-`.env` aan te raken) vóór heractivering.
 
+**GEMETEN 2026-07-14 (v2, code op z390, prod-flag UIT):** gepaarde taak-eval, 3
+rondes elk. Flag OFF 15/16/14 (µ **75,0%**) vs ON 14/15/15 (µ **73,3%**) — door
+elkaar heen, binnen de baseline-ruis (70–80%). Doorslaggevend: de **faalitems zijn
+identiek** met flag aan én uit (taak-006/007/008 mail-guard `o365_mail_send`,
+taak-019 `brain_search`, taak-020 `o365_calendar`). → v2 geeft **geen taak-regressie**
+(actie-beurten = Sonnet, precies als baseline). De latency-winst (`fast`-lane p50
+~1.708ms vs 4.516ms Sonnet, gemeten bij v1) geldt voor geheugen/gesprek-beurten.
+**APART BEVONDEN (niet fast-lane):** taak-006/007/008 (mail-guard) falen óók op puur
+Sonnet — LO roept `o365_mail_send` daar niet aan; eigen onderzoek waard (eval-
+verwachting vs echt gedrag). Aanbeveling: v2 mag geactiveerd worden (poort = Bas).
+
 ## Bekende, bewust-gelaten punten (v1)
 
 - **Pre-tool-tekst op het lichte model:** als het lichte model in iteratie 0 tekst streamt vóór de tool-call, komt die van Haiku. In de praktijk emitteren tool-beurten daar zelden tekst; de eind-synthese draait op Sonnet. Meten in Task 4; pas fijnslijpen als het merkbaar is.
