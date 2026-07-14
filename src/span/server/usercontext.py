@@ -14,13 +14,14 @@ from __future__ import annotations
 
 import re
 import threading
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
 from span.config import Settings
 from span.db.brain import BrainDB
 from span.db.schema import init_schema
+from span.integrations.mcp_client import MCPRegistry, load_servers
 
 SHARED_DB = "brain-shared"
 _DB_RE = re.compile(r"[^a-z0-9]+")
@@ -62,6 +63,18 @@ class UserContext:
     brain: BrainDB               # privé-brein van deze gebruiker
     o365: Any = None             # per-user O365-client (eigen token-cache)
     shared: Any = None           # gedeeld brein (read), of None in single-user
+    _mcp: Any = field(default=None, repr=False, compare=False)
+
+    @property
+    def mcp(self):
+        """Per-user MCP-registry — lazy, gecachet, uit de EIGEN brain.
+        Fail-safe: geeft None bij een fout (blokkeert de user-flow niet)."""
+        if self._mcp is None:
+            try:
+                self._mcp = MCPRegistry(load_servers(self.brain), self.brain)
+            except Exception:
+                self._mcp = None
+        return self._mcp
 
     def close(self) -> None:
         try:
