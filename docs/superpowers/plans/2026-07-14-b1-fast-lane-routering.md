@@ -317,15 +317,17 @@ git commit -m "docs(b1): SPAN_FAST_LANE flag in .env.example"
 
 ---
 
-### Task 4: Activering + meting op de z390 — ✅ UITGEVOERD 2026-07-14 (akkoord Bas)
+### Task 4: Activering + meting op de z390 — ⚠️ UITGEVOERD + TERUGGEDRAAID 2026-07-14
 
-**Uitkomst:** fast-lane is live en actief op de z390 (`SPAN_FAST_LANE=on`).
+**Uitkomst:** latency-winst bevestigd, maar taak-regressie gemeten → **flag weer UIT** gezet. Code blijft in master (no-op met flag uit).
 
-- **Deploy:** master (`54a976b`, PR #131) ge-synct naar `~/nova` (git-reset + custom compose hersteld), span-image herbouwd + gerecreëerd, `readyz` 200.
-- **Baseline (pre-flag, alles Sonnet):** `llm` p50 4.516ms / p95 12.924ms (n=113) — model dominant, bevestigt spec §B1.
-- **Kwaliteit (eval-set mét flag aan):** totaal **92,9% (65/70)** · geheugen **100% (50/50)** · taken **75% (15/20)** — géén regressie t.o.v. de nulmeting (89% / 96% / 70%); taken hielden stand boven 70%.
-- **Latency per lane (telemetrie sinds activering):** `fast` (Haiku, geen tool) p50 **1.708ms** (n=56) = ~2,6× sneller dan de Sonnet-baseline; `escalated` (tool → Sonnet) p50 4.591ms (n=41) = kwaliteit behouden.
-- **Rollback:** `~/nova/.env.bak-pre-fastlane-20260714` terugzetten + `docker compose up -d span` = puur Sonnet.
+- **Deploy:** master (`54a976b`, PR #131) ge-synct naar `~/nova` (git-reset + custom compose hersteld), span herbouwd + gerecreëerd, `readyz` 200.
+- **Baseline (pre-flag, alles Sonnet):** `llm` p50 4.516ms / p95 12.924ms.
+- **Latency per lane (flag aan):** `fast` (Haiku, geen tool) p50 **1.708ms** = ~2,6× sneller; `escalated` (tool → Sonnet) p50 4.591ms, max 13,9s, **0 beurten >30s** (geen stall — de mail-hang-stalltheorie reproduceert niet).
+- **Kwaliteit (eval-set mét flag) — PROBLEEM:** noisy en onder de nulmeting. Twee runs: taken **15/20 (75%)** én **13/20 (65%)**; nulmeting was 14/20 (70%). Geheugen bleef 100%. Doorslaggevend patroon (geen ruis): 6 van 7 taak-fails = *tool niet aangeroepen* — `o365_mail_send` (4×) + `o365_calendar` (2×).
+- **Oorzaak:** de escalatie borgt de **synthese** (post-tool op Sonnet), maar **niet de tool-selectie** — iteratie-0 draait op Haiku, dat de taak-tool niet betrouwbaar aanroept.
+- **Besluit:** `SPAN_FAST_LANE=` (uit) in `~/nova/.env`, span gerecreëerd, `enabled=False`, `readyz` 200 = puur Sonnet, geen regressie.
+- **Vervolg (om B1 wél te laten landen):** tool-selectie borgen — (a) tool-loze/sociale beurten vóór de call detecteren en alléén die naar Haiku; of (b) na een Haiku-beurt zónder tool-call maar mét sterk tool-signaal alsnog op Sonnet re-runnen; of (c) een sterker licht model. Meerdere eval-runs nodig voor signaal.
 
 Historisch draaiboek (zoals uitgevoerd):
 
