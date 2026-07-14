@@ -756,8 +756,11 @@
       ttsInit();
     };
     // A2 — A/B-luistertest: dezelfde zin door Flash v2.5 en Multilingual v2.
-    // Audio komt als base64-WAV terug met tts_ms per model; na elkaar afspelen
-    // zodat Bas op oor kan kiezen. Fouten alleen tonen, nooit door-crashen.
+    // Audio komt als base64-WAV terug met tts_ms per model. NIET automatisch
+    // afspelen ná het ophalen: het genereren duurt seconden, waardoor het
+    // gebruikers-gebaar verlopen is en de browser autoplay blokkeert (stil).
+    // Daarom een afspeelknop per model — elke klik is een vers gebaar en mag
+    // altijd geluid geven; wordt het tóch geweigerd, dan tonen we dat.
     const ab = $("tts-ab");
     if (ab) ab.onclick = async () => {
       const note = $("tts-ab-note");
@@ -774,16 +777,30 @@
         });
         if (!res.ok) throw new Error("ab " + res.status);
         const d = await res.json();
-        const lines = [];
-        for (const r of d.results || []) {
-          if (r.error) { lines.push(r.model + ": fout"); continue; }
-          lines.push(r.model.replace("eleven_", "") + ": " + Math.round(r.tts_ms) + " ms");
-          if (note) note.textContent = "speelt: " + r.model;
-          const audio = new Audio("data:audio/wav;base64," + r.audio_b64);
-          await audio.play().catch(() => {});
-          await new Promise((ok) => { audio.onended = ok; audio.onerror = ok; });
+        if (note) {
+          note.textContent = "Klik om te beluisteren:  ";
+          for (const r of d.results || []) {
+            const label = r.model.replace("eleven_", "");
+            if (r.error) {
+              const s = document.createElement("span");
+              s.textContent = label + ": fout  ";
+              note.appendChild(s);
+              continue;
+            }
+            const btn = document.createElement("button");
+            btn.className = "ghost";
+            btn.textContent = "▶ " + label + " (" + Math.round(r.tts_ms) + " ms)";
+            const audio = new Audio("data:audio/wav;base64," + r.audio_b64);
+            btn.onclick = () => {
+              try { audio.currentTime = 0; } catch (e) { /* ignore */ }
+              audio.play().catch(() => {
+                btn.textContent = "⚠ " + label + " — klik nogmaals";
+              });
+            };
+            note.appendChild(btn);
+            note.appendChild(document.createTextNode("  "));
+          }
         }
-        if (note) note.textContent = lines.join(" · ");
       } catch (e) {
         if (note) note.textContent = "A/B-test mislukt";
       }
