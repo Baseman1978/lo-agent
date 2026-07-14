@@ -1622,7 +1622,7 @@ async def mcp_connect(request: Request, name: str) -> dict[str, Any]:
     _require_rest_auth(request)
     from span.integrations import mcp_oauth as ox
     ctx = _mcp_ctx(request)
-    oid = getattr(ctx, "oid", "") if ctx is not None else ""
+    oid = getattr(ctx, "oid", "")
     brain = ctx.brain if ctx is not None else _state["brain"]
     servers = await asyncio.to_thread(load_servers, brain)
     server = next((s for s in servers if s["name"] == name), None)
@@ -1690,8 +1690,9 @@ async def mcp_oauth_callback(code: str = Query(""), state: str = Query("")) -> A
         # de brain van de gebruiker die de login startte (oid uit pending);
         # zonder oid/registry: single-user -> globale brain
         oid = pending.get("oid", "")
-        reg = _state.get("contexts")
-        brain = (reg.get(oid).brain if (reg is not None and oid) else _state["brain"])
+        contexts = _state.get("contexts")
+        brain = (contexts.get(oid).brain if (contexts is not None and oid)
+                 else _state["brain"])
         servers = load_servers(brain)
         for s in servers:
             if s["name"] == pending["name"]:
@@ -1718,7 +1719,10 @@ async def mcp_oauth_callback(code: str = Query(""), state: str = Query("")) -> A
     try:
         name = await asyncio.to_thread(finish)
     except Exception as exc:
-        return PlainTextResponse(f"Token-uitwisseling mislukt: {exc}", status_code=502)
+        # geen exc-detail naar de browser (kan interne info bevatten) — wel loggen
+        print(f"[mcp] koppelen mislukt: {exc}", flush=True)
+        return PlainTextResponse("Koppelen mislukt — probeer opnieuw in te loggen.",
+                                 status_code=502)
     return PlainTextResponse(
         f"MCP-server '{name}' is gekoppeld. Je kunt dit tabblad sluiten en terug "
         f"naar {AGENT_NAME} — de tools verschijnen bij een nieuwe sessie.")

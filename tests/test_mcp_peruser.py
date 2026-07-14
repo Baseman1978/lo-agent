@@ -265,6 +265,7 @@ def test_callback_schrijft_token_in_juiste_user_brain(monkeypatch):
                                          "refresh_token": "R"})
     resp = asyncio.run(r.mcp_oauth_callback(code="abc", state="st1"))
     assert resp.status_code == 200
+    registry.get.assert_called_once_with("oid-42")  # pending-oid stuurt de brain
     assert written["brain"] == "BRAIN-42"
     assert written["servers"][0]["token"] == "TOK"
     assert written["servers"][0]["refresh"] == "R"
@@ -299,3 +300,26 @@ def test_callback_zonder_oid_valt_terug_op_globale_brain(monkeypatch):
     asyncio.run(r.mcp_oauth_callback(code="abc", state="st2"))
     assert written["brain"] == "GLOBAL-BRAIN"
     assert invalidated["oid"] == ""
+
+
+def test_callback_502_lekt_geen_exceptiondetail(monkeypatch):
+    """Fout tijdens brain-resolutie -> 502 met generieke tekst; het ruwe
+    exception-detail (bv. Neo4j-connectiegegevens) mag NIET naar de browser."""
+    import asyncio
+    import time as _t
+
+    import span.server.routes as r
+    registry = MagicMock()
+    registry.get.side_effect = RuntimeError("db down")
+    monkeypatch.setitem(r._state, "contexts", registry)
+    monkeypatch.setitem(r._state, "mcp_pending", {"st3": {
+        "name": "fireflies", "oid": "oid-13",
+        "meta": {"token_endpoint": "https://t"},
+        "client_id": "c", "verifier": "v", "redirect_uri": "https://cb",
+        "ts": _t.time()}})
+    import span.integrations.mcp_oauth as ox_mod
+    monkeypatch.setattr(ox_mod, "exchange_code",
+                        lambda *a, **k: {"access_token": "TOK"})
+    resp = asyncio.run(r.mcp_oauth_callback(code="abc", state="st3"))
+    assert resp.status_code == 502
+    assert b"db down" not in resp.body
