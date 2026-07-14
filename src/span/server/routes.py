@@ -1556,7 +1556,13 @@ async def mcp_list(request: Request) -> dict[str, Any]:
     ctx = _mcp_ctx(request)
     brain = ctx.brain if ctx is not None else _state["brain"]
     servers = await asyncio.to_thread(load_servers, brain)
-    reg = ctx.mcp if ctx is not None else _state.get("mcp")
+    # ctx.mcp is lazy: de eerste toegang bouwt de per-user MCPRegistry, wat
+    # blokkerende HTTP (initialize/tools-list per server, 30s-timeouts) doet.
+    # Nooit op de event-loop -> off-thread. De _state-fallback is een dict-lookup.
+    if ctx is not None:
+        reg = await asyncio.to_thread(lambda: ctx.mcp)
+    else:
+        reg = _state.get("mcp")
     connected = set()
     if reg is not None:
         connected = {n.split("__")[1] for n in reg.tool_names()}
