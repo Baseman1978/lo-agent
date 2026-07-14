@@ -323,3 +323,40 @@ def test_callback_502_lekt_geen_exceptiondetail(monkeypatch):
     resp = asyncio.run(r.mcp_oauth_callback(code="abc", state="st3"))
     assert resp.status_code == 502
     assert b"db down" not in resp.body
+
+
+def test_fireflies_preset_voegt_juiste_url_toe(monkeypatch):
+    import asyncio
+
+    import span.server.routes as r
+    saved = {}
+    monkeypatch.setattr(r, "_require_rest_auth", lambda req: None)
+    monkeypatch.setattr(r, "load_servers", lambda b: [])
+    monkeypatch.setattr(r, "save_servers",
+                        lambda b, s: saved.update(brain=b, servers=s))
+    ctx = MagicMock()
+    ctx.brain = "B"
+    monkeypatch.setattr(r, "_mcp_ctx", lambda req: ctx)
+    out = asyncio.run(r.mcp_add_fireflies(MagicMock()))
+    assert saved["servers"][-1]["name"] == "fireflies"
+    assert saved["servers"][-1]["url"] == "https://api.fireflies.ai/mcp"
+    assert saved["brain"] == "B"
+    assert out["added"] == "fireflies"
+
+
+def test_fireflies_preset_idempotent(monkeypatch):
+    import asyncio
+
+    import span.server.routes as r
+    saved = {"called": False}
+    monkeypatch.setattr(r, "_require_rest_auth", lambda req: None)
+    monkeypatch.setattr(
+        r, "load_servers",
+        lambda b: [{"name": "fireflies", "url": "https://api.fireflies.ai/mcp"}])
+    monkeypatch.setattr(r, "save_servers", lambda b, s: saved.update(called=True))
+    ctx = MagicMock()
+    ctx.brain = "B"
+    monkeypatch.setattr(r, "_mcp_ctx", lambda req: ctx)
+    out = asyncio.run(r.mcp_add_fireflies(MagicMock()))
+    assert saved["called"] is False          # geen dubbele registratie
+    assert out["added"] == "fireflies"

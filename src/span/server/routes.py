@@ -1603,6 +1603,31 @@ async def mcp_delete(request: Request, name: str) -> dict[str, Any]:
     return {"deleted": name}
 
 
+FIREFLIES_MCP_URL = "https://api.fireflies.ai/mcp"
+
+
+def _fireflies_url() -> str:
+    """URL uit de connector-catalogus (één bron van waarheid), met de
+    constante als vangnet."""
+    from span.integrations.broker.connectors import get_connector
+    c = get_connector("fireflies")
+    return (c.mcp_url if c is not None and c.mcp_url else FIREFLIES_MCP_URL)
+
+
+@router.post("/api/mcp/fireflies")
+async def mcp_add_fireflies(request: Request) -> dict[str, Any]:
+    """Één-klik: registreer de Fireflies-MCP-server voor de ingelogde
+    gebruiker (idempotent). Inloggen daarna via POST /api/mcp/fireflies/connect."""
+    _require_rest_auth(request)
+    ctx = _mcp_ctx(request)
+    brain = ctx.brain if ctx is not None else _state["brain"]
+    servers = await asyncio.to_thread(load_servers, brain)
+    if not any(s["name"] == "fireflies" for s in servers):
+        servers = servers + [{"name": "fireflies", "url": _fireflies_url()}]
+        await asyncio.to_thread(save_servers, brain, servers)
+    return {"added": "fireflies", "connect": "/api/mcp/fireflies/connect"}
+
+
 def _callback_uri(request: Request) -> str:
     # De OAuth-redirect moet een stabiele, publieke https-URL zijn. Achter een
     # reverse proxy (Cosmos/Cloudflare) is request.base_url onbetrouwbaar: uvicorn
