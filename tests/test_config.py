@@ -10,6 +10,7 @@ def clean_env(monkeypatch, tmp_path):
     for var in [
         "ORQ_API_KEY", "ORQ_BASE_URL", "NEO4J_PASSWORD", "SPAN_EMBED_DIMS",
         "WORK_NEO4J_URI", "BRAIN_DB", "ASANA_TOKEN", "FIREFLIES_API_KEY",
+        "FIREFLIES_LEGACY_APIKEY",
         "TELEGRAM_BOT_TOKEN", "MS_CLIENT_ID",
         "WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "WHATSAPP_VERIFY_TOKEN",
         "WHATSAPP_APP_SECRET", "WHATSAPP_ALLOWED_NUMBERS", "WHATSAPP_VOICE_REPLY",
@@ -82,6 +83,7 @@ def test_integraties_uit_env(monkeypatch):
     monkeypatch.setenv("ORQ_API_KEY", "orq-test")
     monkeypatch.setenv("NEO4J_PASSWORD", "secret")
     monkeypatch.setenv("FIREFLIES_API_KEY", "ff-key")
+    monkeypatch.setenv("FIREFLIES_LEGACY_APIKEY", "on")  # centrale key alleen met legacy-flag
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tg-token")
     j = load_settings().jarvis
     assert j.fireflies_enabled and j.fireflies_api_key == "ff-key"
@@ -133,3 +135,29 @@ def test_whatsapp_zonder_allowlist_blijft_uit(monkeypatch):
     monkeypatch.setenv("WHATSAPP_APP_SECRET", "app-secret")
     j = load_settings().jarvis
     assert not j.whatsapp_enabled
+
+
+def test_fireflies_legacy_default_uit(monkeypatch):
+    """Uitfasering: zonder de legacy-flag telt de centrale key niet meer."""
+    monkeypatch.setenv("ORQ_API_KEY", "orq-test")
+    monkeypatch.setenv("NEO4J_PASSWORD", "secret")
+    monkeypatch.setenv("FIREFLIES_API_KEY", "sleutel")
+    s = load_settings()
+    assert s.jarvis.fireflies_enabled is False
+
+
+def test_fireflies_legacy_aan_met_flag(monkeypatch):
+    monkeypatch.setenv("ORQ_API_KEY", "orq-test")
+    monkeypatch.setenv("NEO4J_PASSWORD", "secret")
+    monkeypatch.setenv("FIREFLIES_API_KEY", "sleutel")
+    monkeypatch.setenv("FIREFLIES_LEGACY_APIKEY", "on")
+    s = load_settings()
+    assert s.jarvis.fireflies_enabled is True
+
+
+def test_fireflies_legacy_flag_zonder_key_blijft_uit(monkeypatch):
+    monkeypatch.setenv("ORQ_API_KEY", "orq-test")
+    monkeypatch.setenv("NEO4J_PASSWORD", "secret")
+    monkeypatch.setenv("FIREFLIES_LEGACY_APIKEY", "on")
+    s = load_settings()
+    assert s.jarvis.fireflies_enabled is False

@@ -1,5 +1,11 @@
 """Fireflies.ai — vergadertranscripties via de GraphQL API.
 
+DEPRECATED (2026-07): deze centrale-API-key-client wordt vervangen door de
+per-gebruiker Fireflies-MCP-koppeling (HUD → Instellingen → Koppel Fireflies),
+waarbij elke gebruiker met z'n eigen account inlogt. De centrale key werkt
+alleen nog met de legacy-flag FIREFLIES_LEGACY_APIKEY=on en verdwijnt na de
+transitie.
+
 FIREFLIES_API_KEY in .env (Fireflies → Integrations → Fireflies API).
 Span haalt samenvattingen + actiepunten op; de volledige transcriptie
 blijft bij Fireflies, alleen de essentie gaat het brein in.

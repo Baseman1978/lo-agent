@@ -67,7 +67,12 @@ class JarvisConfig:
 
     @property
     def fireflies_enabled(self) -> bool:
-        return bool(self.fireflies_api_key)
+        # Uitfasering (2026-07): de centrale API-key telt alleen nog met de
+        # expliciete legacy-flag. Standaard koppelt elke gebruiker Fireflies
+        # per-user via MCP (HUD -> Instellingen -> Koppel Fireflies).
+        legacy = os.environ.get("FIREFLIES_LEGACY_APIKEY", "").strip().lower() in (
+            "1", "true", "yes", "on")
+        return legacy and bool(self.fireflies_api_key)
 
     @property
     def telegram_enabled(self) -> bool:

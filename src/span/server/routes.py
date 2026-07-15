@@ -768,7 +768,11 @@ def _rebuild_apikey(cid: str) -> bool:
             return _state["asana"] is not None
         if cid == "fireflies":
             from span.integrations.fireflies import FirefliesClient
-            k = key or settings.jarvis.fireflies_api_key
+            # centrale env-key is uitgefaseerd: telt alleen nog met de legacy-flag
+            # (fireflies_enabled). Een expliciet opgeslagen integratie-key blijft wel.
+            env_key = (settings.jarvis.fireflies_api_key
+                       if settings.jarvis.fireflies_enabled else "")
+            k = key or env_key
             _state["fireflies"] = FirefliesClient(k) if k else None
             return _state["fireflies"] is not None
     except Exception:
