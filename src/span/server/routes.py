@@ -1562,11 +1562,9 @@ async def mcp_list(request: Request) -> dict[str, Any]:
     servers = await asyncio.to_thread(load_servers, brain)
     # ctx.mcp is lazy: de eerste toegang bouwt de per-user MCPRegistry, wat
     # blokkerende HTTP (initialize/tools-list per server, 30s-timeouts) doet.
-    # Nooit op de event-loop -> off-thread. De _state-fallback is een dict-lookup.
-    if ctx is not None:
-        reg = await asyncio.to_thread(lambda: ctx.mcp)
-    else:
-        reg = _state.get("mcp")
+    # Nooit op de event-loop -> off-thread. Single-user levert een _GlobalContext
+    # zonder .mcp -> getattr-guard + globale registry-fallback (zoals build_agent).
+    reg = await asyncio.to_thread(lambda: getattr(ctx, "mcp", None)) or _state.get("mcp")
     connected = set()
     if reg is not None:
         connected = {n.split("__")[1] for n in reg.tool_names()}

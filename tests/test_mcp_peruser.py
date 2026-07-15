@@ -360,3 +360,26 @@ def test_fireflies_preset_idempotent(monkeypatch):
     out = asyncio.run(r.mcp_add_fireflies(MagicMock()))
     assert saved["called"] is False          # geen dubbele registratie
     assert out["added"] == "fireflies"
+
+
+def test_mcp_list_single_user_geen_500(monkeypatch):
+    """Regressie: in single-user levert _mcp_ctx een _GlobalContext zonder .mcp;
+    mcp_list mag daar niet op crashen (getattr-guard + globale registry-fallback)."""
+    import span.server.routes as r
+    import asyncio
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(r, "_require_rest_auth", lambda req: None)
+    # _GlobalContext-achtig: heeft .brain maar GEEN .mcp
+    class _Globalish:
+        brain = "GLOBAL-BRAIN"
+    monkeypatch.setattr(r, "_mcp_ctx", lambda req: _Globalish())
+    monkeypatch.setattr(r, "load_servers",
+                        lambda b: [{"name": "fireflies", "url": "https://x", "token": "T"}])
+    global_reg = MagicMock()
+    global_reg.tool_names.return_value = ["mcp__fireflies__transcripts"]
+    monkeypatch.setitem(r._state, "mcp", global_reg)
+
+    out = asyncio.run(r.mcp_list(MagicMock()))
+    assert out["servers"][0]["name"] == "fireflies"
+    assert out["servers"][0]["connected"] is True   # token + in global reg
