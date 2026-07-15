@@ -38,6 +38,7 @@ from span.jarvis.daily import (
     set_quiet_end,
     set_quiet_start,
 )
+from span.integrations.mcp_client import load_servers, save_servers
 from span.llm.client import LLMClient
 from span.memory.fragments import FragmentStore
 from span.server.state import (
@@ -726,7 +727,8 @@ def _broker_dispatch(ctx: Any):
         disabled=_state.get("disabled_tools"), perms=_state.get("integration_perms"),
         fireflies=_state.get("fireflies"),
         telegram=_state.get("telegram"),
-        security=_state.get("security"), mcp=_state.get("mcp"),
+        security=_state.get("security"),
+        mcp=getattr(ctx, "mcp", None) or _state.get("mcp"),
         shared=getattr(ctx, "shared", None))
     return tb.dispatch
 
@@ -766,7 +768,11 @@ def _rebuild_apikey(cid: str) -> bool:
             return _state["asana"] is not None
         if cid == "fireflies":
             from span.integrations.fireflies import FirefliesClient
-            k = key or settings.jarvis.fireflies_api_key
+            # centrale env-key is uitgefaseerd: telt alleen nog met de legacy-flag
+            # (fireflies_enabled). Een expliciet opgeslagen integratie-key blijft wel.
+            env_key = (settings.jarvis.fireflies_api_key
+                       if settings.jarvis.fireflies_enabled else "")
+            k = key or env_key
             _state["fireflies"] = FirefliesClient(k) if k else None
             return _state["fireflies"] is not None
     except Exception:
@@ -1520,20 +1526,45 @@ async def graph_webhook(request: Request) -> Any:
 
 
 def _rebuild_mcp() -> None:
-    from span.integrations.mcp_client import MCPRegistry, load_servers
+    from span.integrations.mcp_client import MCPRegistry
     try:
         _state["mcp"] = MCPRegistry(load_servers(_state["brain"]), _state["brain"])
     except Exception as exc:
         print(f"[mcp] herbouw mislukt: {exc}", flush=True)
 
 
+def _mcp_ctx(request: Request) -> Any:
+    """Per-user context (eigen brain) voor MCP-beheer; None-fallback -> globaal."""
+    ctx = _request_context(request)
+    return ctx if getattr(ctx, "brain", None) is not None else None
+
+
+def _invalidate_ctx(oid: str) -> None:
+    """Gooi de gecachede UserContext (incl. MCP-registry) weg zodat een verse
+    login/token bij de volgende beurt wordt ingelezen. Single-user/owner:
+    herbouw de globale registry."""
+    reg = _state.get("contexts")
+    if reg is not None and oid:
+        try:
+            reg.invalidate(oid)
+        except Exception:
+            pass
+    else:
+        _rebuild_mcp()
+
+
 @router.get("/api/mcp")
 async def mcp_list(request: Request) -> dict[str, Any]:
     """Gekoppelde MCP-servers + status (zonder tokens te lekken)."""
     _require_rest_auth(request)
-    from span.integrations.mcp_client import load_servers
-    servers = await asyncio.to_thread(load_servers, _state["brain"])
-    reg = _state.get("mcp")
+    ctx = _mcp_ctx(request)
+    brain = ctx.brain if ctx is not None else _state["brain"]
+    servers = await asyncio.to_thread(load_servers, brain)
+    # ctx.mcp is lazy: de eerste toegang bouwt de per-user MCPRegistry, wat
+    # blokkerende HTTP (initialize/tools-list per server, 30s-timeouts) doet.
+    # Nooit op de event-loop -> off-thread. Single-user levert een _GlobalContext
+    # zonder .mcp -> getattr-guard + globale registry-fallback (zoals build_agent).
+    reg = await asyncio.to_thread(lambda: getattr(ctx, "mcp", None)) or _state.get("mcp")
     connected = set()
     if reg is not None:
         connected = {n.split("__")[1] for n in reg.tool_names()}
@@ -1547,28 +1578,56 @@ async def mcp_list(request: Request) -> dict[str, Any]:
 @router.post("/api/mcp")
 async def mcp_add(request: Request) -> dict[str, Any]:
     """Voeg een MCP-server toe (naam + url). Inloggen gaat via /connect."""
-    _require_owner(request)
-    from span.integrations.mcp_client import load_servers, save_servers
+    _require_rest_auth(request)
     body = await request.json()
     name = (body.get("name") or "").strip()
     url = (body.get("url") or "").strip()
     if not name or not url.startswith("http"):
         raise HTTPException(status_code=422, detail="Naam en geldige https-URL vereist.")
-    servers = await asyncio.to_thread(load_servers, _state["brain"])
+    ctx = _mcp_ctx(request)
+    brain = ctx.brain if ctx is not None else _state["brain"]
+    servers = await asyncio.to_thread(load_servers, brain)
     servers = [s for s in servers if s["name"] != name] + [{"name": name, "url": url}]
-    await asyncio.to_thread(save_servers, _state["brain"], servers)
+    await asyncio.to_thread(save_servers, brain, servers)
     return {"added": name}
 
 
 @router.delete("/api/mcp/{name}")
 async def mcp_delete(request: Request, name: str) -> dict[str, Any]:
-    _require_owner(request)
-    from span.integrations.mcp_client import load_servers, save_servers
-    servers = [s for s in await asyncio.to_thread(load_servers, _state["brain"])
+    _require_rest_auth(request)
+    ctx = _mcp_ctx(request)
+    brain = ctx.brain if ctx is not None else _state["brain"]
+    servers = [s for s in await asyncio.to_thread(load_servers, brain)
                if s["name"] != name]
-    await asyncio.to_thread(save_servers, _state["brain"], servers)
-    await asyncio.to_thread(_rebuild_mcp)
+    await asyncio.to_thread(save_servers, brain, servers)
+    oid = getattr(ctx, "oid", "")
+    await asyncio.to_thread(_invalidate_ctx, oid)
     return {"deleted": name}
+
+
+FIREFLIES_MCP_URL = "https://api.fireflies.ai/mcp"
+
+
+def _fireflies_url() -> str:
+    """URL uit de connector-catalogus (één bron van waarheid), met de
+    constante als vangnet."""
+    from span.integrations.broker.connectors import get_connector
+    c = get_connector("fireflies")
+    return (c.mcp_url if c is not None and c.mcp_url else FIREFLIES_MCP_URL)
+
+
+@router.post("/api/mcp/fireflies")
+async def mcp_add_fireflies(request: Request) -> dict[str, Any]:
+    """Één-klik: registreer de Fireflies-MCP-server voor de ingelogde
+    gebruiker (idempotent). Inloggen daarna via POST /api/mcp/fireflies/connect."""
+    _require_rest_auth(request)
+    ctx = _mcp_ctx(request)
+    brain = ctx.brain if ctx is not None else _state["brain"]
+    servers = await asyncio.to_thread(load_servers, brain)
+    if not any(s["name"] == "fireflies" for s in servers):
+        servers = servers + [{"name": "fireflies", "url": _fireflies_url()}]
+        await asyncio.to_thread(save_servers, brain, servers)
+    return {"added": "fireflies", "connect": "/api/mcp/fireflies/connect"}
 
 
 def _callback_uri(request: Request) -> str:
@@ -1587,10 +1646,12 @@ def _callback_uri(request: Request) -> str:
 async def mcp_connect(request: Request, name: str) -> dict[str, Any]:
     """Start de OAuth-login: discover + dynamische registratie + PKCE.
     Geeft de authorize-URL terug; Bas opent die en logt in."""
-    _require_owner(request)
+    _require_rest_auth(request)
     from span.integrations import mcp_oauth as ox
-    from span.integrations.mcp_client import load_servers
-    servers = await asyncio.to_thread(load_servers, _state["brain"])
+    ctx = _mcp_ctx(request)
+    oid = getattr(ctx, "oid", "")
+    brain = ctx.brain if ctx is not None else _state["brain"]
+    servers = await asyncio.to_thread(load_servers, brain)
     server = next((s for s in servers if s["name"] == name), None)
     if server is None:
         raise HTTPException(status_code=404, detail="MCP-server niet gevonden.")
@@ -1615,7 +1676,7 @@ async def mcp_connect(request: Request, name: str) -> dict[str, Any]:
             pend[state] = {
                 "name": name, "meta": meta, "client_id": reg["client_id"],
                 "verifier": verifier, "redirect_uri": redirect_uri,
-                "ts": time.time(),
+                "oid": oid, "ts": time.time(),
             }
         return {"authorize_url": url}
 
@@ -1643,7 +1704,6 @@ async def mcp_connect(request: Request, name: str) -> dict[str, Any]:
 async def mcp_oauth_callback(code: str = Query(""), state: str = Query("")) -> Any:
     """OAuth-redirect: wissel de code in voor tokens en sla ze op."""
     from span.integrations import mcp_oauth as ox
-    from span.integrations.mcp_client import load_servers, save_servers
     with _PENDING_LOCK:
         pending = (_state.get("mcp_pending") or {}).pop(state, None)
     if not pending or not code:
@@ -1654,25 +1714,31 @@ async def mcp_oauth_callback(code: str = Query(""), state: str = Query("")) -> A
     def finish() -> str:
         tok = ox.exchange_code(pending["meta"], pending["client_id"], code,
                                pending["verifier"], pending["redirect_uri"])
-        servers = load_servers(_state["brain"])
+        # de brain van de gebruiker die de login startte (oid uit pending);
+        # zonder oid/registry: single-user -> globale brain
+        oid = pending.get("oid", "")
+        contexts = _state.get("contexts")
+        brain = (contexts.get(oid).brain if (contexts is not None and oid)
+                 else _state["brain"])
+        servers = load_servers(brain)
         for s in servers:
             if s["name"] == pending["name"]:
                 s["token"] = tok.get("access_token", "")
                 s["refresh"] = tok.get("refresh_token", "")
                 s["client_id"] = pending["client_id"]
                 s["token_endpoint"] = pending["meta"].get("token_endpoint", "")
-        save_servers(_state["brain"], servers)
-        _rebuild_mcp()
+        save_servers(brain, servers)
+        _invalidate_ctx(oid)  # verse registry bij de volgende beurt
         # auto-skill: maak een werkwijze-skill uit de tools van deze server, zodat
         # de integratie meteen 'actief' is bij het opstarten (best effort)
         try:
             from span.integrations.broker.autoskill import sync_mcp_skill
             from span.integrations.broker.connectors import get_connector
-            reg = _state.get("mcp")
+            reg_mcp = _state.get("mcp")
             conn = get_connector(pending["name"])
             dn = conn.name if conn is not None else pending["name"]
-            if reg is not None:
-                sync_mcp_skill(_state["brain"], pending["name"], dn, reg.tool_specs())
+            if reg_mcp is not None:
+                sync_mcp_skill(brain, pending["name"], dn, reg_mcp.tool_specs())
         except Exception:
             pass
         return pending["name"]
@@ -1680,7 +1746,10 @@ async def mcp_oauth_callback(code: str = Query(""), state: str = Query("")) -> A
     try:
         name = await asyncio.to_thread(finish)
     except Exception as exc:
-        return PlainTextResponse(f"Token-uitwisseling mislukt: {exc}", status_code=502)
+        # geen exc-detail naar de browser (kan interne info bevatten) — wel loggen
+        print(f"[mcp] koppelen mislukt: {exc}", flush=True)
+        return PlainTextResponse("Koppelen mislukt — probeer opnieuw in te loggen.",
+                                 status_code=502)
     return PlainTextResponse(
         f"MCP-server '{name}' is gekoppeld. Je kunt dit tabblad sluiten en terug "
         f"naar {AGENT_NAME} — de tools verschijnen bij een nieuwe sessie.")

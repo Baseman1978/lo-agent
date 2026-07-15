@@ -462,6 +462,31 @@
     SPAN.sys(`MCP-server '${name}' toegevoegd — klik 'inloggen' om te koppelen.`);
     loadMcp();
   });
+  /* Één-klik Fireflies: preset registreren en direct de OAuth-login starten. */
+  {
+    const list = $("mcp-list");
+    if (list) {
+      const row = document.createElement("div");
+      row.className = "setrow";
+      const btn = document.createElement("button");
+      btn.className = "ghost"; btn.textContent = "Koppel Fireflies (inloggen)";
+      btn.onclick = async () => {
+        try {
+          const res = await fetch("/api/mcp/fireflies",
+            { method: "POST", headers: SPAN.authHeaders() });
+          if (!res.ok) {
+            const d = await res.json();
+            SPAN.sys(d.detail || "Fireflies toevoegen mislukt", "warn");
+            return;
+          }
+          await mcpConnect("fireflies");
+          loadMcp();
+        } catch (e) { SPAN.sys("Fireflies koppelen mislukt.", "warn"); }
+      };
+      row.appendChild(btn);
+      list.after(row);
+    }
+  }
 
   /* -- beveiliging ---------------------------------------------------------- */
   { const bg = $("sec-budget"); if (bg) bg.addEventListener("input", () => {
