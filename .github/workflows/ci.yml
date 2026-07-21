@@ -18,7 +18,10 @@ jobs:
           python-version: "3.11"   # zelfde als de Docker-image
           cache: pip
       - name: Installeer package + dev-deps
-        run: pip install -e .[dev]
+        # -c constraints.txt: CI test exact dezelfde versies (o.a. starlette,
+        # fastapi) als de productie-Docker-image, anders test CI iets anders
+        # dan er shipt. Zie #121: ongepinde starlette gaf een false failure.
+        run: pip install -c constraints.txt -e .[dev]
       - name: Lint (ruff)
         run: ruff check src tests
       - name: Tests (pytest)
